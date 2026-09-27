@@ -1,151 +1,124 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { CommandBar } from '@/components/CommandBar'
-import { NarrativePanel } from '@/components/NarrativePanel'
-import { Panel } from '@/components/Panel'
-import { AttackMatrix, ChecksGrid, FixPanel, MetricStrip, type MatrixLink } from '@/components/Readout'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AttackMatrix } from '@/components/AttackMatrix'
+import { SecureMailDashboard } from '@/components/dashboard'
+import { ErrorPanel, ScanningBanner, Skeleton } from '@/components/States'
 import { TopBar } from '@/components/TopBar'
-import { WebGLBoundary } from '@/components/three/WebGLBoundary'
-import { useApiLink } from '@/hooks/useApiLink'
-import { useDemoDomains } from '@/hooks/useDemoDomains'
-import { useRecent } from '@/hooks/useRecent'
-import { useScan } from '@/hooks/useScan'
-import { cn } from '@/lib/cn'
-import { EXPOSURE_LABEL, EXPOSURE_TONE, TEXT } from '@/lib/tone'
+import { VectorGrid } from '@/components/VectorGrid'
+import { useReport, type Source } from '@/hooks/useReport'
+import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
+import type { DemoScenario, VectorId } from '@/lib/types'
 
-// three.js is ~900 kB: load it after the terminal has painted.
-const PostureField = lazy(() => import('@/components/three/PostureField'))
+const DEFAULT_SCENARIO = 'startup'
+
+// URL state: ?demo=<id> or ?domain=<name>; ?delay=<ms> slows demo responses
+// so loading states can be designed.
+function sourceFromUrl(): { source: Source; delayMs: number } {
+  const params = new URLSearchParams(window.location.search)
+  const domain = params.get('domain')
+  const delayMs = Math.max(0, Number(params.get('delay')) || 0)
+  return {
+    source: domain ? { kind: 'live', domain } : { kind: 'demo', id: params.get('demo') ?? DEFAULT_SCENARIO },
+    delayMs,
+  }
+}
+
+function writeUrl(source: Source) {
+  const params = new URLSearchParams(window.location.search)
+  params.delete('demo')
+  params.delete('domain')
+  if (source.kind === 'demo') params.set('demo', source.id)
+  else params.set('domain', source.domain)
+  window.history.replaceState(null, '', `?${params}`)
+}
+
+const describe = (source?: Source) => (!source ? '' : source.kind === 'demo' ? `demo:${source.id}` : source.domain)
 
 export default function App() {
-  const link = useApiLink()
-  const demos = useDemoDomains()
-  const { state, scan } = useScan()
-  const result = state.status === 'done' ? state.result : null
-  const recent = useRecent(result?.scanned_at)
-  const isDemo = result !== null && demos.some((d) => d.domain === result.domain)
+  const [initial] = useState(sourceFromUrl)
+  const { status, source, report, error, startedAt, load } = useReport()
+  const [scenarios, setScenarios] = useState<DemoScenario[]>([])
+  const [apiUp, setApiUp] = useState<boolean | null>(null)
+  const [focus, setFocus] = useState<{ id: VectorId; n: number }>()
+  const focusVector = useCallback((id: VectorId) => setFocus((f) => ({ id, n: (f?.n ?? 0) + 1 })), [])
 
-  // One attack path can be "pointed at" from either the 3D view or the matrix; both highlight it.
-  const [hovered, setHovered] = useState<string | null>(null)
-  const [focus, setFocus] = useState<MatrixLink['focus']>(null)
-  const select = useCallback((id: string) => setFocus({ id, nonce: Date.now() }), [])
-  const matrixLink: MatrixLink = { hovered, onHover: setHovered, focus }
-  const hoveredPath = result?.attack_matrix.find((p) => p.id === hovered) ?? null
+  // Hovering a matrix row aims the Defense Lattice camera. Clearing is delayed
+  // briefly so sliding between adjacent rows retargets instead of bouncing home.
+  const [flyTo, setFlyTo] = useState<VectorId | null>(null)
+  const releaseTimer = useRef<number | undefined>(undefined)
+  const aim = useCallback((id: VectorId | null) => {
+    window.clearTimeout(releaseTimer.current)
+    if (id) setFlyTo(id)
+    else releaseTimer.current = window.setTimeout(() => setFlyTo(null), 180)
+  }, [])
+  useEffect(() => () => window.clearTimeout(releaseTimer.current), [])
 
-  // ?domain=example.com scans on load, so a result can be bookmarked or linked.
-  const linkedDomain = new URLSearchParams(window.location.search).get('domain') ?? ''
   useEffect(() => {
-    if (linkedDomain) void scan({ domain: linkedDomain, dkim_selectors: [], force_refresh: false })
-  }, [linkedDomain, scan])
+    const controller = new AbortController()
+    api.health(controller.signal).then(
+      () => setApiUp(true),
+      () => !controller.signal.aborted && setApiUp(false),
+    )
+    api.scenarios(controller.signal).then(setScenarios, () => {})
+    load(initial.source, initial.delayMs)
+    return () => controller.abort()
+  }, [initial, load])
 
-  // Keep the address bar in step with what's on screen, so it can be copied and shared.
-  useEffect(() => {
-    if (!result) return
-    const url = new URL(window.location.href)
-    url.searchParams.set('domain', result.domain)
-    window.history.replaceState(null, '', url)
-    document.title = `${result.domain} ${result.score.grade} ${result.score.score}/100 · SecureMailScope`
-  }, [result])
-
-  const posture = (
-    <Panel
-      title="Posture"
-      className="h-80 lg:h-[min(28rem,55vh)]"
-      right={<span className="tabular truncate text-2xs text-ink">{result?.domain ?? (state.status === 'scanning' ? state.domain : '—')}</span>}
-    >
-      {/* Absolute inset gives the canvas a definite size; R3F measures its parent's height. */}
-      <div className="relative h-full">
-        <div className="absolute inset-0">
-          <WebGLBoundary>
-            <Suspense fallback={null}>
-              <PostureField
-                paths={result?.attack_matrix ?? null}
-                grade={result?.score.grade ?? null}
-                resultKey={result ? `${result.domain}@${result.scanned_at}` : null}
-                scanning={state.status === 'scanning'}
-                hovered={hovered}
-                onHover={setHovered}
-                onSelect={select}
-              />
-            </Suspense>
-          </WebGLBoundary>
-        </div>
-        {/* HUD readout for the vector under the pointer (fixed position: never clips or covers a node). */}
-        {result && (
-          <div className="pointer-events-none absolute inset-x-3 bottom-2.5 font-mono text-2xs" aria-live="polite">
-            {hoveredPath ? (
-              <p className="truncate">
-                <span className="text-dim">VECTOR </span>
-                <span className="text-ink">{hoveredPath.title}</span>
-                <span className={cn('ml-2 font-semibold', TEXT[EXPOSURE_TONE[hoveredPath.exposure]])}>{EXPOSURE_LABEL[hoveredPath.exposure]}</span>
-              </p>
-            ) : (
-              <p className="text-dim">Point at a vector, or a row in the attack matrix</p>
-            )}
-          </div>
-        )}
-      </div>
-    </Panel>
+  const select = useCallback(
+    (next: Source) => {
+      setFocus(undefined) // don't re-scroll to a card from the previous report
+      setFlyTo(null)
+      writeUrl(next)
+      load(next, initial.delayMs)
+    },
+    [initial.delayMs, load],
   )
 
+  const loading = status === 'loading'
+  const reportKey = report ? `${report.domain}-${report.scanned_at}` : ''
+
   return (
-    <div className="flex min-h-dvh flex-col">
-      <TopBar link={link} />
-      <CommandBar demos={demos} recent={recent} busy={state.status === 'scanning'} onScan={scan} initialDomain={linkedDomain} />
+    <div className="min-h-dvh">
+      <TopBar
+        initialDomain={initial.source.kind === 'live' ? initial.source.domain : ''}
+        scenarios={scenarios}
+        source={source}
+        loading={loading}
+        apiUp={apiUp}
+        onSelect={select}
+      />
 
-      <main className="grid flex-1 gap-3 p-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        {/* Phones: readout (with the fix under the score) first, 3D view last. Desktop: 3D + fix on the left. */}
-        {/* Sticky on desktop: the 3D view and the fix stay in sight while the details scroll. */}
-        <div className="order-2 flex min-w-0 flex-col gap-3 lg:sticky lg:top-3 lg:order-1 lg:self-start">
-          <div className="order-2 lg:order-1">{posture}</div>
-          {result && (
-            <div className="hidden lg:order-2 lg:block">
-              <FixPanel result={result} />
+      <main className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-4">
+        {loading && startedAt !== undefined && <ScanningBanner target={describe(source)} since={startedAt} />}
+
+        {status === 'error' && error && source && (
+          <ErrorPanel error={error} target={describe(source)} onRetry={() => load(source, initial.delayMs)} />
+        )}
+
+        {!report && loading && <Skeleton />}
+
+        {report && status !== 'error' && (
+          <div className={cn('flex flex-col gap-3', loading && 'pointer-events-none')} aria-busy={loading}>
+            <SecureMailDashboard
+              report={report}
+              loading={loading}
+              pending={loading ? describe(source) : undefined}
+              flyTo={flyTo}
+              onAim={aim}
+              onSelectVector={focusVector}
+            />
+
+            <div className={cn('flex flex-col gap-3', loading && 'opacity-40')}>
+              <AttackMatrix report={report} onAim={aim} />
+              <VectorGrid key={reportKey} report={report} focus={focus} />
             </div>
-          )}
-        </div>
-
-        <div className="order-1 flex min-w-0 flex-col gap-3 lg:order-2">
-          {state.status === 'idle' && (
-            <Panel title="Readout" className="flex-1">
-              <div className="space-y-2 p-3 font-mono text-xs text-dim">
-                <p>
-                  Awaiting target. Enter a domain or choose a demo target<span className="caret text-secure">_</span>
-                </p>
-                <p className="max-w-[70ch] font-sans">
-                  SecureMailScope checks SPF, DKIM, DMARC, MTA-STS, TLS-RPT and STARTTLS, scores the domain, maps the results onto seven
-                  attack paths, and names the one change that closes the most risk.
-                </p>
-              </div>
-            </Panel>
-          )}
-          {state.status === 'scanning' && (
-            <Panel title="Readout" className="flex-1">
-              <p className="p-3 font-mono text-xs text-ink" role="status">
-                Resolving {state.domain}: DNS, DKIM selectors, MTA-STS policy, STARTTLS<span className="caret text-secure">_</span>
-              </p>
-            </Panel>
-          )}
-          {state.status === 'error' && (
-            <Panel title="Readout" className="flex-1">
-              <div className="border-l-2 border-vulnerable p-3" role="alert">
-                <p className="font-mono text-xs text-vulnerable">SCAN FAILED: {state.domain}</p>
-                <p className="mt-1 text-xs text-ink">{state.message}</p>
-              </div>
-            </Panel>
-          )}
-          {state.status === 'done' && (
-            <>
-              <MetricStrip result={state.result} elapsedMs={state.elapsedMs} isDemo={isDemo} />
-              {/* Phones: the fix belongs right under the score (desktop shows it in the left column). */}
-              <div className="lg:hidden">
-                <FixPanel result={state.result} />
-              </div>
-              <AttackMatrix result={state.result} link={matrixLink} />
-              <NarrativePanel result={state.result} />
-              <ChecksGrid result={state.result} />
-            </>
-          )}
-        </div>
+          </div>
+        )}
       </main>
+
+      <footer className="mx-auto max-w-[1400px] px-4 pb-6 font-mono text-[10px] tracking-wider text-slate-600">
+        SPF · DKIM · DMARC · MX · STARTTLS/25 · MTA-STS · TLS-RPT
+      </footer>
     </div>
   )
 }

@@ -1,38 +1,36 @@
 {
-  "name": "securemailscope-web",
+  "name": "securemailscope-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
-    "lint": "oxlint",
-    "preview": "vite preview",
-    "gen:api": "../.venv/bin/python ../scripts/generate_api_types.py"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "@fontsource/instrument-sans": "^5.3.0",
-    "@react-three/drei": "^10.7.9",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@react-three/fiber": "^9.8.1",
-    "@tailwindcss/vite": "^4.3.3",
+    "@splinetool/react-spline": "^4.1.0",
+    "@splinetool/runtime": "^2.0.58",
     "clsx": "^2.1.1",
+    "framer-motion": "^13.4.4",
     "lucide-react": "^1.48.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "tailwind-merge": "^3.7.0",
-    "tailwindcss": "^4.3.3",
     "three": "^0.186.1"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.7",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "oxlint": "^1.81.0",
-    "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.1"
   }
 }

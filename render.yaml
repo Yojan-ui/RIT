@@ -6,18 +6,14 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    healthCheckPath: /api/v1/health
+    healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      - key: SMS_ENV
-        value: production
-      # Many hosts block outbound port 25. The scanner detects that and reports STARTTLS as
-      # "not assessed"; a short timeout keeps scans quick when it happens.
-      - key: SMS_SMTP_TIMEOUT_SECONDS
+      # Many hosts block outbound port 25. The probe then reports STARTTLS as
+      # unmeasured (excluded from the score); short budgets keep scans quick.
+      - key: SMTP_TIMEOUT
         value: "5"
-      - key: SMS_LLM_MODEL
-        value: claude-opus-5
-      # Optional: set in the dashboard to enable Claude-written narratives.
-      # Without it the built-in rule-based writer is used.
-      - key: ANTHROPIC_API_KEY
-        sync: false
+      - key: PROBE_BUDGET
+        value: "12"
+      - key: SCAN_TIMEOUT
+        value: "25"

@@ -1,15 +1,13 @@
-# Keep the build context to what the image needs: requirements.txt, app/ and the frontend sources.
+# Keep the build context small: only backend/ and frontend/ sources are needed.
+# Patterns are anchored at the repo root, so nested dirs need **/.
 .git
-.venv
-venv
-__pycache__
-*.py[cod]
-.pytest_cache
-*.egg-info
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+*.md
 .env
-data/
-tests/
-legacy/
-docs/
-frontend/node_modules
-frontend/dist
+backend/.venv
+backend/static
+backend/tests
+backend/.pytest_cache
