@@ -23,6 +23,8 @@ export interface Remedy {
   name: string
   status: 'fail' | 'warn'
   headline: string
+  /** One plain-English sentence: what deploying this achieves. */
+  impact: string
   steps: string[]
   artifacts: Artifact[]
   /** Open attack paths this vector governs. */
@@ -78,10 +80,10 @@ function policyId(): string {
 }
 
 // --------------------------------------------------------------------------- //
-// Per-vector builders. Each returns headline, steps and artifacts.
+// Per-vector builders. Each returns headline, impact, steps and artifacts.
 // --------------------------------------------------------------------------- //
 
-type Built = Pick<Remedy, 'headline' | 'steps' | 'artifacts'> & { serverSide?: boolean }
+type Built = Pick<Remedy, 'headline' | 'impact' | 'steps' | 'artifacts'> & { serverSide?: boolean }
 type Ctx = { report: ScanReport; check: CheckResult; fix?: Fix; provider: Provider; domain: string }
 
 function spf({ check, fix, domain, provider, report }: Ctx): Built {
@@ -102,6 +104,8 @@ function spf({ check, fix, domain, provider, report }: Ctx): Built {
     for (const r of check.records)
       for (const t of r.split(/\s+/).slice(1)) if (!/^[-~?+]?all$/i.test(t) && !/^redirect=/i.test(t)) mechanisms.add(t)
     return {
+      impact:
+        'Makes your sender list readable again, so inboxes start checking who sends as you instead of ignoring it.',
       headline: 'Merge the duplicate SPF records into one',
       steps: [
         `Delete every existing v=spf1 TXT record on ${domain}; receivers treat more than one as a permanent error.`,
@@ -115,6 +119,7 @@ function spf({ check, fix, domain, provider, report }: Ctx): Built {
   }
   if (s === 'invalid') {
     return {
+      impact: 'Makes your sender list readable again, so inboxes start rejecting servers you have not approved.',
       headline: 'Bring SPF back under the 10-lookup limit',
       steps: [
         'List the include: mechanisms and remove any for services that no longer send as you.',
@@ -132,6 +137,8 @@ function spf({ check, fix, domain, provider, report }: Ctx): Built {
   }
   if (s === 'delegated') {
     return {
+      impact:
+        'Puts the rules for who may send as you under your own control, so unapproved servers are rejected outright.',
       headline: 'Confirm the redirected SPF policy ends in -all',
       steps: [
         `Look up the redirect= target's TXT record; ${domain} inherits its policy.`,
@@ -142,6 +149,9 @@ function spf({ check, fix, domain, provider, report }: Ctx): Built {
   }
   const missing = s === 'missing'
   return {
+    impact: missing
+      ? `Tells every inbox which servers may send as ${domain}, so mail from any other server fails the check.`
+      : 'Tells inboxes to reject, not just flag, mail from servers you have not approved.',
     headline: missing ? 'Publish an SPF record' : 'Harden SPF to a hard fail (-all)',
     steps: [
       missing
@@ -189,6 +199,9 @@ function dkim({ check, domain, provider }: Ctx): Built {
         }),
       )
   return {
+    impact: weak
+      ? 'Replaces a crackable signing key with a strong one, so attackers cannot forge your digital signature.'
+      : 'Adds a tamper-proof digital signature to every email, so recipients can prove it came from you and was not altered.',
     headline: weak ? 'Rotate DKIM to a 2048-bit key' : 'Turn on DKIM signing',
     steps: [
       providerStep,
@@ -223,6 +236,7 @@ function dmarc({ check, fix, domain, report }: Ctx): Built {
     const sendsMail = state(report.checks.find((c) => c.id === 'spf') ?? check) !== 'no_send'
     if (!sendsMail)
       return {
+        impact: `Tells every inbox to reject any email claiming to be from ${domain}, since you never send any.`,
         headline: 'Publish DMARC p=reject (domain sends no mail)',
         steps: [
           `${domain} declares it sends no mail, so there is no legitimate traffic to break: skip the monitoring stages.`,
@@ -232,6 +246,8 @@ function dmarc({ check, fix, domain, report }: Ctx): Built {
         artifacts: [stage('reject')],
       }
     return {
+      impact:
+        'Tells inboxes to quarantine, then reject, emails that fake your domain, stopping look-alike phishing before anyone sees it.',
       headline: s === 'missing' ? 'Publish DMARC, then ramp to p=reject' : 'Move DMARC from monitoring to enforcement',
       steps: [
         ...(s === 'missing' ? ['Publish the p=none record to start receiving aggregate (rua) reports.'] : []),
@@ -253,6 +269,8 @@ function dmarc({ check, fix, domain, report }: Ctx): Built {
     value: dmarcValue({ ...(sp === 'none' ? inherit : tags), p: policy, rua }),
   }
   return {
+    impact:
+      'Applies your rejection policy to every spoofed email and every subdomain, closing the gaps attackers slip through.',
     headline: 'Close the gaps in the DMARC policy',
     steps: [
       ...(pct < 100 ? [`Drop pct=${pct} so the policy covers 100% of failing mail.`] : []),
@@ -275,6 +293,8 @@ function mx({ check, domain, provider }: Ctx): Built {
   )
   if (s === 'missing')
     return {
+      impact:
+        'Gives senders a defined route for email to you (or states that you accept none), so nothing is lost or misrouted.',
       headline: 'Publish MX records, or a null MX',
       steps: [
         `If ${domain} receives mail, publish your provider's MX records (below).`,
@@ -284,6 +304,7 @@ function mx({ check, domain, provider }: Ctx): Built {
     }
   const unresolved = check.findings.filter((f) => f.endsWith('does not resolve to any address'))
   return {
+    impact: 'Makes sure every listed mail server exists, so email to you is delivered instead of bouncing.',
     headline: s === 'broken' ? 'Point MX at hosts that resolve' : 'Fix or remove the MX hosts that do not resolve',
     steps: [
       ...unresolved.map(
@@ -313,6 +334,7 @@ function starttls({ check }: Ctx): Built {
   if (s === 'legacy_tls')
     return {
       serverSide: true,
+      impact: 'Removes outdated encryption, so intercepted email cannot be decrypted with known attacks.',
       headline: `Disable TLS 1.0/1.1 on ${host}`,
       steps: [
         'Restrict inbound SMTP to TLS 1.2 and newer (RFC 8996), then reload the MTA.',
@@ -331,6 +353,8 @@ function starttls({ check }: Ctx): Built {
   if (s === 'bad_cert')
     return {
       serverSide: true,
+      impact:
+        'Gives your mail server a valid identity, so senders can tell it apart from an impostor and encryption can be enforced.',
       headline: `Install a valid certificate on ${host}`,
       steps: [
         `Issue a certificate whose name matches ${host} exactly, from a public CA.`,
@@ -347,6 +371,8 @@ function starttls({ check }: Ctx): Built {
     }
   return {
     serverSide: true,
+    impact:
+      'Turns on encryption for email arriving at your server, so nobody on the network path can read it in transit.',
     headline: `Enable STARTTLS on ${host}`,
     steps: [
       'This is a mail-server change, not DNS: inbound mail currently crosses the internet in cleartext.',
@@ -382,6 +408,8 @@ function mtaSts({ check, fix, report, domain }: Ctx): Built {
   ].join('\n')
   const txt = fix?.record ?? { type: 'TXT', host: `_mta-sts.${domain}`, value: `v=STSv1; id=${policyId()}` }
   return {
+    impact:
+      'Forces senders to use verified encryption when delivering to you, so attackers on the network cannot strip it and read your mail.',
     headline:
       mode === 'enforce'
         ? 'Switch MTA-STS from testing to enforce'
@@ -419,6 +447,8 @@ function tlsRpt({ fix, domain }: Ctx): Built {
     value: `v=TLSRPTv1; rua=mailto:tls-reports@${domain}`,
   }
   return {
+    impact:
+      'Makes sending servers report failed or tampered encrypted deliveries to you, so interception attempts stop going unnoticed.',
     headline: 'Publish a TLS-RPT record',
     steps: [
       `Create the tls-reports@${domain} mailbox, or use an https:// endpoint from a reporting service.`,

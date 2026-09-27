@@ -39,7 +39,12 @@ export function CopyButton({ value, label, text = 'COPY' }: { value: string; lab
   return (
     <button
       type="button"
-      onClick={() => navigator.clipboard?.writeText(value).then(() => setCopied(true), () => {})}
+      onClick={() =>
+        navigator.clipboard?.writeText(value).then(
+          () => setCopied(true),
+          () => {},
+        )
+      }
       aria-label={copied ? `${label} copied` : `Copy ${label}`}
       className={cn(
         'inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border px-1.5 font-mono text-[10px] tracking-wider',
@@ -73,10 +78,57 @@ export function SeverityPips({ severity }: { severity: number }) {
       {[1, 2, 3, 4, 5].map((n) => (
         <span
           key={n}
-          className={cn('h-2.5 w-1 rounded-[1px]', n <= severity ? 'bg-slate-300' : 'bg-line-strong light:bg-[#c8c8c8]')}
+          className={cn(
+            'h-2.5 w-1 rounded-[1px]',
+            n <= severity ? 'bg-slate-300' : 'bg-line-strong light:bg-[#c8c8c8]',
+          )}
         />
       ))}
     </span>
+  )
+}
+
+// Severity reads from fill weight first, glyph second, colour third, so it
+// survives light mode, colour blindness and greyscale print. text-black
+// flips to white in light mode, where the fills drop to their 700 shades.
+const BADGE: Record<Status, { glyph: string; label: string; meaning: string; className: string }> = {
+  fail: { glyph: '✕', label: 'FAIL', meaning: 'exploitable now', className: 'border-crit bg-crit text-black' },
+  warn: { glyph: '!', label: 'WARN', meaning: 'weakened', className: 'border-warn bg-warn text-black' },
+  pass: { glyph: '✓', label: 'PASS', meaning: 'protected', className: 'border-ok text-ok' },
+  info: { glyph: '–', label: 'N/A', meaning: 'not applicable', className: 'border-dashed border-na text-slate-500' },
+  error: { glyph: '?', label: 'N/M', meaning: 'not measured', className: 'border-dashed border-na text-slate-500' },
+}
+
+/** Brutalist status badge: solid block for FAIL/WARN, 1px outline for PASS. */
+export function StatusBadge({ status, compact = false }: { status: Status; compact?: boolean }) {
+  const b = BADGE[status]
+  return (
+    <span
+      title={`${b.label}: ${b.meaning}`}
+      className={cn(
+        'inline-flex shrink-0 items-center justify-center gap-1 border font-mono font-bold tracking-[0.12em]',
+        compact ? 'h-5 w-10 text-[9px]' : 'h-5 min-w-[4.25rem] px-1.5 text-[10px]',
+        b.className,
+      )}
+    >
+      {!compact && <span aria-hidden>{b.glyph}</span>}
+      {b.label}
+      <span className="sr-only">, {b.meaning}</span>
+    </span>
+  )
+}
+
+/** One-line key for the badges, for readers who do not know the jargon. */
+export function StatusLegend() {
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] text-slate-500">
+      {(['fail', 'warn', 'pass'] as const).map((s) => (
+        <span key={s} className="inline-flex items-center gap-1.5">
+          <StatusBadge status={s} />
+          {BADGE[s].meaning}
+        </span>
+      ))}
+    </p>
   )
 }
 

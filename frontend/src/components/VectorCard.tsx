@@ -3,7 +3,7 @@ import { useId } from 'react'
 import { cn } from '@/lib/utils'
 import { STATUS_TONE } from '@/lib/meta'
 import type { CheckResult } from '@/lib/types'
-import { Lamp, RawRecord } from './primitives'
+import { Lamp, RawRecord, StatusBadge } from './primitives'
 
 // Keys already shown elsewhere on the card, or too noisy to list.
 const HIDDEN_DETAILS = new Set(['state', 'records', 'mechanisms', 'reachable', 'duration_ms'])
@@ -38,7 +38,10 @@ export function VectorCard({
   const details = detailRows(check.details)
 
   return (
-    <article id={`vector-${check.id}`} className={cn('panel scroll-mt-32', check.status === 'fail' && 'border-crit/30')}>
+    <article
+      id={`vector-${check.id}`}
+      className={cn('panel scroll-mt-32', check.status === 'fail' && 'border-crit/30')}
+    >
       <button
         type="button"
         onClick={onToggle}
@@ -49,7 +52,7 @@ export function VectorCard({
         <div className="flex w-full items-center gap-2.5">
           <Lamp className={tone.bg} />
           <h3 className="font-mono text-[13px] font-bold tracking-wide text-slate-100">{check.name}</h3>
-          <span className={cn('font-mono text-[10px] tracking-wider', tone.text)}>{tone.label}</span>
+          <StatusBadge status={check.status} />
           <span className="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">
             {check.applicable ? (
               <>

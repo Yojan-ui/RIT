@@ -1,10 +1,9 @@
 import { ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import { STATUS_TONE } from '@/lib/meta'
 import { buildRemediation, type Artifact, type Remedy } from '@/lib/remediation'
 import type { ScanReport, VectorId } from '@/lib/types'
-import { CopyButton, PanelHeader } from './primitives'
+import { CopyButton, PanelHeader, StatusBadge } from './primitives'
 
 const KIND_LABEL: Record<Artifact['kind'], string> = { dns: 'DNS', file: 'FILE', config: 'CONFIG' }
 
@@ -35,7 +34,6 @@ function RemedyItem({
   index: number
   onAim?: (id: VectorId | null) => void
 }) {
-  const tone = STATUS_TONE[remedy.status]
   const gain = remedy.fix ? remedy.fix.score_after - remedy.fix.score_before : 0
   return (
     <details
@@ -49,7 +47,7 @@ function RemedyItem({
     >
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 hover:bg-raised [&::-webkit-details-marker]:hidden">
         <span className="font-mono text-[10px] text-slate-600 tabular-nums">{String(index + 1).padStart(2, '0')}</span>
-        <span className={cn('w-10 font-mono text-[10px] font-bold tracking-wider', tone.text)}>{tone.label}</span>
+        <StatusBadge status={remedy.status} />
         <span className="w-20 font-mono text-[11px] font-bold tracking-wider text-slate-100">
           {remedy.name.split(' ')[0]}
         </span>
@@ -108,7 +106,11 @@ function RemedyItem({
           )}
         </div>
         <div className="space-y-2">
-          <h4 className="eyebrow">Exact records</h4>
+          <div className="border border-l-2 border-line border-l-ok px-3 py-2">
+            <p className="eyebrow mb-0.5">What this fix does</p>
+            <p className="text-[12.5px] leading-snug text-slate-100">{remedy.impact}</p>
+          </div>
+          <h4 className="eyebrow pt-1">Exact records</h4>
           {remedy.artifacts.map((a) => (
             <ArtifactBlock key={`${a.label}-${a.value}`} artifact={a} />
           ))}

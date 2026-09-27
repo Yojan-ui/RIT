@@ -48,10 +48,12 @@ Below `xl` the column wrappers are `display: contents`, so panels stack in prior
 
 ## Main dashboard (`SecureMailDashboard`)
 
-`src/components/dashboard.tsx` is the page's primary view: a full-width 700px terminal card (`#050505`, 1px `white/10` borders, square corners, `font-mono`) with a pointer-tracking `Spotlight`.
+`src/components/dashboard.tsx` is the page's primary view: a full-width 1000px terminal card (`#050505`, 1px `white/10` borders, square corners, `font-mono`) with a pointer-tracking `Spotlight`.
 
 - **Left, data:** status header, the Security Posture score, a dense Attack Path Matrix (SPF, DKIM, DMARC, MX, MTA-STS, TLS-RPT, STARTTLS; PASS emerald, WARN amber, FAIL red, N/A or N/M grey; click a row for its detail card), and The One Fix as a frosted sub-panel with the recommended record as a raw zone-file string. If STARTTLS is missing, a separate *server-side* line reads "Enforce STARTTLS in SMTP config", since that is not a DNS change.
 - **Right, 3D + telemetry:** the data-bound **Defense Lattice** fills the viewport (hovering a matrix row, attack-path row or remediation step flies its camera to that node), with the **Real-Time Telemetry** terminal below it.
+- **Plain-English layer:** each Attack Path Matrix row pairs the technical summary with a one-line business risk (`src/lib/risk.ts`, keyed by the check's `details.state`), e.g. DMARC `p=none` → "Risk: Anyone can perfectly spoof your domain to send phishing emails." Each remediation step opens with a "What this fix does" sentence above its records.
+- **Status badges (`StatusBadge`):** FAIL and WARN are solid filled blocks (✕ / !), PASS a 1px green outline (✓), N/A and N/M dashed grey, with a legend above the matrix. Severity reads from fill weight and glyph before colour, so it holds in both themes and for colour-blind readers.
 - **Header theme toggle:** DARK (the brutalist obsidian default) or LIGHT (pure white, pure black 1px borders, black mono text), remembered per browser. The light theme lives entirely in `src/index.css`: `[data-theme='light']` on `<html>` re-points Tailwind's palette variables, so no component carries per-theme classes except the few `light:` overrides. The lattice canvas is inverted (`invert(1) hue-rotate(180deg)`) so its glow reads as ink on white.
 
 ## Remediation steps (`RemediationPanel`)

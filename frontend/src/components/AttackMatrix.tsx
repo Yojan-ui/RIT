@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
-import { PATH_TONE, PATH_VECTORS, STATUS_TONE, VECTOR_ABBR, VECTOR_ORDER } from '@/lib/meta'
+import { PATH_TONE, PATH_VECTORS, VECTOR_ABBR, VECTOR_ORDER } from '@/lib/meta'
 import type { AttackPath, CheckResult, PathState, ScanReport, Status, VectorId } from '@/lib/types'
-import { Lamp, PanelHeader, SeverityPips } from './primitives'
+import { Lamp, PanelHeader, SeverityPips, StatusBadge } from './primitives'
 
 const STATE_RANK: Record<PathState, number> = { open: 0, closed: 1, not_applicable: 2 }
 const BROKEN_RANK: Record<Status, number> = { fail: 0, warn: 1, error: 2, info: 3, pass: 4 }
@@ -16,7 +16,11 @@ function aimFor(path: AttackPath, checks: Map<string, CheckResult>): VectorId | 
 function FixCell({ path, fixedByOneFix }: { path: AttackPath; fixedByOneFix: boolean }) {
   if (path.state !== 'open') return <span className="text-slate-700">—</span>
   if (fixedByOneFix)
-    return <span className="rounded-sm border border-ok/50 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-ok">ONE FIX</span>
+    return (
+      <span className="rounded-sm border border-ok/50 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-ok">
+        ONE FIX
+      </span>
+    )
   if (!path.dns_fixable)
     return <span className="rounded-sm border border-warn/40 px-1.5 py-0.5 text-[10px] text-warn">SERVER</span>
   return <span className="text-[10px] text-slate-500">DNS</span>
@@ -50,15 +54,23 @@ export function AttackMatrix({
         <table className="w-full min-w-[760px] border-collapse text-left">
           <thead>
             <tr className="border-b border-line font-mono text-[10px] tracking-wider text-slate-500">
-              <th scope="col" className="w-16 px-4 py-2 font-medium">SEV</th>
-              <th scope="col" className="px-2 py-2 font-medium">ATTACK PATH</th>
+              <th scope="col" className="w-16 px-4 py-2 font-medium">
+                SEV
+              </th>
+              <th scope="col" className="px-2 py-2 font-medium">
+                ATTACK PATH
+              </th>
               {VECTOR_ORDER.map((v) => (
                 <th key={v} scope="col" className="w-12 px-1 py-2 text-center font-medium">
                   {VECTOR_ABBR[v]}
                 </th>
               ))}
-              <th scope="col" className="w-24 px-2 py-2 font-medium">STATE</th>
-              <th scope="col" className="w-24 px-4 py-2 text-right font-medium">FIX</th>
+              <th scope="col" className="w-24 px-2 py-2 font-medium">
+                STATE
+              </th>
+              <th scope="col" className="w-24 px-4 py-2 text-right font-medium">
+                FIX
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -101,19 +113,9 @@ export function AttackMatrix({
                           <span className="inline-block size-1 rounded-full bg-line-strong" aria-hidden />
                         </td>
                       )
-                    const t = STATUS_TONE[check.status]
                     return (
                       <td key={v} className="px-1 py-2.5 text-center align-top">
-                        <span
-                          className={cn(
-                            'inline-grid h-5 w-9 place-items-center rounded-sm border font-mono text-[9px]',
-                            t.border,
-                            t.text,
-                          )}
-                          title={`${check.name}: ${t.label}`}
-                        >
-                          {t.label === 'UNMEASURED' ? '??' : t.label}
-                        </span>
+                        <StatusBadge status={check.status} compact />
                       </td>
                     )
                   })}

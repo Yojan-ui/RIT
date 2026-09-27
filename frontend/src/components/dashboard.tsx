@@ -2,11 +2,12 @@ import { Suspense, lazy } from 'react'
 import { Telemetry } from '@/components/Telemetry'
 import { Card } from '@/components/ui/card'
 import { Spotlight } from '@/components/ui/spotlight'
-import { CopyButton } from '@/components/primitives'
+import { CopyButton, StatusBadge, StatusLegend } from '@/components/primitives'
 import { useTheme, type Theme } from '@/hooks/useTheme'
 import { exportUrl } from '@/lib/api'
+import { businessRisk } from '@/lib/risk'
 import { cn } from '@/lib/utils'
-import type { CheckResult, ScanReport, Status, VectorId } from '@/lib/types'
+import type { CheckResult, ScanReport, VectorId } from '@/lib/types'
 
 // three.js is ~1 MB: split into its own chunk so the data panels render first.
 const DefenseLattice = lazy(() => import('@/components/lattice/DefenseLattice'))
@@ -21,14 +22,6 @@ const MATRIX: { id: VectorId; label: string }[] = [
   { id: 'tls_rpt', label: 'TLS-RPT' },
   { id: 'starttls', label: 'STARTTLS' },
 ]
-
-const STATUS: Record<Status, { label: string; text: string }> = {
-  pass: { label: 'PASS', text: 'text-emerald-500' },
-  warn: { label: 'WARN', text: 'text-amber-500' },
-  fail: { label: 'FAIL', text: 'text-red-500' },
-  info: { label: 'N/A', text: 'text-neutral-500' },
-  error: { label: 'N/M', text: 'text-neutral-500' }, // not measured
-}
 
 const scoreTone = (score: number) =>
   score >= 80 ? 'text-emerald-500' : score >= 50 ? 'text-amber-500' : 'text-red-500'
@@ -48,7 +41,15 @@ function MatrixRow({
   onSelect?: () => void
   onAim?: (on: boolean) => void
 }) {
-  const tone = check ? STATUS[check.status] : STATUS.error
+  const risk = check ? businessRisk(check) : null
+  // The prefix carries the severity in words, coloured to match the badge.
+  const prefix = !risk
+    ? null
+    : risk.kind === 'ok'
+      ? { text: 'Protected:', className: 'text-emerald-500' }
+      : risk.kind === 'neutral'
+        ? { text: 'Note:', className: 'text-neutral-500' }
+        : { text: 'Risk:', className: check?.status === 'fail' ? 'text-red-500' : 'text-amber-500' }
   return (
     <button
       type="button"
@@ -59,11 +60,18 @@ function MatrixRow({
       onBlur={() => onAim?.(false)}
       disabled={!check}
       title={check?.summary}
-      className="grid w-full grid-cols-[5.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 border-b border-white/10 px-3 py-[7px] text-left text-[12px] transition-colors last:border-b-0 hover:bg-white/[0.03] focus-visible:bg-white/[0.04]"
+      className="grid w-full grid-cols-[4.25rem_4.5rem_minmax(0,1fr)] items-start gap-x-3 border-b border-white/10 px-3 py-2 text-left text-[12px] transition-colors last:border-b-0 hover:bg-white/[0.03] focus-visible:bg-white/[0.04]"
     >
-      <span className="font-bold tracking-wider text-white">{label}</span>
-      <span className="truncate text-[10.5px] text-neutral-600">{check?.summary ?? '—'}</span>
-      <span className={cn('text-right text-[11px] font-bold tracking-[0.15em]', tone.text)}>{tone.label}</span>
+      <StatusBadge status={check?.status ?? 'error'} />
+      <span className="pt-0.5 font-bold tracking-wider text-white">{label}</span>
+      <span className="min-w-0">
+        <span className="block truncate pt-0.5 text-[10.5px] text-neutral-600">{check?.summary ?? '—'}</span>
+        {risk && prefix && (
+          <span className="mt-0.5 block text-[11px] leading-snug text-neutral-300">
+            <span className={cn('font-bold', prefix.className)}>{prefix.text}</span> {risk.text}
+          </span>
+        )}
+      </span>
     </button>
   )
 }
@@ -137,7 +145,7 @@ export function SecureMailDashboard({
   const scanned = new Date(report.scanned_at).toLocaleTimeString('en-GB', { timeZone: 'UTC' })
 
   return (
-    <Card className="relative w-full overflow-hidden bg-obsidian font-mono md:h-[700px]">
+    <Card className="relative w-full overflow-hidden bg-obsidian font-mono md:h-[1000px]">
       <Spotlight className="-top-40 left-0 light:hidden md:-top-20 md:left-60" />
 
       <div className="flex h-full flex-col md:flex-row">
@@ -193,7 +201,8 @@ export function SecureMailDashboard({
 
           <section aria-labelledby="posture-heading">
             <Label>
-              <span id="posture-heading">Security posture</span> · <span className="text-neutral-300">{report.domain}</span>
+              <span id="posture-heading">Security posture</span> ·{' '}
+              <span className="text-neutral-300">{report.domain}</span>
             </Label>
             <div className="mt-2 flex items-end gap-4">
               <p className="flex items-baseline gap-3 leading-none tabular-nums">
@@ -221,6 +230,9 @@ export function SecureMailDashboard({
                 <span id="matrix-heading">Attack path matrix</span>
               </Label>
               <Label>7 vectors</Label>
+            </div>
+            <div className="mb-2">
+              <StatusLegend />
             </div>
             <div className="border border-white/10">
               {MATRIX.map(({ id, label }) => (
