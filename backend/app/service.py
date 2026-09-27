@@ -1,4 +1,4 @@
-"""One scan path for every route: demo lookup, cache, live scan, error mapping."""
+"""One scan path for every route: demo lookup, cache, abuse limits, live scan, error mapping."""
 
 from __future__ import annotations
 
@@ -12,9 +12,12 @@ from app.collectors.dns_collect import DomainNotFound
 from app.config import Settings, get_settings
 from app.domain import InvalidDomain, normalize_domain, parse_selectors
 from app.models import Observations, ScanReport
+from app.protection import Protections
 
 _settings = get_settings()
 cache = ScanCache(_settings.cache_path, ttl=_settings.cache_ttl)
+# Per-client rate limits, the concurrent-scan gate and the daily Claude budget (in-process).
+protect = Protections.from_settings(_settings)
 
 
 def parse_request(domain: str, selectors: list[str] | str | None) -> tuple[str, list[str]]:
@@ -38,8 +41,11 @@ def _report_from_cache(hit: dict) -> ScanReport:
     )
 
 
-async def scan(domain: str, selectors: list[str], *, refresh: bool, settings: Settings | None = None) -> ScanReport:
-    """Scan `domain` (already normalised). Raises HTTPException for NXDOMAIN / timeouts."""
+async def scan(
+    domain: str, selectors: list[str], *, refresh: bool, settings: Settings | None = None, client: str = "unknown"
+) -> ScanReport:
+    """Scan `domain` (already normalised). Raises HTTPException for NXDOMAIN / timeouts,
+    RateLimited when `client` has started too many live scans, ServerBusy when the gate is full."""
     settings = settings or _settings
 
     obs = demo.observations_for_domain(domain)
@@ -49,8 +55,13 @@ async def scan(domain: str, selectors: list[str], *, refresh: bool, settings: Se
     if not refresh and not selectors and (hit := await cache.get(domain)):
         return _report_from_cache(hit)
 
+    # A live scan fans out into DNS, port-25 SMTP and HTTPS traffic: rate-limit it per client,
+    # cap how many run at once, and let identical concurrent requests share one scan.
+    protect.check_scan(client)
     try:
-        report = await scanner.run_scan(domain, selectors, settings)
+        report = await protect.gate.run(
+            (domain, tuple(selectors)), lambda: scanner.run_scan(domain, selectors, settings)
+        )
     except DomainNotFound:
         raise HTTPException(status_code=404, detail=f"{domain} does not exist (NXDOMAIN)") from None
     except scanner.ScanTimeout as exc:

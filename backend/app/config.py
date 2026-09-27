@@ -38,6 +38,30 @@ class Settings:
     # directory in Docker to keep it across container restarts.
     cache_path: Path = Path(os.getenv("CACHE_PATH", str(Path(__file__).resolve().parent.parent / "data" / "scans.sqlite3")))
     cache_ttl: int = int(os.getenv("CACHE_TTL", "900"))
+
+    # Abuse protection (in-process: run a single Uvicorn worker, or every limit
+    # is multiplied by the worker count). Keyed by client IP.
+    api_rate_per_minute: float = float(os.getenv("API_RATE_PER_MINUTE", "120"))
+    api_burst: int = int(os.getenv("API_BURST", "60"))
+    # New live scans (each one opens port-25 and HTTPS connections). Cache hits
+    # and the built-in demo domains are not counted.
+    scan_rate_per_minute: float = float(os.getenv("SCAN_RATE_PER_MINUTE", "10"))
+    scan_burst: int = int(os.getenv("SCAN_BURST", "8"))
+    max_concurrent_scans: int = int(os.getenv("MAX_CONCURRENT_SCANS", "8"))
+    scan_queue_timeout: float = float(os.getenv("SCAN_QUEUE_TIMEOUT", "20"))
+
+    # Claude-written narratives. "auto" uses Claude when ANTHROPIC_API_KEY (or
+    # ANTHROPIC_AUTH_TOKEN) is set; "anthropic" lets the SDK resolve credentials
+    # itself (e.g. an `ant auth login` profile); "none" always uses the rule-based writer.
+    llm_provider: str = os.getenv("LLM_PROVIDER", "auto").lower()
+    llm_model: str = os.getenv("LLM_MODEL", "claude-opus-5")
+    llm_timeout: float = float(os.getenv("LLM_TIMEOUT", "90"))
+    llm_fallbacks: bool = _bool("LLM_FALLBACKS", True)
+    llm_daily_budget: int = int(os.getenv("LLM_DAILY_BUDGET", "300"))  # 0 = unlimited
+    llm_credentials_present: bool = bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
+
+    log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_format: str = os.getenv("LOG_FORMAT", "text").lower()  # "text" or "json"
     cors_origins: list[str] = field(
         default_factory=lambda: _csv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     )

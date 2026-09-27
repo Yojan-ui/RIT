@@ -29,8 +29,14 @@ COPY --from=frontend /build/backend/static ./static
 
 EXPOSE 80
 
-# Listens on $PORT if set, otherwise 80.
+# Listens on $PORT if set, otherwise 80. One worker on purpose: rate limits and the scan
+# gate are in-process, so more workers would multiply every limit.
+# X-Forwarded-For is trusted only from FORWARDED_ALLOW_IPS (default: none but localhost), so a
+# client can't forge its IP to dodge the rate limits. Behind a reverse proxy, set it to the
+# proxy's address as seen from the container (e.g. 172.17.0.1 for a proxy on the Docker host).
+ENV FORWARDED_ALLOW_IPS=127.0.0.1
+
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
     CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\", \"80\")}/api/health', timeout=2)"
 
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-80} --proxy-headers --forwarded-allow-ips '*'"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-80} --workers 1 --proxy-headers --forwarded-allow-ips \"$FORWARDED_ALLOW_IPS\""]

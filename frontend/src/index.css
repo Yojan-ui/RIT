@@ -76,6 +76,13 @@
       24px 24px;
     mask-image: radial-gradient(ellipse 120% 90% at 50% 0%, #000 45%, transparent 100%);
   }
+  /* Embedded pages (the Spline iframe): no grid, the host panel supplies the backdrop. */
+  body.embed {
+    background: transparent;
+  }
+  body.embed::before {
+    display: none;
+  }
   ::selection {
     background: color-mix(in srgb, var(--color-ok) 35%, transparent);
     color: #fff;

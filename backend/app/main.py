@@ -11,8 +11,10 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app import __version__, demo, service
+from app import __version__, demo, middleware, service
 from app.api_v1 import router as api_v1
+from app.logging_setup import configure_logging
+from app.protection import RateLimited, ServerBusy
 from app.config import get_settings
 from app.frontend import FrontendFiles
 from app.models import DemoScenario, ScanReport
@@ -21,6 +23,7 @@ from app.scanner import build_report
 log = logging.getLogger("securemailscope")
 
 settings = get_settings()
+configure_logging(settings.log_level, settings.log_format)
 
 app = FastAPI(
     title="SecureMailScope API",
@@ -28,6 +31,19 @@ app = FastAPI(
     description="Email-security posture scanner: SPF, DKIM, DMARC, MTA-STS, TLS-RPT, MX and a live STARTTLS probe.",
 )
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["GET"], allow_headers=["*"])
+
+
+middleware.install(app)
+
+
+@app.exception_handler(RateLimited)
+async def rate_limited(_: Request, exc: RateLimited) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=429, headers={"retry-after": str(exc.retry_after)})
+
+
+@app.exception_handler(ServerBusy)
+async def server_busy(_: Request, exc: ServerBusy) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=503, headers={"retry-after": "10"})
 
 
 @app.exception_handler(Exception)
@@ -44,12 +60,15 @@ async def health() -> dict[str, str]:
 
 @app.get("/api/scan", response_model=ScanReport)
 async def scan(
+    request: Request,
     domain: str = Query(..., max_length=300, description="Domain, URL or email address to scan"),
     dkim_selectors: str | None = Query(None, description="Comma-separated extra DKIM selectors to try"),
 ) -> ScanReport:
     # The UI's Scan button always scans fresh; the result is cached for /api/v1 and recent scans.
     normalized, selectors = service.parse_request(domain, dkim_selectors)
-    return await service.scan(normalized, selectors, refresh=True, settings=settings)
+    return await service.scan(
+        normalized, selectors, refresh=True, settings=settings, client=middleware.client_ip(request)
+    )
 
 
 # ---- Dummy endpoints for UI development (no network access) ---------------- #

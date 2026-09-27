@@ -201,19 +201,23 @@ class RemediationStep(BaseModel):
     priority: int
     title: str
     detail: str
-    record: DnsRecord | None = None  # None for changes that are not DNS (e.g. enabling STARTTLS)
+    record: DnsRecord | None = None  # the DNS record to publish, when the step is a DNS change
     closes: list[str] = Field(default_factory=list)
+    finding_id: str | None = None  # check id the step addresses (Claude-written steps must cite one)
 
 
 class Narrative(BaseModel):
-    """Plain-English account of a scan, written deterministically from the report."""
+    """Plain-English account of a scan. ``source`` records who wrote it."""
 
     domain: str
-    source: Literal["deterministic"] = "deterministic"
+    source: str = "deterministic"  # "deterministic" or "llm:<model>"
+    model: str | None = None
     summary: str
     attack_scenarios: list[str] = Field(default_factory=list)
     remediation_steps: list[RemediationStep] = Field(default_factory=list)
     generated_at: datetime
+    # Why the rule-based writer was used instead of Claude, when it was.
+    fallback_reason: str | None = None
 
 
 class DemoScenario(BaseModel):

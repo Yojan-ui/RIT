@@ -1,4 +1,4 @@
-"""Plain-English narrative of a scan, written deterministically from the report."""
+"""Rule-based narrative writer: always available, and the fallback whenever Claude is not used."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from app.models import Narrative, RemediationStep, ScanReport
 
 
-def write_narrative(report: ScanReport) -> Narrative:
+def write_narrative(report: ScanReport, *, fallback_reason: str | None = None) -> Narrative:
     paths = [p for p in report.attack_paths if p.state != "not_applicable"]
     open_paths = sorted((p for p in paths if p.state == "open"), key=lambda p: -p.severity)
     titles = {p.id: p.title for p in report.attack_paths}
@@ -43,4 +43,5 @@ def write_narrative(report: ScanReport) -> Narrative:
         attack_scenarios=[f"{p.title}: {p.description}" for p in open_paths],
         remediation_steps=steps,
         generated_at=datetime.now(timezone.utc),
+        fallback_reason=fallback_reason,
     )

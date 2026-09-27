@@ -1,14 +1,15 @@
 import { Suspense, lazy, useState } from 'react'
 import { Telemetry } from '@/components/Telemetry'
 import { Card } from '@/components/ui/card'
-import { SplineScene } from '@/components/ui/spline-scene'
 import { Spotlight } from '@/components/ui/spotlight'
 import { CopyButton } from '@/components/primitives'
 import { exportUrl } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { CheckResult, ScanReport, Status, VectorId } from '@/lib/types'
 
-const SPLINE_SCENE = 'https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode'
+// The Spline scene runs in its own page (see src/spline-main.tsx) so its runtime's CSP needs
+// ('unsafe-eval', unpkg.com) never apply to this page, which renders untrusted DNS data.
+const SPLINE_PAGE = '/spline.html'
 
 // three.js is ~1 MB: only fetched if the Defense Lattice view is opened.
 const DefenseLattice = lazy(() => import('@/components/lattice/DefenseLattice'))
@@ -289,7 +290,7 @@ export function SecureMailDashboard({
           <div className="relative h-[380px] min-h-0 md:h-auto md:flex-[1.5]">
             {view === 'spline' ? (
               <>
-                <SplineScene scene={SPLINE_SCENE} className="h-full w-full" />
+                <iframe src={SPLINE_PAGE} title="Interactive 3D scene" className="h-full w-full border-0" />
                 {/* CRT vignette */}
                 <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_100px_rgba(0,0,0,0.9)]" aria-hidden />
                 {/* HUD corners with the scan target */}
