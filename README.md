@@ -124,8 +124,8 @@ Closes or narrows: Exact-domain spoofing
 ### Install and run
 
 ```bash
-git clone <this repository>
-cd securemailscope
+git clone https://github.com/Yojan-ui/SECUREMAILSCOPE.git
+cd SECUREMAILSCOPE
 python3 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
@@ -296,7 +296,14 @@ tests/
   fixtures/            DNS zones and end-to-end scan scenarios
   js/                  Node harness for the single-file edition
   test_*.py
+legacy/                earlier prototype, kept for reference (see below)
 ```
+
+**`legacy/`** holds the first SecureMailScope prototype: an AI-written narrative layer with a
+deterministic fallback, a CLI, and scan history. It is a separate codebase with its own
+`requirements.txt`, tests and scoring weights, and its design notes are in
+`legacy/ARCHITECTURE-NOTES.md`. Everything else in this README describes the current edition at
+the repository root.
 
 **Extending it.** To add a check, subclass `BaseChecker` in `app/engine/checkers/`, implement `async check(ctx)`, and register it in `CHECKERS`. Weights live in `scoring.py` and attack path rules in `attack_paths.py`.
 
