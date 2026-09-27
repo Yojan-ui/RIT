@@ -111,6 +111,17 @@
   {% endif %}
 </div>
 
+{# -- Narrative (loaded after the result so a slow LLM call never delays the scan) -- #}
+<section class="mt-8 rounded-xl border border-line bg-surface p-5 sm:p-6" aria-labelledby="narrative-heading">
+  <h2 id="narrative-heading" class="text-xl font-bold tracking-tight">What this means</h2>
+  <div id="narrative" class="mt-3"
+       hx-get="/api/v1/ui/narrative/{{ result.domain }}"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <p class="animate-pulse text-muted">Writing the summary…</p>
+  </div>
+</section>
+
 {# -- Attack path matrix -------------------------------------------------------- #}
 <section id="attack-matrix" class="mt-8" aria-labelledby="matrix-heading">
   <div class="flex flex-wrap items-end justify-between gap-3">

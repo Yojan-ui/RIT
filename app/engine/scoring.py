@@ -6,17 +6,17 @@ from app.core.constants import GRADE_THRESHOLDS
 from app.models.enums import CheckName, CheckStatus, Grade
 from app.models.schemas import CheckResult, ScoreBreakdown
 
-# Relative importance of each check. Unlisted checks contribute nothing.
+# Relative importance of each check, summing to 100. Unlisted checks (MX, DNSSEC, BIMI) are
+# still run and reported but contribute nothing to the score.
+# DMARC leads because it is the only control that tells receivers to *reject* forged mail;
+# transport is next because a missing or broken STARTTLS exposes every inbound message.
 WEIGHTS: dict[CheckName, float] = {
-    CheckName.DMARC: 25,
+    CheckName.DMARC: 30,
+    CheckName.TRANSPORT: 25,
     CheckName.SPF: 20,
     CheckName.DKIM: 15,
-    CheckName.MTA_STS: 10,
-    CheckName.TRANSPORT: 10,
-    CheckName.TLS_RPT: 5,
-    CheckName.DNSSEC: 5,
-    CheckName.MX: 3,
-    CheckName.BIMI: 2,
+    CheckName.MTA_STS: 7,
+    CheckName.TLS_RPT: 3,
 }
 
 # Fraction of a check's weight awarded for each status. NOT_ASSESSED is deliberately

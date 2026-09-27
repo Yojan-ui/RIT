@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Annotated
 
 import httpx
@@ -14,7 +15,8 @@ from app.core.cache import DomainCache
 from app.core.config import Settings, get_settings
 from app.engine.dns_resolver import DNSResolver
 from app.engine.scanner import build_result, scan_domain
-from app.models.schemas import HealthResponse, ScanRequest, ScanResult
+from app.models.schemas import HealthResponse, Narrative, ScanRequest, ScanResult
+from app.narrative import generate_narrative, llm_enabled
 from app.reports.pdf import render_pdf
 
 router = APIRouter()
@@ -114,6 +116,37 @@ def _attachment(result: ScanResult, ext: str) -> dict[str, str]:
 @router.get("/scan/{domain}", response_model=ScanResult)
 async def scan_get(domain: str, engine: EngineDep) -> ScanResult:
     return await _scan_with_cache(_get_request(domain), engine)
+
+
+# -- Narrative ----------------------------------------------------------------
+NARRATIVE_CACHE_SIZE = 256
+
+
+async def _narrative_for(domain: str, engine: Engine, request: Request) -> Narrative:
+    result = await _scan_with_cache(_get_request(domain), engine)
+    cache: OrderedDict = request.app.state.narratives
+    # One narrative per scan: a re-scan (new scanned_at) or a config change gets a fresh one.
+    key = (result.domain, result.scanned_at.isoformat(), engine.settings.llm_model, llm_enabled(engine.settings))
+    if key in cache:
+        cache.move_to_end(key)
+        return cache[key]
+    narrative = await generate_narrative(result, engine.settings)
+    cache[key] = narrative
+    while len(cache) > NARRATIVE_CACHE_SIZE:
+        cache.popitem(last=False)
+    return narrative
+
+
+@router.get("/scan/{domain}/narrative", response_model=Narrative)
+async def narrative(domain: str, engine: EngineDep, request: Request) -> Narrative:
+    """Plain-English summary, attack scenarios and remediation steps for the latest scan."""
+    return await _narrative_for(domain, engine, request)
+
+
+@router.get("/ui/narrative/{domain}", response_class=HTMLResponse, include_in_schema=False)
+async def narrative_partial(domain: str, engine: EngineDep, request: Request) -> HTMLResponse:
+    item = await _narrative_for(domain, engine, request)
+    return request.app.state.templates.TemplateResponse(request, "partials/narrative.html", {"n": item})
 
 
 # -- Exports ------------------------------------------------------------------

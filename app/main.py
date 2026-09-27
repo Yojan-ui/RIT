@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.cache = cache
     app.state.http = http
+    app.state.narratives = OrderedDict()
     app.state.resolver = DNSResolver(
         timeout=settings.dns_timeout_seconds,
         nameservers=settings.dns_nameservers or None,
@@ -63,7 +65,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
-    app.state.templates = Jinja2Templates(directory=str(settings.templates_dir))
+    templates = Jinja2Templates(directory=str(settings.templates_dir))
+    css_dir = settings.static_dir / "css"
+    # Prebuilt stylesheet (Docker image) when present; otherwise the dev CDN build plus the theme.
+    templates.env.globals["tailwind_built"] = (css_dir / "tailwind.css").is_file()
+    templates.env.globals["tailwind_theme"] = (css_dir / "theme.css").read_text()
+    app.state.templates = templates
     app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
     app.include_router(api_router, prefix=API_PREFIX, tags=["v1"])
 

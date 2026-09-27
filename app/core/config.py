@@ -59,6 +59,16 @@ class Settings(BaseModel):
     # Known-good SMTP host used to tell "port 25 egress blocked" apart from "MX down".
     smtp_egress_probe_host: str = "gmail-smtp-in.l.google.com"
 
+    # Narrative layer. "auto" calls Claude only when credentials are in the environment
+    # (ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN, read by the SDK itself); otherwise, and on
+    # any failure, the deterministic writer is used. "none" never calls an LLM.
+    llm_provider: Literal["auto", "anthropic", "none"] = "auto"
+    llm_model: str = "claude-opus-5"
+    llm_timeout_seconds: float = Field(default=90.0, gt=0)
+    # Server-side refusal fallback (re-runs a declined request on Anthropic's recommended model).
+    llm_fallbacks: bool = True
+    llm_credentials_present: bool = False
+
     templates_dir: Path = BASE_DIR / "templates"
     static_dir: Path = BASE_DIR / "static"
 
@@ -85,6 +95,11 @@ class Settings(BaseModel):
             smtp_helo_name=_env("SMTP_HELO_NAME", "securemailscope.invalid"),
             smtp_max_mx_attempts=int(_env("SMTP_MAX_MX_ATTEMPTS", "2")),
             smtp_egress_probe_host=_env("SMTP_EGRESS_PROBE_HOST", "gmail-smtp-in.l.google.com"),
+            llm_provider=_env("LLM_PROVIDER", "auto").lower(),  # type: ignore[arg-type]
+            llm_model=_env("LLM_MODEL", "claude-opus-5"),
+            llm_timeout_seconds=float(_env("LLM_TIMEOUT_SECONDS", "90")),
+            llm_fallbacks=_env_bool("LLM_FALLBACKS", True),
+            llm_credentials_present=bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN")),
         )
 
 

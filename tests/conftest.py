@@ -43,6 +43,13 @@ def _is_loopback(host) -> bool:
 
 
 @pytest.fixture(autouse=True)
+def _no_llm_credentials(monkeypatch):
+    """Tests never see a developer's real Claude credentials."""
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "SMS_LLM_PROVIDER"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _offline(monkeypatch):
     """Fail fast on real network access so the suite provably runs offline.
 

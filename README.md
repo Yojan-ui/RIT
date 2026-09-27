@@ -4,13 +4,20 @@
 
 SecureMailScope audits a domain's email security (SPF, DKIM, DMARC, MTA-STS, TLS-RPT, MX and live STARTTLS), turns the findings into a 0–100 score, maps them onto **seven concrete attack paths**, and names the **single highest-impact fix**, including the exact DNS record to publish.
 
+## Live demo
+
+| | Link |
+|---|---|
+| **Browser edition** (no install, runs entirely in your browser) | **https://yojan-ui.github.io/SECUREMAILSCOPE/** |
+| **Server edition** (FastAPI, all seven checks, PDF reports, Claude narrative) | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yojan-ui/SECUREMAILSCOPE) |
+
 It ships in two editions that share one scoring engine:
 
 | | **Server edition** (FastAPI) | **Single-file edition** (`offline_scanner.html`) |
 |---|---|---|
 | Install | Python 3.11+, `pip install` | None: open the file in a browser |
 | Checks | All 7, including a live STARTTLS probe of the mail server | 6 of 7 (browsers can't open SMTP connections) |
-| Output | Dashboard, JSON API, JSON and **PDF audit report** | Dashboard, JSON download, print to PDF |
+| Output | Dashboard, plain-English narrative, JSON API, JSON and **PDF audit report** | Dashboard, JSON download, print to PDF |
 | Where it runs | Any machine or server | Anywhere a browser runs, including locked-down laptops |
 
 ---
@@ -25,14 +32,15 @@ It ships in two editions that share one scoring engine:
 6. [How it works](#6-how-it-works)
 7. [API reference](#7-api-reference)
 8. [Testing and verification](#8-testing-and-verification)
-9. [Project layout](#9-project-layout)
-10. [Limitations](#10-limitations)
+9. [Deployment](#9-deployment)
+10. [Project layout](#10-project-layout)
+11. [Limitations](#11-limitations)
 
 ---
 
 ## 1. Try it in two minutes
 
-**Fastest (no install):** double-click `offline_scanner.html`, type a domain (or click one of the examples), and press **Scan domain**.
+**Fastest (no install):** open the [browser edition](https://yojan-ui.github.io/SECUREMAILSCOPE/), or double-click `offline_scanner.html`, type a domain (or click one of the examples), and press **Scan domain**.
 
 **Full edition:**
 
@@ -66,14 +74,16 @@ SecureMailScope answers the three questions an administrator actually has: *How 
 
 A 0–100 score and A–F grade, weighted by how much each control matters:
 
-| Control | Weight | | Control | Weight |
-|---|---|---|---|---|
-| DMARC | 25 | | Transport (STARTTLS) | 10 |
-| SPF | 20 | | TLS-RPT | 5 |
-| DKIM | 15 | | MX | 3 |
-| MTA-STS | 10 | | | |
+| Control | Weight | Why |
+|---|---|---|
+| DMARC | **30** | The only control that tells receivers to *reject* forged mail. SPF and DKIM produce a verdict; DMARC acts on it. |
+| Transport (STARTTLS) | **25** | Missing or broken encryption on the mail server exposes every inbound message. |
+| SPF | **20** | Lists the servers allowed to send for the domain. |
+| DKIM | **15** | Signs mail so tampering and forgery are detectable, and keeps DMARC working through forwarding. |
+| MTA-STS | **7** | Stops attackers stripping encryption from inbound mail. |
+| TLS-RPT | **3** | Reports delivery encryption failures to you. |
 
-Pass earns full weight, weak (warn) earns half, fail or missing earns nothing. Grades: **A** ≥ 90, **B** ≥ 80, **C** ≥ 65, **D** ≥ 50, **F** below.
+MX records are checked and reported but not scored. Pass earns full weight, weak (warn) earns half, fail or missing earns nothing. Grades: **A** ≥ 90, **B** ≥ 80, **C** ≥ 65, **D** ≥ 50, **F** below.
 
 **Honest degradation.** A control the scanner *cannot measure* is marked **not assessed** and removed from the denominator. It is never scored as a failure. Examples:
 - Outbound port 25 is blocked (common on cloud hosts and campus networks). The scanner first checks whether it can reach a known-good mail server; if it can't, the problem is on the scanner's side, not the domain's.
@@ -106,6 +116,14 @@ TXT record at _dmarc.gmail.com
 v=DMARC1; p=quarantine; sp=quarantine; rua=mailto:mailauth-reports@google.com
 Closes or narrows: Exact-domain spoofing
 ```
+
+### A plain-English narrative
+
+Under the score, a **"What this means"** section explains the findings for a non-specialist: a summary, how an attacker would use each gap, and what to fix in order.
+
+- With an `ANTHROPIC_API_KEY` configured, **Claude** (default model `claude-opus-5`) writes it from the scan's findings only.
+- Every Claude response is **checked before it is shown**. It is rejected if it states a score or grade the engine didn't compute, cites a finding that doesn't exist, or proposes fixes when the engine found nothing wrong.
+- A rejected response, a missing key, a timeout, a refusal or an API error all fall back to a built-in **rule-based writer**. The narrative never depends on a live API call, and the page always says who wrote it.
 
 ### Reports
 
@@ -157,6 +175,9 @@ The ones you are most likely to change:
 | `SMS_DNS_MODE` | `auto` | `auto` uses UDP port 53 and falls back to DNS-over-HTTPS if UDP is blocked; `udp` or `doh` forces one. |
 | `SMS_CACHE_TTL_SECONDS` | `3600` | How long a scan is cached in `data/cache.sqlite3`. |
 | `SMS_DNS_RATE_PER_SECOND` / `SMS_DNS_BURST` | `20` / `40` | Per-domain DNS rate limit, so a scan never floods a nameserver. |
+| `ANTHROPIC_API_KEY` | unset | Enables Claude-written narratives. Without it the rule-based writer is used. |
+| `SMS_LLM_MODEL` | `claude-opus-5` | Claude model for the narrative. |
+| `SMS_LLM_PROVIDER` | `auto` | `auto` uses Claude only when a key is set; `none` never calls an LLM. |
 
 ---
 
@@ -170,7 +191,7 @@ The ones you are most likely to change:
 2. Enter a domain and press **Scan domain**. Optionally add your DKIM selectors, e.g. `google` or `selector1`.
 3. Use **Download JSON** or **Print or save as PDF** to keep the result.
 
-You can also link straight to a scan: `offline_scanner.html?domain=example.com`. It works from a USB stick, an email attachment or any static web host.
+You can also link straight to a scan: `offline_scanner.html?domain=example.com`, or [yojan-ui.github.io/SECUREMAILSCOPE/?domain=example.com](https://yojan-ui.github.io/SECUREMAILSCOPE/?domain=example.com). It works from a USB stick, an email attachment or any static web host. `docs/index.html` is the copy GitHub Pages serves, and a test keeps it identical to `offline_scanner.html`.
 
 ### How it works without a backend
 
@@ -187,27 +208,47 @@ The browser engine is a line-for-line JavaScript port of the Python engine, and 
 | STARTTLS on the mail server | Always **not measured** | Browsers cannot open raw TCP connections to port 25. |
 | MTA-STS policy file | Read when the domain's web server allows cross-origin requests; otherwise **not measured** | Browser security (CORS) blocks reading most third-party files. The MTA-STS DNS record is always checked. |
 
-Both are excluded from the score, not counted as failures, so the browser score can differ from the server score for the same domain. For example, gmail.com scores 66 on the server (which reads its MTA-STS policy and tests STARTTLS) and 53 in the browser, where those two controls drop out and the weak DMARC policy carries more weight. Use the server edition when you need the full picture.
+Both are excluded from the score, not counted as failures, so the browser score can differ from the server score for the same domain. For example, gmail.com scores **65 (C)** on the server, which reads its MTA-STS policy and tests STARTTLS, and **43 (F)** in the browser. There those two passing controls (32 points) drop out, so its `p=none` DMARC policy carries more of the remaining weight. Use the server edition when you need the full picture.
 
 ---
 
 ## 6. How it works
 
+```mermaid
+flowchart LR
+    user(["Browser"])
+
+    subgraph pages["GitHub Pages: docs/index.html"]
+        lite["Browser edition<br/>same engine in JavaScript"]
+    end
+
+    subgraph render["Render: Docker image, Uvicorn + FastAPI"]
+        ui["HTMX dashboard"] --> api["API /api/v1"]
+        api --> scanner["Scanner"]
+        scanner --> checks["Checkers in parallel<br/>MX, SPF, DKIM, DMARC,<br/>MTA-STS, TLS-RPT, STARTTLS"]
+        checks --> score["Scoring<br/>not-assessed excluded"]
+        checks --> paths["7 attack paths"]
+        paths --> fix["One fix"]
+        score --> result["ScanResult"]
+        paths --> result
+        fix --> result
+        result --> cache[("SQLite cache")]
+        result --> export["JSON and PDF exports"]
+        result --> narrative["Narrative"]
+        narrative -- "findings only" --> claude["Claude API"]
+        claude -- "grounding check" --> narrative
+        narrative -. "no key or rejected" .-> rules["Rule-based writer"]
+    end
+
+    user --> lite
+    user --> ui
+    lite -- "DNS over HTTPS" --> doh["Cloudflare / Google DoH"]
+    checks -- "DNS" --> dns[("Public DNS")]
+    checks -- "SMTP port 25" --> mx["Domain's mail servers"]
+    checks -- "HTTPS" --> sts["mta-sts policy file"]
 ```
-             ┌──────────────── Checkers (async, run in parallel) ────────────────┐
- domain ───▶ │ MX · SPF (recursive) · DKIM (selector probe) · DMARC · MTA-STS ·  │
-             │ TLS-RPT · Transport (live STARTTLS)                               │
-             └─────────────────────────────────┬─────────────────────────────────┘
-                                               │ check results (status, findings, data)
-                         ┌─────────────────────┼─────────────────────┐
-                         ▼                     ▼                     ▼
-                  Scoring (weights,     Attack path rules      One-fix picker
-                  not-assessed          (7 paths × 4 states)   (risk-weighted, rescored)
-                  excluded)
-                         └─────────────────────┼─────────────────────┘
-                                               ▼
-                   ScanResult ──▶ HTMX dashboard · JSON API · PDF report · cache
-```
+
+A scan runs every checker concurrently, then three pure functions turn the check results into the score, the attack-path matrix and the one fix. The browser edition runs the same pipeline in JavaScript, and the test suite requires both engines to produce identical results. The narrative sits after the engine and can only restate what it found.
 
 **What each check verifies**
 
@@ -223,7 +264,7 @@ Both are excluded from the score, not counted as failures, so the browser score 
 
 **Choosing the one fix.** Each open path adds its severity weight (critical 10, high 6, medium 3, low 1) to the control that would fix it, at full weight if open and half if partly open. The control with the most weight wins. Ties go to the fix with the larger score gain, which is measured by re-scoring the scan as if that control passed.
 
-**Tech stack.** Python 3.11+, FastAPI, Pydantic 2, dnspython, httpx, cryptography, ReportLab, Jinja2, HTMX and Tailwind CSS. The single-file edition is vanilla JavaScript with no libraries.
+**Tech stack.** Python 3.11+, FastAPI, Pydantic 2, dnspython, httpx, cryptography, ReportLab, the Anthropic Python SDK, Jinja2, HTMX and Tailwind CSS. The single-file edition is vanilla JavaScript with no libraries.
 
 ---
 
@@ -238,6 +279,7 @@ Base path: `/api/v1`. Full interactive docs are at `/docs`.
 | `GET` | `/scan/{domain}` | Scan (or return the cached scan of) a domain |
 | `GET` | `/scan/{domain}/json` | Download the scan as a JSON file |
 | `GET` | `/scan/{domain}/pdf` | Download the formal PDF audit report |
+| `GET` | `/scan/{domain}/narrative` | Plain-English summary, attack scenarios and ordered fixes; `source` says whether Claude or the rule-based writer wrote it |
 | `GET` | `/recent` | Recently scanned domains |
 
 Both export endpoints accept `?dkim_selectors=s1,s2`. Domains are normalised first, so `https://Example.com/path` and `user@example.com` both mean `example.com`. IP addresses are rejected with HTTP 422.
@@ -256,17 +298,19 @@ Key response fields: `score` (`score`, `grade`, `components`, `not_assessed`), `
 ## 8. Testing and verification
 
 ```bash
-pip install -r requirements.txt    # includes pytest
+pip install -r requirements-dev.txt
 pytest
 ```
 
-The suite has **248 tests** and runs in a few seconds, **fully offline**. An autouse guard fails any test that tries to reach the network (other than loopback), so a passing run proves nothing depends on live DNS.
+The suite has **283 tests** and runs in a few seconds, **fully offline**. An autouse guard fails any test that tries to reach the network (other than loopback), so a passing run proves nothing depends on live DNS.
 
 | Area | What is verified |
 |---|---|
 | End-to-end scenarios (`tests/fixtures/scenarios.json`) | Complete fake domains scanned through the real engine: an **unprotected domain → grade F** (all 7 paths open), a **fully hardened domain → grade A** (all 7 defended), and a **cloud host with port 25 blocked → grade A**, with transport excluded from the score, not deducted. Each scenario pins every check status and all seven path outcomes. |
 | Attack paths (`tests/test_attack_paths.py`) | Every rule's every outcome: 47 cases, plus a check that each of the 7 paths can reach all 4 states. |
 | Checkers | SPF lookup counting and loops, DKIM key parsing (512 to 3072-bit RSA, Ed25519), DMARC tags and inheritance, MTA-STS policy rules, and STARTTLS against a real local SMTP server with generated certificates. |
+| Narrative (`tests/test_narrative.py`) | The rule-based writer on real scenarios, including the clean-domain case (no invented work) and not-assessed checks described as gaps. The grounding validator rejects wrong scores, wrong grades, unknown finding ids and invented issues. The Claude path is tested with a fake client for success, refusal, truncation, timeouts, rate limits and connection failure, all of which must fall back cleanly. |
+| Deployment (`tests/test_deploy.py`) | The GitHub Pages copy is identical to `offline_scanner.html`, the Dockerfile and dev template pin the same Tailwind version, the image runs as a non-root user on `$PORT`, and the production stylesheet keeps every colour class the templates build at runtime. |
 | Exports (`tests/test_exports.py`) | JSON and PDF endpoints, filenames, invalid input, deterministic PDF output, and escaping of hostile text inside the PDF. |
 | **Browser edition parity** (`tests/test_offline_build.py`) | Extracts the engine from `offline_scanner.html`, runs it under Node.js on the same fixtures as the Python engine, and requires **identical** check statuses, findings, score, attack matrix and one fix across 10 scenarios. It also compares domain normalisation, DNS-over-HTTPS answer parsing, RSA key sizes, and that the HTML file loads nothing external. |
 
@@ -274,10 +318,34 @@ The parity tests need Node.js 18+ and are skipped if it is not installed.
 
 ---
 
-## 9. Project layout
+## 9. Deployment
+
+### Docker
+
+```bash
+docker build -t securemailscope .
+docker run -p 8000:8000 -e ANTHROPIC_API_KEY=sk-ant-... securemailscope   # the key is optional
+```
+
+The image builds the dashboard's stylesheet with Tailwind's standalone CLI (no Node.js), installs only runtime dependencies, runs as an unprivileged user, listens on `$PORT` (default 8000) and has a health check on `/api/v1/health`.
+
+### Render
+
+`render.yaml` is a Render Blueprint. Click **Deploy to Render** above, or in the Render dashboard choose **New → Blueprint** and select this repository. Add `ANTHROPIC_API_KEY` when prompted if you want Claude-written narratives. Many hosting providers block outbound port 25; when that happens the STARTTLS check is reported as not assessed and left out of the score.
+
+### GitHub Pages (browser edition)
+
+`docs/index.html` is a copy of `offline_scanner.html`. To publish it: repository **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `/docs`**. After changing `offline_scanner.html`, run `cp offline_scanner.html docs/index.html` (a test fails if you forget).
+
+---
+
+## 10. Project layout
 
 ```
 offline_scanner.html   single-file edition (engine + UI, no dependencies)
+docs/index.html        GitHub Pages copy of offline_scanner.html
+Dockerfile, render.yaml, .dockerignore
+requirements.txt       runtime dependencies (requirements-dev.txt adds pytest)
 app/
   main.py              FastAPI app and dashboard route
   api/routes.py        JSON API, HTMX partials, JSON/PDF exports
@@ -290,6 +358,7 @@ app/
     attack_paths.py    the seven attack path rules
     remediation.py     one-fix selection and DNS record generation
   models/              Pydantic schemas and enums
+  narrative/           rule-based writer, Claude writer, grounding validator
   reports/pdf.py       PDF audit report (ReportLab)
   templates/, static/  Jinja2 + HTMX + Tailwind dashboard
 tests/
@@ -300,7 +369,7 @@ legacy/                earlier prototype, kept for reference (see below)
 ```
 
 **`legacy/`** holds the first SecureMailScope prototype: an AI-written narrative layer with a
-deterministic fallback, a CLI, and scan history. It is a separate codebase with its own
+deterministic fallback (now ported into `app/narrative/`), a CLI, and scan history. It is a separate codebase with its own
 `requirements.txt`, tests and scoring weights, and its design notes are in
 `legacy/ARCHITECTURE-NOTES.md`. Everything else in this README describes the current edition at
 the repository root.
@@ -309,10 +378,11 @@ the repository root.
 
 ---
 
-## 10. Limitations
+## 11. Limitations
 
 - **Point-in-time.** A scan reflects DNS and mail server configuration at the moment it runs.
 - **DKIM needs your selector** for a definitive verdict, because selectors cannot be discovered through DNS.
 - **STARTTLS needs outbound port 25**, which many cloud providers and networks block. SecureMailScope detects this and excludes the check instead of guessing.
 - **Organisational domain detection** uses a built-in list of common multi-part suffixes (such as `co.uk` and `co.in`) rather than the full Public Suffix List.
-- **The dashboard loads Tailwind CSS from a CDN** for development convenience. A production deployment should pre-build the stylesheet. The single-file edition has no such dependency.
+- **The browser edition cannot measure STARTTLS** (25 points) and usually cannot read MTA-STS policy files, so its score for the same domain can be noticeably lower or higher than the server's. Both editions exclude what they can't measure rather than guessing.
+- **In local development the dashboard compiles Tailwind in the browser** from a CDN. The Docker image ships a prebuilt stylesheet instead.

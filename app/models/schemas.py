@@ -107,6 +107,29 @@ class ScanResult(BaseModel):
     one_fix: Remediation | None = None
 
 
+class RemediationStep(BaseModel):
+    priority: int
+    finding_id: str
+    action: str
+    title: str = ""
+    severity: Severity | None = None
+    rationale: str = ""
+
+
+class Narrative(BaseModel):
+    """Plain-English account of a scan. ``source`` records who wrote it."""
+
+    domain: str
+    source: str  # "deterministic" or "llm:<model>"
+    summary: str
+    attack_scenarios: list[str] = Field(default_factory=list)
+    remediation_steps: list[RemediationStep] = Field(default_factory=list)
+    model: str | None = None
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Why the deterministic writer was used instead of the LLM, if it was.
+    fallback_reason: str | None = None
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     app: str

@@ -297,7 +297,12 @@ def render_pdf(
                     f'<font color="{EXPOSURE_COLOR[STATUS_EXPOSURE[c.status]].hexval()}"><b>{STATUS_LABEL[c.status]}</b></font>',
                     st["cell"],
                 ),
-                Paragraph("excluded" if points is None else f"{points:g}", st["cell"]),
+                Paragraph(
+                    f"{points:g}" if points is not None
+                    else "excluded" if c.name.value in result.score.not_assessed
+                    else "not scored",
+                    st["cell"],
+                ),
                 Paragraph(_esc(c.summary), st["cell"]),
             ]
         )

@@ -37,10 +37,25 @@ def test_warn_gives_half_credit():
     assert breakdown.components == {"spf": 10.0}
 
 
+def test_weights_match_the_published_model():
+    from app.engine.scoring import WEIGHTS
+
+    assert {k.value: v for k, v in WEIGHTS.items()} == {
+        "dmarc": 30, "transport": 25, "spf": 20, "dkim": 15, "mta_sts": 7, "tls_rpt": 3,
+    }
+    assert sum(WEIGHTS.values()) == 100
+
+
+def test_mx_is_reported_but_not_scored():
+    breakdown = score_results([_r(CheckName.DMARC, CheckStatus.PASS), _r(CheckName.MX, CheckStatus.FAIL)])
+    assert breakdown.score == 100
+    assert "mx" not in breakdown.components
+
+
 def test_weighting_is_relative():
-    # DMARC (25) pass + SPF (20) fail -> 25/45 ≈ 56
+    # DMARC (30) pass + SPF (20) fail -> 30/50 = 60
     results = [_r(CheckName.DMARC, CheckStatus.PASS), _r(CheckName.SPF, CheckStatus.FAIL)]
-    assert score_results(results).score == 56
+    assert score_results(results).score == 60
 
 
 def test_not_assessed_is_removed_from_denominator():
@@ -48,11 +63,11 @@ def test_not_assessed_is_removed_from_denominator():
     with_na = assessed + [_r(CheckName.TRANSPORT, CheckStatus.NOT_ASSESSED)]
     with_fail = assessed + [_r(CheckName.TRANSPORT, CheckStatus.FAIL)]
 
-    assert score_results(with_na).score == score_results(assessed).score == 56
+    assert score_results(with_na).score == score_results(assessed).score == 60
     assert score_results(with_na).not_assessed == ["transport"]
     assert "transport" not in score_results(with_na).components
-    # Scoring it as a failure would have dragged the grade down.
-    assert score_results(with_fail).score == 45
+    # Scoring it as a failure would have dragged the grade down: 30/75.
+    assert score_results(with_fail).score == 40
 
 
 def test_everything_not_assessed():

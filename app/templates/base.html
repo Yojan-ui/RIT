@@ -7,24 +7,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500&display=swap">
-  {# Tailwind's in-browser build: fine for development; swap for a CLI-built stylesheet in production. #}
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <style type="text/tailwindcss">
-    @theme inline {
-      --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
-      --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-      --color-paper: var(--paper);
-      --color-surface: var(--surface);
-      --color-ink: var(--ink);
-      --color-muted: var(--muted);
-      --color-line: var(--line);
-      --color-exposed: var(--exposed);
-      --color-partial: var(--partial);
-      --color-mitigated: var(--mitigated);
-      --color-unknown: var(--unknown);
-      --color-focus: var(--focus);
-    }
-  </style>
+  {% if tailwind_built %}
+  <link rel="stylesheet" href="{{ url_for('static', path='css/tailwind.css') }}">
+  {% else %}
+  {# Development only: Tailwind's in-browser compiler. The Docker image ships a prebuilt tailwind.css instead. #}
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3"></script>
+  <style type="text/tailwindcss">{{ tailwind_theme | safe }}</style>
+  {% endif %}
   <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
   <script src="{{ url_for('static', path='js/app.js') }}" defer></script>

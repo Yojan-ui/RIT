@@ -19,6 +19,7 @@ dependencies = [
     "cryptography>=42",
     "idna>=3.6",
     "reportlab>=4.0",
+    "anthropic>=1.0",
 ]
 
 [project.optional-dependencies]

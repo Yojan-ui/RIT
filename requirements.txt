@@ -1,3 +1,4 @@
+# Runtime dependencies (what the Docker image installs). Development: pip install -r requirements-dev.txt
 fastapi>=0.110
 uvicorn[standard]>=0.29
 pydantic>=2.6
@@ -8,5 +9,4 @@ python-multipart>=0.0.9
 cryptography>=42
 idna>=3.6
 reportlab>=4.0
-pytest>=8.0
-pytest-asyncio>=0.23
+anthropic>=1.0
