@@ -5,7 +5,7 @@
 // the same report (tags, MX hosts, probe results).
 
 import { PATH_VECTORS, VECTOR_ORDER } from './meta'
-import type { AttackPath, CheckResult, DnsRecord, Fix, ScanReport, VectorId } from './types'
+import type { AttackPath, CheckResult, DnsRecord, Fix, PlanEffort, PlanStep, ScanReport, VectorId } from './types'
 
 export interface Artifact {
   /** Short caption, e.g. "Stage 2 · quarantine". */
@@ -34,6 +34,23 @@ export interface Remedy {
   isOneFix: boolean
   /** Changed on the mail server, not in DNS. */
   serverSide: boolean
+  /** How much hands-on work it is (see EFFORT_INFO). */
+  effort: PlanEffort
+  /** The fix-plan step for this vector: its simulated after-state. Absent when no simulation covers it. */
+  step?: PlanStep
+  /** What is published today, to set against the records below. */
+  current: string[]
+}
+
+// Fallback effort when the backend ranked no fix for the vector.
+const DEFAULT_EFFORT: Record<VectorId, PlanEffort> = {
+  spf: 'paste',
+  dkim: 'provider',
+  dmarc: 'paste',
+  mx: 'paste',
+  starttls: 'server',
+  mta_sts: 'paste+host',
+  tls_rpt: 'paste',
 }
 
 type Provider = 'google' | 'microsoft' | null
@@ -475,6 +492,7 @@ export function buildRemediation(report: ScanReport): Remedy[] {
     [...report.other_fixes, ...(report.one_fix ? [report.one_fix] : [])].map((f) => [f.id, f]),
   )
   const open = report.attack_paths.filter((p) => p.state === 'open')
+  const planSteps = report.fix_plan?.steps ?? []
 
   const remedies = report.checks.flatMap((check): Remedy[] => {
     if (check.status !== 'fail' && check.status !== 'warn') return []
@@ -490,6 +508,10 @@ export function buildRemediation(report: ScanReport): Remedy[] {
         fix,
         isOneFix: report.one_fix?.id === check.id,
         serverSide: built.serverSide ?? false,
+        step: planSteps.find((s) => s.id === check.id),
+        effort: fix?.effort ?? DEFAULT_EFFORT[check.id],
+        // MTA-STS records include the fetched policy file; only the TXT record is "what is published".
+        current: check.id === 'mta_sts' ? check.records.slice(0, 1) : check.records,
       },
     ]
   })

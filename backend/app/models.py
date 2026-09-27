@@ -149,6 +149,32 @@ class Fix(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class PlanStep(BaseModel):
+    """One step of the fix plan, simulated on top of every earlier step."""
+
+    id: str  # vector the step changes
+    title: str
+    kind: Literal["dns", "server"]
+    effort: Literal["paste", "paste+host", "provider", "server"]
+    record: DnsRecord | None  # None for server-side changes
+    closes: list[str]
+    score_before: int
+    score_after: int
+    grade_after: str
+    statuses_after: dict[str, Status]  # every check's status once this step is done
+
+
+class FixPlan(BaseModel):
+    """Greedy sequence of fixes: apply the best one, re-analyze, repeat."""
+
+    steps: list[PlanStep]
+    final_score: int
+    final_grade: str
+    open_before: int
+    open_after: int
+    remaining: list[str]  # attack-path ids still open after the whole plan
+
+
 class ScanReport(BaseModel):
     domain: str
     mode: Literal["live", "demo"]
@@ -161,6 +187,7 @@ class ScanReport(BaseModel):
     attack_paths: list[AttackPath]
     one_fix: Fix | None
     other_fixes: list[Fix]
+    fix_plan: FixPlan | None = None  # None on reports cached before plans existed
     observations: Observations
     cached: bool = False  # served from the scan cache rather than scanned just now
 

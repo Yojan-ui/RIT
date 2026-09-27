@@ -17,7 +17,7 @@ from datetime import date
 
 from app.analysis.checks import evaluate_all
 from app.analysis.parsers import parse_spf, parse_tags
-from app.models import AttackPath, CheckResult, DkimKey, DnsRecord, Fix, Observations, TxtLookup
+from app.models import AttackPath, CheckResult, DkimKey, DnsRecord, Fix, FixPlan, Observations, PlanStep, TxtLookup
 
 # --------------------------------------------------------------------------- #
 # Score
@@ -185,7 +185,7 @@ def evaluate_attack_paths(posture: Posture) -> list[AttackPath]:
 # Stand-in for "your provider's 2048-bit key" when simulating the DKIM fix:
 # 392 base64 chars decode to 294 bytes, which estimate_dkim_key_bits reads as 2048.
 _SIMULATED_DKIM_KEY = "A" * 392
-_EFFORT_RANK = {"paste": 0, "paste+host": 1, "provider": 2}
+_EFFORT_RANK = {"paste": 0, "paste+host": 1, "provider": 2, "server": 3}
 
 
 @dataclass
@@ -323,6 +323,21 @@ def _tls_rpt_candidate(obs: Observations, checks: dict[str, CheckResult], p: Pos
 _CANDIDATE_BUILDERS = (_dmarc_candidate, _spf_candidate, _dkim_candidate, _mta_sts_candidate, _tls_rpt_candidate)
 
 
+def _starttls_candidate(obs: Observations, checks: dict[str, CheckResult], p: Posture) -> _Candidate | None:
+    """Server-side, so never The One Fix; the fix plan uses it because it unlocks MTA-STS."""
+    if not p.receives_mail or obs.starttls is None or p.starttls not in {"missing", "broken", "bad_cert", "legacy_tls"}:
+        return None
+
+    def apply(o: Observations) -> None:
+        o.starttls = o.starttls.model_copy(update={
+            "reachable": True, "ehlo_ok": True, "starttls_offered": True, "tls_version": "TLSv1.3",
+            "cipher": "TLS_AES_256_GCM_SHA384", "cert_valid": True, "cert_error": None, "error": None})
+
+    title = {"bad_cert": "Install a valid certificate on the MX", "legacy_tls": "Disable TLS 1.0/1.1 on the MX"}.get(
+        p.starttls, "Enable STARTTLS on the MX")
+    return _Candidate("starttls", title, DnsRecord(type="-", host=obs.starttls.host, value="-"), "server", apply)
+
+
 # --------------------------------------------------------------------------- #
 # Analysis entry point
 # --------------------------------------------------------------------------- #
@@ -352,6 +367,55 @@ def analyze(obs: Observations, *, rank_fixes: bool = True) -> Analysis:
     return analysis
 
 
+def _simulate(obs: Observations, before: Analysis, candidate: _Candidate) -> tuple[Observations, Analysis, list[str]]:
+    """Apply a candidate to a copy of the observations; return it, the re-analysis and the paths it closed."""
+    simulated = obs.model_copy(deep=True)
+    candidate.apply(simulated)
+    after = analyze(simulated, rank_fixes=False)
+    still_open = {a.id for a in after.attack_paths if a.state == "open"}
+    closed = [a.id for a in before.attack_paths if a.state == "open" and a.id not in still_open]
+    return simulated, after, closed
+
+
+def plan_fixes(obs: Observations, *, max_steps: int = 8) -> FixPlan:
+    """Greedy fix plan: pick the best fix by the One Fix ordering, apply it, re-analyze, repeat.
+
+    Unlike the per-fix ranking, each step is simulated on top of the previous
+    ones, so later steps see what earlier ones unlocked (e.g. SPF before DMARC
+    enforcement, STARTTLS before MTA-STS).
+    """
+    current = obs.model_copy(deep=True)
+    before = analyze(current, rank_fixes=False)
+    open_before = sum(a.state == "open" for a in before.attack_paths)
+    steps: list[PlanStep] = []
+    for _ in range(max_steps):
+        best = None
+        for build in (*_CANDIDATE_BUILDERS, _starttls_candidate):
+            candidate = build(current, before.checks, before.posture)
+            if candidate is None:
+                continue
+            simulated, after, closed = _simulate(current, before, candidate)
+            if not closed and after.score <= before.score:
+                continue
+            severity = sum(a.severity for a in before.attack_paths if a.id in closed)
+            key = (-severity, -(after.score - before.score), _EFFORT_RANK[candidate.effort])
+            if best is None or key < best[0]:
+                best = (key, candidate, simulated, after, closed)
+        if best is None:
+            break
+        _, candidate, simulated, after, closed = best
+        server = candidate.effort == "server"
+        steps.append(PlanStep(
+            id=candidate.id, title=candidate.title, kind="server" if server else "dns", effort=candidate.effort,
+            record=None if server else candidate.record, closes=closed, score_before=before.score,
+            score_after=after.score, grade_after=after.grade,
+            statuses_after={k: c.status for k, c in after.checks.items()}))
+        current, before = simulated, after
+    return FixPlan(steps=steps, final_score=before.score, final_grade=before.grade, open_before=open_before,
+                   open_after=sum(a.state == "open" for a in before.attack_paths),
+                   remaining=[a.id for a in before.attack_paths if a.state == "open"])
+
+
 def _rank_fixes(obs: Observations, before: Analysis) -> list[Fix]:
     open_before = {a.id: a for a in before.attack_paths if a.state == "open"}
     fixes: list[Fix] = []
@@ -359,11 +423,7 @@ def _rank_fixes(obs: Observations, before: Analysis) -> list[Fix]:
         candidate = build(obs, before.checks, before.posture)
         if candidate is None:
             continue
-        simulated = obs.model_copy(deep=True)
-        candidate.apply(simulated)
-        after = analyze(simulated, rank_fixes=False)
-        still_open = {a.id for a in after.attack_paths if a.state == "open"}
-        closed = [pid for pid in open_before if pid not in still_open]
+        _, after, closed = _simulate(obs, before, candidate)
         if not closed and after.score <= before.score:
             continue
         severity = sum(open_before[pid].severity for pid in closed)

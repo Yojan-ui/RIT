@@ -1,5 +1,6 @@
 import { ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
+import { EFFORT_INFO } from '@/lib/meta'
 import { cn } from '@/lib/utils'
 import { buildRemediation, type Artifact, type Remedy } from '@/lib/remediation'
 import type { ScanReport, VectorId } from '@/lib/types'
@@ -25,13 +26,77 @@ function ArtifactBlock({ artifact }: { artifact: Artifact }) {
   )
 }
 
+/** Before/after for one fix: status, score and what is published, plus how much work it is. */
+function AfterFix({ remedy, planIndex }: { remedy: Remedy; planIndex: number }) {
+  const effort = EFFORT_INFO[remedy.effort]
+  const after = remedy.step?.statuses_after[remedy.id]
+  return (
+    <section className="border border-white/10">
+      <div className="grid grid-cols-2 divide-x divide-white/10 border-b border-white/10">
+        <div className="px-3 py-2">
+          <p className="eyebrow mb-1.5">Now</p>
+          <StatusBadge status={remedy.status} />
+        </div>
+        <div className="px-3 py-2">
+          <p className="eyebrow mb-1.5">After this fix</p>
+          {after ? (
+            <StatusBadge status={after} />
+          ) : (
+            <span className="inline-flex h-5 items-center border border-dashed border-na px-1.5 font-mono text-[10px] tracking-wider text-slate-500">
+              MANUAL · NOT SIMULATED
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="space-y-1 px-3 py-2 font-mono text-[11px] text-slate-400">
+        {remedy.fix ? (
+          <p>
+            Score if done now: <span className="text-slate-100 tabular-nums">{remedy.fix.score_before}</span> →{' '}
+            <span className="text-ok tabular-nums">{remedy.fix.score_after}</span>
+          </p>
+        ) : remedy.step ? (
+          <p>
+            As step {planIndex + 1} of the fix plan:{' '}
+            <span className="text-slate-100 tabular-nums">{remedy.step.score_before}</span> →{' '}
+            <span className="text-ok tabular-nums">{remedy.step.score_after}</span>
+          </p>
+        ) : null}
+        <p>
+          <span className="text-slate-500">Effort:</span> <span className="text-slate-100">{effort.time}</span> ·{' '}
+          {effort.who}. {effort.note}
+        </p>
+        {remedy.id === 'dmarc' && remedy.step && remedy.fix?.record.value.includes('p=quarantine') && (
+          <p className="text-warn">Then wait 2 to 4 weeks of clean reports before tightening to p=reject.</p>
+        )}
+      </div>
+      <div className="border-t border-white/10 px-3 py-2">
+        <p className="eyebrow mb-1">Published now</p>
+        {remedy.current.length ? (
+          remedy.current.map((r) => (
+            <pre
+              key={r}
+              className="font-mono text-[10.5px] leading-relaxed break-all whitespace-pre-wrap text-slate-500"
+            >
+              {r}
+            </pre>
+          ))
+        ) : (
+          <p className="font-mono text-[10.5px] text-slate-600">— nothing published —</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function RemedyItem({
   remedy,
   index,
+  planIndex,
   onAim,
 }: {
   remedy: Remedy
   index: number
+  planIndex: number
   onAim?: (id: VectorId | null) => void
 }) {
   const gain = remedy.fix ? remedy.fix.score_after - remedy.fix.score_before : 0
@@ -78,6 +143,7 @@ function RemedyItem({
               ))}
             </ol>
           </section>
+          <AfterFix remedy={remedy} planIndex={planIndex} />
           {remedy.closes.length > 0 && (
             <section>
               <h4 className="eyebrow mb-1.5">Closes</h4>
@@ -138,7 +204,15 @@ export function RemediationPanel({ report, onAim }: { report: ScanReport; onAim?
         </span>
       </PanelHeader>
       {remedies.length ? (
-        remedies.map((r, i) => <RemedyItem key={`${report.domain}-${r.id}`} remedy={r} index={i} onAim={onAim} />)
+        remedies.map((r, i) => (
+          <RemedyItem
+            key={`${report.domain}-${r.id}`}
+            remedy={r}
+            index={i}
+            planIndex={r.step ? (report.fix_plan?.steps.indexOf(r.step) ?? -1) : -1}
+            onAim={onAim}
+          />
+        ))
       ) : (
         <p className="flex items-center gap-2 px-4 py-4 font-mono text-[11px] tracking-wider text-ok">
           <ShieldCheck className="size-4" aria-hidden />

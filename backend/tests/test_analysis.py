@@ -3,7 +3,7 @@ import pytest
 from app import demo
 from app.analysis.checks import WEIGHTS, evaluate_dmarc, evaluate_mta_sts, evaluate_spf
 from app.analysis.parsers import estimate_dkim_key_bits, mx_matches_pattern, parse_spf, parse_tags
-from app.analysis.scoring import analyze
+from app.analysis.scoring import analyze, plan_fixes
 from app.models import MtaStsLookup, MxHost, MxLookup, SpfLookup, Status, TxtLookup
 
 
@@ -114,3 +114,43 @@ def test_unreachable_port_25_is_excluded_from_score():
     assert result.checks["starttls"].status == Status.ERROR
     assert not result.checks["starttls"].applicable
     assert result.one_fix.id == "mta_sts"
+
+
+# ---- fix plan ----------------------------------------------------------------- #
+
+
+def _plan(scenario_id: str):
+    return plan_fixes(demo.observations_for(scenario_id))
+
+
+def test_fix_plan_is_empty_for_a_perfect_domain():
+    plan = _plan("fortress")
+    assert plan.steps == [] and plan.final_score == 100 and plan.open_after == 0
+
+
+def test_fix_plan_scores_rise_step_by_step_and_chain():
+    for scenario in ("startup", "wide-open", "legacy-corp", "parked", "firewalled"):
+        plan = _plan(scenario)
+        assert plan.steps, scenario
+        for prev, step in zip(plan.steps, plan.steps[1:]):
+            assert step.score_before == prev.score_after  # each step builds on the last
+        assert all(s.score_after > s.score_before or s.closes for s in plan.steps)
+        assert plan.final_score == plan.steps[-1].score_after
+
+
+def test_fix_plan_first_step_matches_the_one_fix_when_it_is_dns():
+    for scenario in ("startup", "legacy-corp", "parked", "firewalled"):
+        assert _plan(scenario).steps[0].id == _run(scenario).one_fix.id, scenario
+
+
+def test_fix_plan_orders_prerequisites_first():
+    ids = [s.id for s in _plan("wide-open").steps]
+    assert ids.index("starttls") < ids.index("mta_sts")  # enforcing MTA-STS needs working TLS
+    assert ids.index("spf") < ids.index("dmarc")  # the first DMARC step is enforcement only once auth passes
+    starttls = next(s for s in _plan("wide-open").steps if s.id == "starttls")
+    assert starttls.kind == "server" and starttls.record is None
+
+
+def test_fix_plan_reports_paths_it_cannot_close():
+    plan = _plan("legacy-corp")  # 13 SPF lookups: flattening is manual, so no simulated fix exists
+    assert plan.remaining == ["envelope_spoofing"] and plan.final_score < 100

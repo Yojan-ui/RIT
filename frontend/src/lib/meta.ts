@@ -1,4 +1,4 @@
-import type { Effort, PathState, Status, VectorId } from './types'
+import type { Effort, PathState, PlanEffort, Status, VectorId } from './types'
 
 export const VECTOR_ORDER: VectorId[] = ['spf', 'dkim', 'dmarc', 'mx', 'starttls', 'mta_sts', 'tls_rpt']
 
@@ -51,6 +51,31 @@ export const EFFORT_LABEL: Record<Effort, string> = {
   paste: 'Paste one record',
   'paste+host': 'Record + hosted file',
   provider: 'Needs mail provider',
+}
+
+/** Hands-on time and owner per kind of fix; minutes feed the plan's total. */
+export const EFFORT_INFO: Record<PlanEffort, { minutes: number; time: string; who: string; note: string }> = {
+  paste: { minutes: 5, time: '~5 min', who: 'DNS admin', note: 'Live once DNS propagates, usually within the hour.' },
+  'paste+host': {
+    minutes: 30,
+    time: '~30 min',
+    who: 'DNS admin + web host',
+    note: 'A DNS record plus a small file served over HTTPS.',
+  },
+  provider: {
+    minutes: 20,
+    time: '~20 min',
+    who: 'Mail provider admin',
+    note: 'Generate the key in the provider console, then publish it in DNS.',
+  },
+  server: { minutes: 60, time: '~1 h', who: 'Mail server admin', note: 'A mail-server config change and restart.' },
+}
+
+export function formatMinutes(total: number): string {
+  if (total < 60) return `~${total} min`
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  return m ? `~${h} h ${m} min` : `~${h} h`
 }
 
 export function scoreTone(score: number): string {

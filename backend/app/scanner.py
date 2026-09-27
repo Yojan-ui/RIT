@@ -6,7 +6,7 @@ import asyncio
 import time
 from datetime import datetime, timezone
 
-from app.analysis.scoring import analyze
+from app.analysis.scoring import analyze, plan_fixes
 from app.collectors.dns_collect import DnsClient, collect_dkim, collect_mx, collect_spf, collect_txt
 from app.collectors.mta_sts_fetch import PolicyFetchError, fetch_policy
 from app.collectors.netguard import is_public_ip
@@ -100,6 +100,7 @@ def build_report(
         attack_paths=result.attack_paths,
         one_fix=result.one_fix,
         other_fixes=result.fixes[1:],
+        fix_plan=plan_fixes(obs),
         observations=obs,
     )
 

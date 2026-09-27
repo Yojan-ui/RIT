@@ -48,6 +48,32 @@ export interface Fix {
   caveats: string[]
 }
 
+export type PlanEffort = Effort | 'server'
+
+/** One step of the fix plan, simulated on top of every earlier step. */
+export interface PlanStep {
+  id: VectorId
+  title: string
+  kind: 'dns' | 'server'
+  effort: PlanEffort
+  record: DnsRecord | null
+  closes: string[]
+  score_before: number
+  score_after: number
+  grade_after: string
+  statuses_after: Record<VectorId, Status>
+}
+
+export interface FixPlan {
+  steps: PlanStep[]
+  final_score: number
+  final_grade: string
+  open_before: number
+  open_after: number
+  /** Attack-path ids still open once every step is done. */
+  remaining: string[]
+}
+
 export interface ScanReport {
   domain: string
   mode: 'live' | 'demo'
@@ -60,6 +86,8 @@ export interface ScanReport {
   attack_paths: AttackPath[]
   one_fix: Fix | null
   other_fixes: Fix[]
+  /** Absent on reports cached before plans existed. */
+  fix_plan?: FixPlan | null
   observations: Observations
   /** Served from the scan cache rather than scanned just now. */
   cached?: boolean
