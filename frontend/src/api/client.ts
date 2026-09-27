@@ -1,4 +1,4 @@
-import type { DemoDomain, Health, Narrative, ScanRequest, ScanResult } from './types'
+import type { DemoDomain, Health, Narrative, RecentScan, ScanRequest, ScanResult } from './types'
 
 // Same origin by default: the Vite dev server proxies /api to FastAPI, and in production FastAPI
 // serves this app. Set VITE_API_BASE_URL only when the backend lives on another origin.
@@ -38,8 +38,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if ((err as Error).name === 'AbortError') throw err
     throw new ApiError(0, 'Cannot reach the SecureMailScope API.')
   }
-  const body: unknown = await response.json().catch(() => null)
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch (err) {
+    // A request cancelled while its body is downloading must stay cancelled, not become null data.
+    if ((err as Error).name === 'AbortError') throw err
+  }
   if (!response.ok) throw new ApiError(response.status, describe(response.status, body))
+  if (body === null) throw new ApiError(response.status, 'The server sent a response that could not be read.')
   return body as T
 }
 
@@ -48,6 +55,7 @@ export const api = {
   demoDomains: (signal?: AbortSignal) => request<DemoDomain[]>('/demo-domains', { signal }),
   scan: (body: ScanRequest, signal?: AbortSignal) =>
     request<ScanResult>('/scan', { method: 'POST', body: JSON.stringify(body), signal }),
+  recent: (limit = 8, signal?: AbortSignal) => request<RecentScan[]>(`/recent?limit=${limit}`, { signal }),
   narrative: (domain: string, signal?: AbortSignal) =>
     request<Narrative>(`/scan/${encodeURIComponent(domain)}/narrative`, { signal }),
   /** Direct download links (the browser handles the file). */

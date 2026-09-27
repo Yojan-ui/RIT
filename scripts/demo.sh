@@ -4,17 +4,15 @@
 #   scripts/demo.sh           set up (first run only) and start the dashboard on http://127.0.0.1:8000
 #   scripts/demo.sh check     set up, then verify the demo works with no network, and exit
 #
-# Run it once while online: it creates .venv, installs dependencies and builds the dashboard
-# stylesheet. After that it starts with no internet connection at all, and the built-in
+# Run it once while online: it creates .venv, installs Python and web dependencies and builds
+# the React app. After that it starts with no internet connection at all, and the built-in
 # demo domains (*.example) scan fully offline.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PYTHON="${PYTHON:-python3}"
 PORT="${PORT:-8000}"
-CSS_OUT="app/static/css/tailwind.css"
-TAILWIND_VERSION="$(sed -n 's/^ARG TAILWIND_VERSION=//p' Dockerfile)"
-TAILWIND_BIN=".cache/tailwindcss-${TAILWIND_VERSION}"
+DIST="frontend/dist/index.html"
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -29,29 +27,15 @@ if ! .venv/bin/python -c "import fastapi, dns, reportlab, anthropic" 2>/dev/null
   .venv/bin/pip install --quiet -r requirements.txt || die "pip install failed: run this once while online"
 fi
 
-# 2. Dashboard stylesheet (otherwise the dashboard compiles Tailwind from a CDN, which needs internet)
-needs_build() {
-  [ ! -f "$CSS_OUT" ] && return 0
-  [ -n "$(find app/templates app/static/css/tailwind.src.css app/static/css/theme.css -newer "$CSS_OUT" -type f 2>/dev/null)" ]
-}
-if needs_build; then
-  if [ ! -x "$TAILWIND_BIN" ]; then
-    case "$(uname -s)-$(uname -m)" in
-      Darwin-arm64) asset=macos-arm64 ;;
-      Darwin-x86_64) asset=macos-x64 ;;
-      Linux-x86_64) asset=linux-x64 ;;
-      Linux-aarch64 | Linux-arm64) asset=linux-arm64 ;;
-      *) die "no Tailwind binary for $(uname -s)-$(uname -m); build the Docker image instead" ;;
-    esac
-    say "Downloading Tailwind CLI ${TAILWIND_VERSION} (needs internet once)"
-    mkdir -p .cache
-    curl --retry 4 --retry-all-errors -fsSL -o "$TAILWIND_BIN.tmp" \
-      "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-${asset}" \
-      || die "could not download the Tailwind CLI: run this once while online"
-    chmod +x "$TAILWIND_BIN.tmp" && mv "$TAILWIND_BIN.tmp" "$TAILWIND_BIN"
-  fi
-  say "Building $CSS_OUT"
-  "$TAILWIND_BIN" -i app/static/css/tailwind.src.css -o "$CSS_OUT" --minify 2>/dev/null
+# 2. The React app (built once; FastAPI serves frontend/dist at /)
+command -v npm >/dev/null || die "Node.js 20.19+ is needed to build the web app: https://nodejs.org"
+if [ ! -d frontend/node_modules ] || [ frontend/package-lock.json -nt frontend/node_modules ]; then
+  say "Installing web app dependencies (needs internet once)"
+  (cd frontend && npm ci --no-audit --no-fund) || die "npm ci failed: run this once while online"
+fi
+if [ ! -f "$DIST" ] || [ -n "$(find frontend/src frontend/index.html frontend/public frontend/vite.config.ts -newer "$DIST" -type f 2>/dev/null)" ]; then
+  say "Building the web app"
+  (cd frontend && npm run build >/dev/null) || die "web app build failed: run 'cd frontend && npm run build' to see why"
 fi
 
 # 3. Pre-flight: every demo domain scans with no network and lands on its intended grade

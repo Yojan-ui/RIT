@@ -144,6 +144,11 @@ class DemoDomain(_Model):
     story: str
 
 
+class RecentScan(_Model):
+    domain: str
+    scanned_at: datetime
+
+
 class HealthResponse(_Model):
     status: str = "ok"
     app: str

@@ -1,4 +1,4 @@
-# Keep the build context to what the image needs: requirements.txt and app/.
+# Keep the build context to what the image needs: requirements.txt, app/ and the frontend sources.
 .git
 .venv
 venv
@@ -11,5 +11,5 @@ data/
 tests/
 legacy/
 docs/
-frontend/
-app/static/css/tailwind.css
+frontend/node_modules
+frontend/dist

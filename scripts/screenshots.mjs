@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Regenerates the slide screenshot pack in docs/screenshots/ (light theme, 2x, internet blocked).
+// Regenerates the slide screenshot pack in docs/screenshots/ (terminal theme, 2x, internet blocked).
 //
-//   scripts/demo.sh &                  # dashboard on http://127.0.0.1:8000
+//   scripts/demo.sh &                  # web app on http://127.0.0.1:8000
 //   node scripts/screenshots.mjs       # BASE_URL=... and CHROME=/path/to/chrome to override
 //
 // Drives Chrome over the DevTools protocol with Node's built-in WebSocket (Node 22+), so it needs
@@ -19,19 +19,21 @@ const BASE = (process.env.BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, ""
 const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9333;
 
-const SHOTS = [
-  { file: "01-dashboard-grade-c.png", url: `${BASE}/?domain=monitor-only.example`, width: 1440, clip: { top: 0, height: 1180 }, wait: "narrative" },
-  { file: "02-score-and-fix-grade-f.png", url: `${BASE}/?domain=unprotected.example`, width: 1440, selector: "#result > div.grid" },
-  { file: "03-clean-domain-grade-a.png", url: `${BASE}/?domain=hardened.example`, width: 1440, selector: "#result > div.grid" },
-  { file: "04-attack-path-matrix.png", url: `${BASE}/?domain=rollout.example#attack-matrix`, width: 1440, selector: "#attack-matrix", checkScroll: true },
-  { file: "05-narrative.png", url: `${BASE}/?domain=unprotected.example`, width: 1440, selector: 'section[aria-labelledby="narrative-heading"]', wait: "narrative" },
-  { file: "07-mobile.png", url: `${BASE}/?domain=monitor-only.example`, width: 390, height: 844, mobile: true, clip: { top: 0, height: 1800 } },
-];
+// Panels are <section>s headed by <h2>; find one by its heading text.
+const panel = (title) => `[...document.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === ${JSON.stringify(title)})`
 
-const READY = {
-  scan: "!!document.querySelector('#attack-matrix')",
-  narrative: "!!document.querySelector('#narrative > div, #narrative > p.mt-5')",
-};
+const SHOTS = [
+  { file: "01-terminal-overview.png", url: `${BASE}/?domain=monitor-only.example`, width: 1440, clip: { top: 0, height: 900 } },
+  { file: "02-priority-fix-grade-f.png", url: `${BASE}/?domain=unprotected.example`, width: 1440, element: panel("Priority fix") },
+  { file: "03-clean-domain-grade-a.png", url: `${BASE}/?domain=hardened.example`, width: 1440, clip: { top: 0, height: 900 } },
+  { file: "04-attack-matrix.png", url: `${BASE}/?domain=rollout.example`, width: 1440, element: panel("Attack matrix") },
+  { file: "05-briefing.png", url: `${BASE}/?domain=unprotected.example`, width: 1440, element: panel("Briefing") },
+  { file: "06-posture-3d.png", url: `${BASE}/?domain=monitor-only.example`, width: 1440, element: panel("Posture") },
+  { file: "07-mobile.png", url: `${BASE}/?domain=monitor-only.example`, width: 390, height: 844, mobile: true, clip: { top: 0, height: 1800 } },
+]
+
+// A finished scan: the matrix is on screen and the briefing has loaded.
+const READY = "document.body.innerText.includes('ATTACK MATRIX') && !document.querySelector('[role=status]')"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -74,25 +76,17 @@ async function shoot(page, shot) {
   await page.send("Emulation.setDeviceMetricsOverride", {
     width: shot.width, height, deviceScaleFactor: shot.mobile ? 3 : 2, mobile: !!shot.mobile,
   });
-  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
   await page.send("Page.navigate", { url: shot.url });
-  await waitFor(page, READY.scan, "the scan result");
-  if (shot.wait === "narrative") await waitFor(page, READY.narrative, "the narrative");
+  await waitFor(page, READY, "the scan result and briefing");
   await evaluate(page, "document.fonts.ready.then(() => true)");
-  await sleep(700); // let the postmark animation finish
-
-  if (shot.checkScroll) {
-    const y = await evaluate(page, "window.scrollY");
-    if (!(y > 0)) throw new Error(`expected the #attack-matrix deep link to scroll the page, scrollY=${y}`);
-    console.log(`    deep link scrolled to y=${Math.round(y)}`);
-  }
+  await sleep(1200); // let the 3D view settle
 
   let clip;
-  if (shot.selector) {
-    const r = await evaluate(page, `(() => { const el = document.querySelector(${JSON.stringify(shot.selector)});
+  if (shot.element) {
+    const r = await evaluate(page, `(() => { const el = ${shot.element};
       if (!el) return null; const b = el.getBoundingClientRect();
-      return { x: b.left + scrollX - 16, y: b.top + scrollY - 16, width: b.width + 32, height: b.height + 32 }; })()`);
-    if (!r) throw new Error(`selector not found: ${shot.selector}`);
+      return { x: b.left + scrollX - 12, y: b.top + scrollY - 12, width: b.width + 24, height: b.height + 24 }; })()`);
+    if (!r) throw new Error(`panel not found for ${shot.file}`);
     clip = { ...r, scale: 1 };
   } else {
     clip = { x: 0, y: shot.clip.top, width: shot.width, height: shot.clip.height, scale: 1 };
@@ -128,7 +122,7 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   const profile = mkdtempSync(join(tmpdir(), "sms-chrome-"));
   const chrome = spawn(CHROME, [
-    "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--allow-file-access-from-files",
+    "--headless=new", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "--no-first-run", "--allow-file-access-from-files",
     `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
     "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost",
     "about:blank",

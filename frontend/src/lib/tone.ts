@@ -1,4 +1,4 @@
-import type { CheckStatus, Exposure, Grade } from '@/api/types'
+import type { CheckStatus, Exposure, Grade, Severity } from '@/api/types'
 
 /** One vocabulary for colour: every status maps to a meaning, and the theme maps meaning to colour. */
 export type Tone = 'secure' | 'partial' | 'vulnerable' | 'unknown'
@@ -61,4 +61,12 @@ export const CONTROL_LABEL: Record<string, string> = {
   transport: 'STARTTLS',
   bimi: 'BIMI',
   dnssec: 'DNSSEC',
+}
+
+export const SEVERITY_TONE: Record<Severity, Tone> = {
+  critical: 'vulnerable',
+  high: 'vulnerable',
+  medium: 'partial',
+  low: 'unknown',
+  info: 'unknown',
 }

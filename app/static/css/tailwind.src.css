@@ -1,9 +1,0 @@
-/* Production stylesheet source. Built in the Docker image with:
-     tailwindcss -i app/static/css/tailwind.src.css -o app/static/css/tailwind.css --minify
-   When tailwind.css exists, base.html links it; otherwise it falls back to the browser CDN build. */
-@import "tailwindcss";
-@import "./theme.css";
-@source "../../templates";
-/* Colour classes the templates build at render time ('bg-' ~ tone, text-{{ tone }}): the CLI only
-   sees literal class names, so list every tone explicitly. */
-@source inline("{bg,text}-{exposed,partial,mitigated,unknown}");

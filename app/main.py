@@ -7,19 +7,16 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from app.api.routes import router as api_router
 from app.core.cache import DomainCache
 from app.core.config import get_settings
 from app.core.constants import API_PREFIX
 from app.core.logging import configure_logging, get_logger
-from app.demo import demo_domains, is_demo
 from app.engine.dns_resolver import DNSResolver, RateLimiter
+from app.web import mount_frontend
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -67,14 +64,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
-    templates = Jinja2Templates(directory=str(settings.templates_dir))
-    css_dir = settings.static_dir / "css"
-    # Prebuilt stylesheet (Docker image) when present; otherwise the dev CDN build plus the theme.
-    templates.env.globals["tailwind_built"] = (css_dir / "tailwind.css").is_file()
-    templates.env.globals["tailwind_theme"] = (css_dir / "theme.css").read_text()
-    templates.env.globals["is_demo"] = is_demo
-    app.state.templates = templates
-    app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
     app.include_router(api_router, prefix=API_PREFIX, tags=["v1"])
     if settings.cors_origins:
         app.add_middleware(
@@ -83,16 +72,8 @@ def create_app() -> FastAPI:
             allow_methods=["GET", "POST"],
             allow_headers=["content-type"],
         )
-
-    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    async def dashboard(request: Request, domain: str = "") -> HTMLResponse:
-        return app.state.templates.TemplateResponse(
-            request,
-            "index.html",
-            # ?domain=... pre-fills the form and scans on load, so a result can be bookmarked or linked.
-            {"app_name": settings.app_name, "version": settings.version, "demos": demo_domains(), "domain": domain[:253]},
-        )
-
+    # Registered last: the React app catches every path the API and /docs don't.
+    mount_frontend(app, settings.frontend_dist)
     return app
 
 

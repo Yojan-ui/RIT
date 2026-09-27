@@ -73,8 +73,8 @@ class Settings(BaseModel):
     # hosted separately from the backend; same-origin and the Vite dev proxy need nothing).
     cors_origins: list[str] = Field(default_factory=list)
 
-    templates_dir: Path = BASE_DIR / "templates"
-    static_dir: Path = BASE_DIR / "static"
+    # Built React app (frontend/dist), served at / when present.
+    frontend_dist: Path = PROJECT_ROOT / "frontend" / "dist"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -100,6 +100,7 @@ class Settings(BaseModel):
             smtp_max_mx_attempts=int(_env("SMTP_MAX_MX_ATTEMPTS", "2")),
             smtp_egress_probe_host=_env("SMTP_EGRESS_PROBE_HOST", "gmail-smtp-in.l.google.com"),
             cors_origins=_env_list("CORS_ORIGINS", []),
+            frontend_dist=Path(_env("FRONTEND_DIST", str(PROJECT_ROOT / "frontend" / "dist"))),
             llm_provider=_env("LLM_PROVIDER", "auto").lower(),  # type: ignore[arg-type]
             llm_model=_env("LLM_MODEL", "claude-opus-5"),
             llm_timeout_seconds=float(_env("LLM_TIMEOUT_SECONDS", "90")),

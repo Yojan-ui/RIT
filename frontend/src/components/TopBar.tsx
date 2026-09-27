@@ -26,14 +26,14 @@ export function TopBar({ link }: { link: ApiLink }) {
         <span className="font-mono text-xs font-semibold tracking-wider text-ink">SECUREMAILSCOPE</span>
         <span className="hidden font-mono text-2xs text-dim sm:inline">EMAIL POSTURE TERMINAL</span>
       </div>
-      <div className="flex items-center gap-5 font-mono text-2xs">
+      <div className="flex items-center gap-5 whitespace-nowrap font-mono text-2xs">
         <span className="flex items-center gap-2" title={link.state === 'offline' ? link.error : undefined}>
           <span className={cn('size-1.5', tone)} aria-hidden="true" />
           <span className="text-dim">API</span>
           <span className={cn('tabular', link.state === 'offline' ? 'text-vulnerable' : 'text-ink')}>{status}</span>
           {link.state === 'online' && <span className="hidden text-dim md:inline">v{link.version}</span>}
         </span>
-        <span className="tabular text-ink" aria-label="Coordinated universal time">
+        <span className="tabular hidden text-ink sm:inline" aria-label="Coordinated universal time">
           {clock} <span className="text-dim">UTC</span>
         </span>
       </div>

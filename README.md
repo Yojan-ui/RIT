@@ -4,7 +4,7 @@
 
 SecureMailScope audits a domain's email security (SPF, DKIM, DMARC, MTA-STS, TLS-RPT, MX and live STARTTLS), turns the findings into a 0–100 score, maps them onto **seven concrete attack paths**, and names the **single highest-impact fix**, including the exact DNS record to publish.
 
-![SecureMailScope dashboard: grade C, the one fix worth +30 points, and the plain-English narrative](docs/screenshots/01-dashboard-grade-c.png)
+![SecureMailScope terminal: grade C, the attack matrix, the one fix worth +30 points and the 3D posture view](docs/screenshots/01-terminal-overview.png)
 
 ## Live demo
 
@@ -12,7 +12,7 @@ SecureMailScope audits a domain's email security (SPF, DKIM, DMARC, MTA-STS, TLS
 |---|---|
 | **SecureMailScope** (FastAPI, all seven checks, PDF reports, Claude narrative) | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yojan-ui/SECUREMAILSCOPE) |
 
-A new **React terminal UI** (Vite, Tailwind CSS, React Three Fiber) is being built in `frontend/`, alongside the current server-rendered dashboard. See [Frontend](#5-frontend-react-terminal).
+The UI is a **React terminal** (Vite, Tailwind CSS, React Three Fiber) in `frontend/`, served by FastAPI at `/`. See [Frontend](#5-frontend-react-terminal).
 
 ---
 
@@ -34,16 +34,23 @@ A new **React terminal UI** (Vite, Tailwind CSS, React Three Fiber) is being bui
 
 ## 1. Try it in two minutes
 
-**Presenting?** See **[DEMO.md](DEMO.md)** for the five-minute judge walkthrough, a fallback plan and likely questions. `scripts/demo.sh` sets everything up and starts the dashboard, which then works with no internet connection.
+**Presenting?** See **[DEMO.md](DEMO.md)** for the five-minute judge walkthrough, a fallback plan and likely questions. `scripts/demo.sh` installs everything, builds the web app and starts it; after the first run it works with no internet connection.
 
+
+```bash
+scripts/demo.sh        # macOS/Linux: sets up Python + Node deps, builds the web app, starts on :8000
+```
+
+Or by hand (Python 3.11+, Node.js 20.19+):
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+(cd frontend && npm ci && npm run build)
 uvicorn app.main:app --reload
 ```
 
-Open **http://localhost:8000** and click one of the **demo domains** under the form (Fully hardened, Mid-rollout, Monitor-only DMARC, No DMARC, Unprotected). They grade A, B, C, D and F and scan with no network. Or scan a real domain such as `github.com`, then click **Download PDF report**.
+Open **http://localhost:8000** and click one of the **demo targets** under the command line (Fully hardened, Mid-rollout, Monitor-only DMARC, No DMARC, Unprotected). They grade A, B, C, D and F and scan with no network. Or scan a real domain such as `github.com`, then click **Download PDF report**.
 
 ---
 
@@ -97,7 +104,7 @@ Every finding is translated into what an attacker can do. Each path is rated **O
 | 6 | **Weak transport encryption:** no STARTTLS, legacy TLS or a bad certificate on the mail server | Medium | Live STARTTLS probe |
 | 7 | **Undetected abuse:** spoofing and TLS failures happen without anyone being told | Low | DMARC `rua=` and TLS-RPT |
 
-The dashboard shows these as a matrix: paths as rows, controls as columns. Each cell shows how well that control defends *that particular path*. For example, a DMARC record with `p=none; sp=reject` fails path 1 but defends path 2.
+The terminal shows these as a matrix: paths as rows, controls as columns. Each cell shows how well that control defends *that particular path*. For example, a DMARC record with `p=none; sp=reject` fails path 1 but defends path 2.
 
 ### The one fix
 
@@ -151,7 +158,7 @@ uvicorn app.main:app --reload
 
 | URL | What it is |
 |---|---|
-| http://localhost:8000/ | Dashboard |
+| http://localhost:8000/ | The web app (built React terminal) |
 | http://localhost:8000/docs | Interactive API documentation (Swagger UI) |
 | http://localhost:8000/api/v1/health | Health check |
 
@@ -182,9 +189,11 @@ The ones you are most likely to change:
 
 ## 5. Frontend (React terminal)
 
-`frontend/` is the next-generation UI: a dark, dense terminal in the visual language of MochaTrade, built with **React 19, Vite, TypeScript, Tailwind CSS 4 and React Three Fiber**. It talks only to the FastAPI API. The server-rendered dashboard at `/` stays in place until the React app covers every view.
+`frontend/` is the UI: a dark, dense terminal in the visual language of MochaTrade, built with **React 19, Vite, TypeScript, Tailwind CSS 4 and React Three Fiber**. It talks only to the JSON API. In production FastAPI serves the built app at `/` (`frontend/dist`, or `SMS_FRONTEND_DIST`); hashed assets are cached for a year and `index.html` is revalidated on every load.
 
-### Run it
+**Views:** command line with demo targets, recent scans and a `--fresh` (skip cache) flag; score strip with demo and not-assessed notices; the attack matrix (seven paths by six controls, each row expanding to how the attack works); the briefing (plain-English narrative, attacker playbook and remediation queue, written by Claude when a key is configured); expandable controls with every record and finding; the priority fix with a copyable DNS record and PDF/JSON export; and the 3D posture view. On phones the fix moves directly under the score. `?domain=example.com` scans on load, and the address bar always links to the current result.
+
+### Develop
 
 ```bash
 # terminal 1: the API
@@ -194,7 +203,7 @@ uvicorn app.main:app --reload
 cd frontend && npm install && npm run dev
 ```
 
-Open **http://localhost:5173**. `?domain=monitor-only.example` scans on load.
+Open **http://localhost:5173**. Without a build, http://localhost:8000/ shows how to get one; the API and `/docs` work either way.
 
 ### How it reaches the API
 
@@ -230,12 +239,12 @@ npm run lint
 flowchart LR
     user(["Browser"])
 
-    subgraph web["React terminal: Vite + R3F"]
+    subgraph web["React terminal: Vite + R3F, served at /"]
         spa["React app<br/>typed API client"]
     end
 
     subgraph render["Render: Docker image, Uvicorn + FastAPI"]
-        ui["HTMX dashboard"] --> api["API /api/v1"]
+        api["API /api/v1"]
         api --> scanner["Scanner"]
         scanner --> checks["Checkers in parallel<br/>MX, SPF, DKIM, DMARC,<br/>MTA-STS, TLS-RPT, STARTTLS"]
         checks --> score["Scoring<br/>not-assessed excluded"]
@@ -253,7 +262,6 @@ flowchart LR
     end
 
     user --> spa
-    user --> ui
     spa -- "/api/v1 (JSON)" --> api
     checks -- "DNS" --> dns[("Public DNS")]
     checks -- "SMTP port 25" --> mx["Domain's mail servers"]
@@ -276,7 +284,7 @@ A scan runs every checker concurrently, then three pure functions turn the check
 
 **Choosing the one fix.** Each open path adds its severity weight (critical 10, high 6, medium 3, low 1) to the control that would fix it, at full weight if open and half if partly open. The control with the most weight wins. Ties go to the fix with the larger score gain, which is measured by re-scoring the scan as if that control passed.
 
-**Tech stack.** Python 3.11+, FastAPI, Pydantic 2, dnspython, httpx, cryptography, ReportLab, the Anthropic Python SDK, Jinja2, HTMX and Tailwind CSS. The React terminal uses React 19, Vite, TypeScript, Tailwind CSS 4, React Three Fiber and three.js.
+**Tech stack.** Python 3.11+, FastAPI, Pydantic 2, dnspython, httpx, cryptography, ReportLab, and the Anthropic Python SDK. The React terminal uses React 19, Vite, TypeScript, Tailwind CSS 4, React Three Fiber and three.js.
 
 ---
 
@@ -315,7 +323,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The suite has **287 tests** and runs in a few seconds, **fully offline**. An autouse guard fails any test that tries to reach the network (other than loopback), so a passing run proves nothing depends on live DNS.
+The suite has **284 tests** and runs in a few seconds, **fully offline**. An autouse guard fails any test that tries to reach the network (other than loopback), so a passing run proves nothing depends on live DNS.
 
 | Area | What is verified |
 |---|---|
@@ -323,9 +331,10 @@ The suite has **287 tests** and runs in a few seconds, **fully offline**. An aut
 | Attack paths (`tests/test_attack_paths.py`) | Every rule's every outcome: 47 cases, plus a check that each of the 7 paths can reach all 4 states. |
 | Checkers | SPF lookup counting and loops, DKIM key parsing (512 to 3072-bit RSA, Ed25519), DMARC tags and inheritance, MTA-STS policy rules, and STARTTLS against a real local SMTP server with generated certificates. |
 | Narrative (`tests/test_narrative.py`) | The rule-based writer on real scenarios, including the clean-domain case (no invented work) and not-assessed checks described as gaps. The grounding validator rejects wrong scores, wrong grades, unknown finding ids and invented issues. The Claude path is tested with a fake client for success, refusal, truncation, timeouts, rate limits and connection failure, all of which must fall back cleanly. |
-| Demo domains (`tests/test_demo.py`) | Every demo scans to its intended grade with the network blocked, is labelled as a demo on screen and in the PDF, and `?domain=` deep links are escaped. The dashboard loads nothing from the internet. |
+| Demo domains (`tests/test_demo.py`) | Every demo scans to its intended grade with the network blocked, and is labelled as a demo in the PDF. `GET /demo-domains` lists them for the web app. |
 | Frontend contract (`tests/test_frontend_contract.py`) | The committed OpenAPI schema and generated TypeScript types match the backend, response fields are required in the contract, and CORS is off unless origins are configured. |
-| Deployment (`tests/test_deploy.py`) | The Dockerfile and dev template pin the same Tailwind version, the image runs as a non-root user on `$PORT`, and the production stylesheet keeps every colour class the templates build at runtime. |
+| Web app serving (`tests/test_web.py`) | FastAPI serves the built app at `/` with the right cache headers, falls back to it for client-side URLs, never lets `/api/*` fall through, refuses files outside `dist/`, and explains itself when no build exists. |
+| Deployment (`tests/test_deploy.py`) | The image builds the React app from its lockfile, serves it from `frontend/dist`, runs as a non-root user on `$PORT`, and the build context includes the frontend sources but not `node_modules`. |
 | Exports (`tests/test_exports.py`) | JSON and PDF endpoints, filenames, invalid input, deterministic PDF output, and escaping of hostile text inside the PDF. |
 
 
@@ -340,7 +349,7 @@ docker build -t securemailscope .
 docker run -p 8000:8000 -e ANTHROPIC_API_KEY=sk-ant-... securemailscope   # the key is optional
 ```
 
-The image builds the dashboard's stylesheet with Tailwind's standalone CLI (no Node.js), installs only runtime dependencies, runs as an unprivileged user, listens on `$PORT` (default 8000) and has a health check on `/api/v1/health`.
+The image builds the React app in a Node stage (from `package-lock.json`), installs only runtime Python dependencies, runs as an unprivileged user, listens on `$PORT` (default 8000) and has a health check on `/api/v1/health`.
 
 ### Render
 
@@ -358,8 +367,9 @@ scripts/               demo.sh (one-command offline demo), generate_api_types.py
 Dockerfile, render.yaml, .dockerignore
 requirements.txt       runtime dependencies (requirements-dev.txt adds pytest)
 app/
-  main.py              FastAPI app and dashboard route
-  api/routes.py        JSON API, HTMX partials, JSON/PDF exports
+  main.py              FastAPI app factory
+  web.py               serves the built React app at /
+  api/routes.py        JSON API and JSON/PDF exports
   core/                settings (SMS_* env vars), constants, logging, SQLite TTL cache
   engine/
     checkers/          mx, spf, dkim, dmarc, mta_sts, tls_rpt, transport
@@ -372,7 +382,6 @@ app/
   narrative/           rule-based writer, Claude writer, grounding validator
   demo/                built-in demo domains (zones.json) and their offline resolver
   reports/pdf.py       PDF audit report (ReportLab)
-  templates/, static/  Jinja2 + HTMX + Tailwind dashboard
 tests/
   fixtures/            DNS zones and end-to-end scan scenarios
   test_*.py
@@ -395,4 +404,4 @@ the repository root.
 - **DKIM needs your selector** for a definitive verdict, because selectors cannot be discovered through DNS.
 - **STARTTLS needs outbound port 25**, which many cloud providers and networks block. SecureMailScope detects this and excludes the check instead of guessing.
 - **Organisational domain detection** uses a built-in list of common multi-part suffixes (such as `co.uk` and `co.in`) rather than the full Public Suffix List.
-- **Unless the stylesheet has been built** (`scripts/demo.sh` or the Docker image does it), the dashboard compiles Tailwind in the browser from a CDN, which needs internet. Fonts and HTMX are always served locally.
+- **The web app must be built** (`scripts/demo.sh`, `npm run build` or the Docker image) before `/` serves it; the API works regardless.

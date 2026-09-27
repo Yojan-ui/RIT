@@ -154,10 +154,6 @@ def test_health(client):
     assert r.json()["status"] == "ok"
 
 
-def test_dashboard_renders(client):
-    r = client.get("/")
-    assert r.status_code == 200
-    assert "htmx" in r.text and 'name="dkim_selectors"' in r.text
 
 
 def test_scan_api_uses_cache(client):
@@ -183,23 +179,8 @@ def test_scan_api_rejects_ip(client):
     assert client.get("/api/v1/scan/192.0.2.1").status_code == 422
 
 
-def test_scan_partial_renders_result(client):
-    r = client.post("/api/v1/ui/scan", data={"domain": "example.com"})
-    assert r.status_code == 200
-    assert r.headers["hx-trigger"] == "scan-complete"
-    assert "Not assessed from this network" in r.text
-    assert "status-not_assessed" in r.text
-    assert 'id="attack-matrix"' in r.text
-    assert r.text.count('class="matrix-row') == 7
-    assert 'href="/api/v1/scan/example.com/pdf"' in r.text
 
 
-def test_scan_partial_invalid_domain(client):
-    r = client.post("/api/v1/ui/scan", data={"domain": "not a domain"})
-    assert r.status_code == 200
-    assert "invalid domain" in r.text
-    r = client.post("/api/v1/ui/scan", data={"domain": "10.0.0.1"})
-    assert "IP addresses are not accepted" in r.text
 
 
 def test_one_fix_titles_rua_only_change_accurately():
@@ -215,3 +196,16 @@ def test_matrix_cells_reflect_the_path_not_the_whole_check():
     assert by_id["direct-spoofing"].control_exposure == {CheckName.DMARC: Exposure.EXPOSED}
     assert by_id["subdomain-spoofing"].control_exposure == {CheckName.DMARC: Exposure.MITIGATED}
     assert by_id["undetected-abuse"].control_exposure[CheckName.DMARC] is Exposure.MITIGATED
+
+
+def test_scan_api_explains_invalid_domains(client):
+    r = client.post("/api/v1/scan", json={"domain": "not a domain"})
+    assert r.status_code == 422 and "invalid domain" in r.text
+    r = client.post("/api/v1/scan", json={"domain": "10.0.0.1"})
+    assert r.status_code == 422 and "IP addresses are not accepted" in r.text
+
+
+def test_recent_scans_are_typed(client):
+    client.post("/api/v1/scan", json={"domain": "example.com"})
+    body = client.get("/api/v1/recent").json()
+    assert body[0]["domain"] == "example.com" and body[0]["scanned_at"].endswith(("Z", "+00:00"))

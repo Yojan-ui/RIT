@@ -39,14 +39,10 @@ async def test_hardened_demo_is_a_clean_hundred(settings):
 def test_demo_scan_through_the_api(client):
     body = client.get("/api/v1/scan/monitor-only.example").json()
     assert body["score"]["grade"] == "C" and body["one_fix"]["title"] == "Enforce your DMARC policy"
-    html = client.post("/api/v1/ui/scan", data={"domain": "unprotected.example"}).text
-    assert "Built-in demo domain" in html
     pdf = client.get("/api/v1/scan/hardened.example/pdf").content
     assert pdf.startswith(b"%PDF-")
 
 
-def test_real_domains_are_not_labelled_as_demos(client):
-    assert "Built-in demo domain" not in client.post("/api/v1/ui/scan", data={"domain": "example.com"}).text
 
 
 def test_pdf_marks_demo_reports():
@@ -60,28 +56,13 @@ def test_pdf_marks_demo_reports():
     assert b"Demonstration report" not in text("example.com")
 
 
-def test_dashboard_offers_demo_chips_and_deep_links(client):
-    page = client.get("/").text
-    for spec in DEMOS.values():
-        assert spec["title"] in page
-    linked = client.get("/", params={"domain": "rollout.example"}).text
-    assert 'value="rollout.example"' in linked and 'hx-trigger="load"' in linked
-    hostile = client.get("/", params={"domain": '"><script>alert(1)</script>'}).text
-    assert "<script>alert(1)</script>" not in hostile
 
 
-def test_dashboard_loads_nothing_from_the_internet(client):
-    """Fonts and htmx are self-hosted so the demo works with no Wi-Fi (Tailwind is prebuilt by scripts/demo.sh)."""
-    page = client.get("/").text
-    external = [u for u in re.findall(r'(?:src|href)="(https?://[^"]+)"', page) if "/static/" not in u]
-    assert all("tailwindcss/browser" in u for u in external), external
-    assert (ROOT / "app/static/js/vendor/htmx.min.js").stat().st_size > 10_000
-    for font in ("archivo-latin-standard-normal.woff2", "jetbrains-mono-latin-wght-normal.woff2"):
-        assert (ROOT / "app/static/fonts" / font).read_bytes()[:4] == b"wOF2"
 
 
 def test_demo_launcher_script():
     script = ROOT / "scripts/demo.sh"
     assert script.stat().st_mode & 0o111, "scripts/demo.sh must be executable"
     assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0
-    assert "sed -n 's/^ARG TAILWIND_VERSION=//p' Dockerfile" in script.read_text()  # one source for the version
+    text = script.read_text()
+    assert "npm ci" in text and "npm run build" in text  # builds the React app that / serves

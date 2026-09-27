@@ -332,6 +332,25 @@
         "title": "Narrative",
         "type": "object"
       },
+      "RecentScan": {
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "scanned_at": {
+            "format": "date-time",
+            "title": "Scanned At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "scanned_at"
+        ],
+        "title": "RecentScan",
+        "type": "object"
+      },
       "Remediation": {
         "description": "The single change that removes the most attack-path risk.",
         "properties": {
@@ -686,6 +705,7 @@
     },
     "/api/v1/recent": {
       "get": {
+        "description": "Domains with a cached scan, newest first.",
         "operationId": "recent_api_v1_recent_get",
         "parameters": [
           {
@@ -705,8 +725,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/RecentScan"
                   },
                   "title": "Response Recent Api V1 Recent Get",
                   "type": "array"

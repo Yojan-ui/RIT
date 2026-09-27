@@ -1,24 +1,12 @@
 # syntax=docker/dockerfile:1
 
-# -- Stage 1: compile the dashboard stylesheet with Tailwind's standalone CLI --------------
-FROM debian:bookworm-slim AS css
-ARG TAILWIND_VERSION=v4.3.3
-ARG TARGETARCH
-RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-RUN case "${TARGETARCH:-amd64}" in \
-      amd64) arch=x64 ;; \
-      arm64) arch=arm64 ;; \
-      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac \
- && curl -fsSL --retry 4 --retry-all-errors -o /usr/local/bin/tailwindcss \
-      "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${arch}" \
- && chmod +x /usr/local/bin/tailwindcss
-WORKDIR /src
-COPY app/templates app/templates
-COPY app/static/css app/static/css
-RUN tailwindcss -i app/static/css/tailwind.src.css -o app/static/css/tailwind.css --minify
+# -- Stage 1: build the React app ---------------------------------------------------------------
+FROM node:24-slim AS web
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
 
 # -- Stage 2: runtime ---------------------------------------------------------------------------
 FROM python:3.12-slim AS runtime
@@ -32,7 +20,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
-COPY --from=css /src/app/static/css/tailwind.css ./app/static/css/tailwind.css
+COPY --from=web /web/dist ./frontend/dist
 
 # Run as an unprivileged user; the scan cache is the only thing written to disk.
 RUN useradd --create-home --uid 10001 appuser \
@@ -41,6 +29,7 @@ USER appuser
 
 ENV SMS_ENV=production \
     SMS_CACHE_PATH=/app/data/cache.sqlite3 \
+    SMS_FRONTEND_DIST=/app/frontend/dist \
     PORT=8000
 EXPOSE 8000
 

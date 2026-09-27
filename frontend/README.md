@@ -1,7 +1,8 @@
 # SecureMailScope: React terminal
 
-The next-generation SecureMailScope UI: React 19, Vite, TypeScript, Tailwind CSS 4 and React
-Three Fiber, styled as a dark institutional terminal in the MochaTrade visual language.
+The SecureMailScope UI: React 19, Vite, TypeScript, Tailwind CSS 4 and React Three Fiber,
+styled as a dark institutional terminal in the MochaTrade visual language. FastAPI serves the
+built app (dist/) at /.
 
 ```bash
 npm install
@@ -19,8 +20,9 @@ Start the backend first (`uvicorn app.main:app --reload` from the repository roo
 ```
 src/
   api/          client.ts (typed fetch client), types.ts, schema.d.ts + openapi.json (generated)
-  hooks/        useApiLink (health + latency), useScan, useDemoDomains
-  components/   TopBar, CommandBar, Panel, Readout (metrics, attack paths, controls, fix)
+  hooks/        useApiLink (health + latency), useScan, useNarrative, useRecent, useDemoDomains
+  components/   TopBar, CommandBar, Panel, Readout (metrics, attack matrix, controls, fix),
+                NarrativePanel (briefing), CopyButton
     three/      PostureField (R3F, lazy-loaded) and its WebGL fallback
   lib/          tone.ts (status -> meaning -> colour), cn.ts
   index.css     theme tokens

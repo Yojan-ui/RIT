@@ -196,14 +196,9 @@ def test_narrative_endpoints(client):
     again = client.get("/api/v1/scan/example.com/narrative").json()
     assert again["generated_at"] == body["generated_at"]  # memoised per scan
 
-    html = client.get("/api/v1/ui/narrative/example.com")
-    assert html.status_code == 200 and "rule-based writer" in html.text
     assert client.get("/api/v1/scan/10.0.0.1/narrative").status_code == 422
 
 
-def test_scan_result_loads_narrative_lazily(client):
-    r = client.post("/api/v1/ui/scan", data={"domain": "example.com"})
-    assert 'hx-get="/api/v1/ui/narrative/example.com"' in r.text
 
 
 def test_mx_findings_are_reported_even_though_mx_is_unscored():
