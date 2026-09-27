@@ -1,0 +1,14 @@
+{% if items %}
+<ul class="recent">
+  {% for item in items %}
+  <li>
+    <button class="link"
+            hx-post="/api/v1/ui/scan"
+            hx-vals='{"domain": "{{ item.domain }}"}'
+            hx-target="#result">{{ item.domain }}</button>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No lookups yet.</p>
+{% endif %}

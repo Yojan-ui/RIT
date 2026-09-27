@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Email security posture, at a glance</h1>
+  <p class="muted">Check a domain's SPF, DKIM, DMARC and transport security, then see how an attacker could abuse the gaps.</p>
+
+  <form class="scan-form"
+        hx-post="/api/v1/ui/scan"
+        hx-target="#result"
+        hx-swap="innerHTML"
+        hx-indicator="#spinner"
+        hx-disabled-elt="find button">
+    <input type="text" name="domain" placeholder="example.com" autocomplete="off" required autofocus>
+    <input type="text" name="dkim_selectors" class="selectors" placeholder="DKIM selectors (optional)" autocomplete="off">
+    <label class="checkbox"><input type="checkbox" name="force_refresh" value="true"> Bypass cache</label>
+    <button type="submit">Scan</button>
+    <span id="spinner" class="htmx-indicator">Scanning…</span>
+  </form>
+</section>
+
+<div class="layout">
+  <section id="result" class="panel">
+    <p class="muted">Enter a domain to begin.</p>
+  </section>
+
+  <aside class="panel">
+    <h2>Recent lookups</h2>
+    <div id="recent"
+         hx-get="/api/v1/ui/recent"
+         hx-trigger="load, scan-complete from:body"
+         hx-swap="innerHTML">
+      <p class="muted">Loading…</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}
