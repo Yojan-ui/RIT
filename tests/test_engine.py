@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from app.core.cache import DomainCache
-from app.engine.attack_paths import derive_attack_paths
+from app.engine.attack_paths import RULES, assess_attack_paths, derive_attack_paths
 from app.engine.checkers import CHECKERS
 from app.engine.scanner import scan_domain
-from app.models.enums import CheckName, CheckStatus
+from app.engine.remediation import pick_one_fix
+from app.models.enums import CheckName, CheckStatus, Exposure
 from app.models.schemas import CheckResult
 
 
@@ -33,14 +34,102 @@ async def test_scan_domain_isolates_crashing_checker(fake_resolver, http_client,
     assert "kaboom" in spf.data["error"]
 
 
+def _dmarc(policy: str, **tags) -> CheckResult:
+    tags = {"v": "DMARC1", "p": policy, **tags}
+    return CheckResult(
+        name=CheckName.DMARC,
+        status=CheckStatus.PASS if policy != "none" else CheckStatus.WARN,
+        data={
+            "tags": tags,
+            "policy": policy,
+            "subdomain_policy": tags.get("sp"),
+            "pct": int(tags.get("pct", 100)),
+            "rua": [tags["rua"]] if "rua" in tags else [],
+        },
+    )
+
+
+def _exposure(results: list[CheckResult]) -> dict[str, Exposure]:
+    return {p.id: p.exposure for p in assess_attack_paths(results)}
+
+
+def test_matrix_always_has_seven_paths_in_order():
+    matrix = assess_attack_paths([])
+    assert len(RULES) == 7
+    assert [p.id for p in matrix] == [r.path.id for r in RULES]
+    assert {p.exposure for p in matrix} == {Exposure.UNKNOWN}
+
+
 def test_attack_paths_from_missing_dmarc():
     paths = derive_attack_paths([CheckResult(name=CheckName.DMARC, status=CheckStatus.MISSING)])
-    assert [p.id for p in paths] == ["direct-spoofing"]
+    assert [p.id for p in paths] == ["direct-spoofing", "subdomain-spoofing", "undetected-abuse"]
 
 
 def test_attack_paths_none_when_passing_or_not_assessed():
-    assert derive_attack_paths([CheckResult(name=CheckName.DMARC, status=CheckStatus.PASS)]) == []
     assert derive_attack_paths([CheckResult(name=CheckName.MTA_STS, status=CheckStatus.NOT_ASSESSED)]) == []
+    exposure = _exposure([CheckResult(name=CheckName.DMARC, status=CheckStatus.PASS)])
+    assert exposure["direct-spoofing"] is Exposure.MITIGATED
+
+
+def test_dmarc_policy_levels():
+    assert _exposure([_dmarc("none")])["direct-spoofing"] is Exposure.EXPOSED
+    assert _exposure([_dmarc("reject", pct="50")])["direct-spoofing"] is Exposure.PARTIAL
+    enforced_parent = _exposure([_dmarc("reject", sp="none")])
+    assert enforced_parent["direct-spoofing"] is Exposure.MITIGATED
+    assert enforced_parent["subdomain-spoofing"] is Exposure.EXPOSED
+
+
+def test_spf_all_qualifiers():
+    def spf(result: str) -> Exposure:
+        check = CheckResult(name=CheckName.SPF, status=CheckStatus.PASS, data={"all_result": result, "record": "v=spf1"})
+        return _exposure([check])["envelope-spoofing"]
+
+    assert spf("fail") is Exposure.MITIGATED
+    assert spf("softfail") is Exposure.PARTIAL
+    assert spf("neutral") is Exposure.EXPOSED
+    assert spf("pass") is Exposure.EXPOSED
+
+
+def test_reporting_needs_both_rua_and_tlsrpt():
+    tlsrpt = CheckResult(name=CheckName.TLS_RPT, status=CheckStatus.PASS)
+    assert _exposure([_dmarc("reject", rua="mailto:r@example.com"), tlsrpt])["undetected-abuse"] is Exposure.MITIGATED
+    assert _exposure([_dmarc("reject"), tlsrpt])["undetected-abuse"] is Exposure.PARTIAL
+
+
+def test_one_fix_prefers_dmarc_and_builds_record():
+    results = [
+        CheckResult(name=CheckName.DMARC, status=CheckStatus.MISSING),
+        CheckResult(name=CheckName.MTA_STS, status=CheckStatus.MISSING),
+        CheckResult(name=CheckName.SPF, status=CheckStatus.PASS, data={"all_result": "fail", "record": "v=spf1 -all"}),
+    ]
+    fix = pick_one_fix("example.com", results, assess_attack_paths(results))
+    assert fix is not None and fix.control is CheckName.DMARC
+    assert fix.host == "_dmarc.example.com"
+    assert fix.record == "v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@example.com"
+    assert set(fix.closes) == {"direct-spoofing", "subdomain-spoofing", "undetected-abuse"}
+    assert fix.score_gain > 0
+
+
+def test_one_fix_upgrades_existing_dmarc_record():
+    results = [_dmarc("none", sp="none", pct="20", rua="mailto:r@example.com", fo="1")]
+    fix = pick_one_fix("example.com", results, assess_attack_paths(results))
+    assert fix.title == "Enforce your DMARC policy"
+    assert fix.record == "v=DMARC1; p=quarantine; rua=mailto:r@example.com; fo=1"
+
+
+def test_one_fix_tightens_spf_softfail():
+    spf = CheckResult(
+        name=CheckName.SPF,
+        status=CheckStatus.PASS,
+        data={"all_result": "softfail", "record": "v=spf1 include:_spf.google.com ~all"},
+    )
+    fix = pick_one_fix("example.com", [spf], assess_attack_paths([spf]))
+    assert fix.record == "v=spf1 include:_spf.google.com -all"
+
+
+def test_one_fix_none_when_nothing_open():
+    results = [_dmarc("reject", rua="mailto:r@example.com")]
+    assert pick_one_fix("example.com", results, assess_attack_paths(results)) is None
 
 
 async def test_cache_roundtrip_and_ttl(tmp_path):
@@ -100,6 +189,8 @@ def test_scan_partial_renders_result(client):
     assert r.headers["hx-trigger"] == "scan-complete"
     assert "Not assessed from this network" in r.text
     assert "status-not_assessed" in r.text
+    assert 'id="attack-matrix"' in r.text
+    assert r.text.count('class="matrix-row') == 7
 
 
 def test_scan_partial_invalid_domain(client):
@@ -108,3 +199,18 @@ def test_scan_partial_invalid_domain(client):
     assert "invalid domain" in r.text
     r = client.post("/api/v1/ui/scan", data={"domain": "10.0.0.1"})
     assert "IP addresses are not accepted" in r.text
+
+
+def test_one_fix_titles_rua_only_change_accurately():
+    results = [_dmarc("reject", sp="reject")]
+    fix = pick_one_fix("example.com", results, assess_attack_paths(results))
+    assert fix.title == "Turn on DMARC reports"
+    assert fix.record == "v=DMARC1; p=reject; sp=reject; rua=mailto:dmarc-reports@example.com"
+    assert fix.closes == ["undetected-abuse"]
+
+
+def test_matrix_cells_reflect_the_path_not_the_whole_check():
+    by_id = {p.id: p for p in assess_attack_paths([_dmarc("none", sp="reject", rua="mailto:r@example.com")])}
+    assert by_id["direct-spoofing"].control_exposure == {CheckName.DMARC: Exposure.EXPOSED}
+    assert by_id["subdomain-spoofing"].control_exposure == {CheckName.DMARC: Exposure.MITIGATED}
+    assert by_id["undetected-abuse"].control_exposure[CheckName.DMARC] is Exposure.MITIGATED

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.constants import DKIM_SELECTOR_REGEX
 from app.engine.dns_resolver import normalize_domain
-from app.models.enums import CheckName, CheckStatus, Grade, Severity
+from app.models.enums import CheckName, CheckStatus, Exposure, Grade, Severity
 
 
 class ScanRequest(BaseModel):
@@ -61,7 +61,29 @@ class AttackPath(BaseModel):
     title: str
     description: str
     severity: Severity
+    # Controls that defend against this path (the matrix columns it depends on).
     enabled_by: list[CheckName] = Field(default_factory=list)
+    exposure: Exposure = Exposure.EXPOSED
+    # How each deciding control performs for this path specifically (matrix cells).
+    # Supporting controls not listed here are shown by their overall check status.
+    control_exposure: dict[CheckName, Exposure] = Field(default_factory=dict)
+    reason: str = ""
+    # The control whose fix closes this path, if one is known.
+    fix_control: CheckName | None = None
+
+
+class Remediation(BaseModel):
+    """The single change that removes the most attack-path risk."""
+
+    control: CheckName
+    title: str
+    action: str
+    # DNS record to publish, when the fix is a record change.
+    host: str | None = None
+    record_type: str | None = None
+    record: str | None = None
+    closes: list[str] = Field(default_factory=list)
+    score_gain: int = 0
 
 
 class ScoreBreakdown(BaseModel):
@@ -78,7 +100,11 @@ class ScanResult(BaseModel):
     cached: bool = False
     checks: list[CheckResult] = Field(default_factory=list)
     score: ScoreBreakdown
+    # Paths currently exposed or partially exposed.
     attack_paths: list[AttackPath] = Field(default_factory=list)
+    # Every known path, including mitigated and unknown ones.
+    attack_matrix: list[AttackPath] = Field(default_factory=list)
+    one_fix: Remediation | None = None
 
 
 class HealthResponse(BaseModel):

@@ -33,6 +33,15 @@ Run tests with `pytest`.
 | TLS-RPT | RFC 8460 | record and `rua` URI schemes |
 | Transport | RFC 3207 | STARTTLS on the primary MX: TLS version, cipher, certificate validity and expiry |
 
+### Attack paths and the one fix
+
+Every scan assesses seven attack paths (exact-domain spoofing, subdomain spoofing, envelope
+spoofing, tampering/forwarding breakage, STARTTLS downgrade, weak transport encryption,
+undetected abuse) as `exposed`, `partial`, `mitigated` or `unknown` (`attack_matrix` in the API).
+`one_fix` is the single remediation that closes the most severity-weighted exposure, with the
+DNS record to publish where one applies and the score gain it would bring.
+Rules live in `app/engine/attack_paths.py`, remediation in `app/engine/remediation.py`.
+
 ### Honest degradation
 
 Checks that can't be measured from where the scanner runs are reported as

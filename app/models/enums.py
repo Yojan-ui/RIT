@@ -31,6 +31,16 @@ class Severity(str, Enum):
 _SEVERITY_RANK = {s: i for i, s in enumerate(Severity)}
 
 
+class Exposure(str, Enum):
+    """How open a domain is to one attack path."""
+
+    EXPOSED = "exposed"
+    PARTIAL = "partial"
+    MITIGATED = "mitigated"
+    # The defending control could not be measured, so exposure is unknown.
+    UNKNOWN = "unknown"
+
+
 class CheckName(str, Enum):
     MX = "mx"
     SPF = "spf"

@@ -8,9 +8,10 @@ import httpx
 
 from app.core.config import Settings
 from app.core.logging import get_logger
-from app.engine.attack_paths import derive_attack_paths
+from app.engine.attack_paths import active_paths, assess_attack_paths
 from app.engine.checkers import CHECKERS, BaseChecker, ScanContext
 from app.engine.dns_resolver import DNSResolver
+from app.engine.remediation import pick_one_fix
 from app.engine.scoring import score_results
 from app.models.enums import CheckStatus
 from app.models.schemas import CheckResult, ScanResult
@@ -46,9 +47,18 @@ async def scan_domain(
         dkim_selectors=list(dkim_selectors or []),
     )
     results = list(await asyncio.gather(*(_run(cls(), ctx) for cls in CHECKERS)))
+    return build_result(domain, results)
+
+
+def build_result(domain: str, checks: list[CheckResult], **extra) -> ScanResult:
+    """Derive score, attack paths and the one fix from raw check results."""
+    matrix = assess_attack_paths(checks)
     return ScanResult(
         domain=domain,
-        checks=results,
-        score=score_results(results),
-        attack_paths=derive_attack_paths(results),
+        checks=checks,
+        score=score_results(checks),
+        attack_paths=active_paths(matrix),
+        attack_matrix=matrix,
+        one_fix=pick_one_fix(domain, checks, matrix),
+        **extra,
     )

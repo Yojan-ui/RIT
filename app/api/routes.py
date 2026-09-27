@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from app.core.cache import DomainCache
 from app.core.config import Settings, get_settings
 from app.engine.dns_resolver import DNSResolver
-from app.engine.scanner import scan_domain
+from app.engine.scanner import build_result, scan_domain
 from app.models.schemas import HealthResponse, ScanRequest, ScanResult
 
 router = APIRouter()
@@ -41,9 +41,9 @@ async def _scan_with_cache(req: ScanRequest, engine: Engine) -> ScanResult:
     # Custom selectors change the DKIM result, so don't serve a cached default scan for them.
     use_cache = not req.force_refresh and not req.dkim_selectors
     if use_cache and (hit := await engine.cache.get(req.domain)):
-        result = ScanResult.model_validate(hit)
-        result.cached = True
-        return result
+        cached = ScanResult.model_validate(hit)
+        # Re-derive analysis so cached scans pick up rule changes made since they were stored.
+        return build_result(cached.domain, cached.checks, scanned_at=cached.scanned_at, cached=True)
     result = await scan_domain(
         req.domain, engine.resolver, engine.http, engine.settings, dkim_selectors=req.dkim_selectors
     )
