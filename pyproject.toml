@@ -18,6 +18,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "cryptography>=42",
     "idna>=3.6",
+    "reportlab>=4.0",
 ]
 
 [project.optional-dependencies]

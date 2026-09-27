@@ -6,7 +6,8 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import HTMLResponse, Response
 from pydantic import ValidationError
 
 from app.core.cache import DomainCache
@@ -14,6 +15,7 @@ from app.core.config import Settings, get_settings
 from app.engine.dns_resolver import DNSResolver
 from app.engine.scanner import build_result, scan_domain
 from app.models.schemas import HealthResponse, ScanRequest, ScanResult
+from app.reports.pdf import render_pdf
 
 router = APIRouter()
 
@@ -96,10 +98,37 @@ async def recent_partial(request: Request, cache: CacheDep) -> HTMLResponse:
     )
 
 
+def _get_request(domain: str, dkim_selectors: str = "") -> ScanRequest:
+    try:
+        return ScanRequest(domain=domain, dkim_selectors=dkim_selectors)
+    except ValidationError as exc:
+        message = "; ".join(str(e["msg"]).removeprefix("Value error, ") for e in exc.errors())
+        raise HTTPException(status_code=422, detail=message) from exc
+
+
+def _attachment(result: ScanResult, ext: str) -> dict[str, str]:
+    # Normalised domains are [a-z0-9.-] only, so they are safe in a header value.
+    return {"Content-Disposition": f'attachment; filename="securemailscope-{result.domain}-{result.scanned_at:%Y%m%d}.{ext}"'}
+
+
 @router.get("/scan/{domain}", response_model=ScanResult)
 async def scan_get(domain: str, engine: EngineDep) -> ScanResult:
-    try:
-        req = ScanRequest(domain=domain)
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=f"invalid domain: {domain}") from exc
-    return await _scan_with_cache(req, engine)
+    return await _scan_with_cache(_get_request(domain), engine)
+
+
+# -- Exports ------------------------------------------------------------------
+@router.get("/scan/{domain}/json", response_class=Response, responses={200: {"content": {"application/json": {}}}})
+async def export_json(domain: str, engine: EngineDep, dkim_selectors: str = "") -> Response:
+    """Download the scan as a JSON file. Same body as ``GET /scan/{domain}``."""
+    result = await _scan_with_cache(_get_request(domain, dkim_selectors), engine)
+    return Response(result.model_dump_json(indent=2), media_type="application/json", headers=_attachment(result, "json"))
+
+
+@router.get("/scan/{domain}/pdf", response_class=Response, responses={200: {"content": {"application/pdf": {}}}})
+async def export_pdf(domain: str, engine: EngineDep, dkim_selectors: str = "") -> Response:
+    """Download the scan as a formal PDF audit report."""
+    result = await _scan_with_cache(_get_request(domain, dkim_selectors), engine)
+    pdf = await run_in_threadpool(
+        render_pdf, result, app_name=engine.settings.app_name, version=engine.settings.version
+    )
+    return Response(pdf, media_type="application/pdf", headers=_attachment(result, "pdf"))

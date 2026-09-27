@@ -191,6 +191,7 @@ def test_scan_partial_renders_result(client):
     assert "status-not_assessed" in r.text
     assert 'id="attack-matrix"' in r.text
     assert r.text.count('class="matrix-row') == 7
+    assert 'href="/api/v1/scan/example.com/pdf"' in r.text
 
 
 def test_scan_partial_invalid_domain(client):

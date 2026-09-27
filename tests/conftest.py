@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import copy
+import ipaddress
 import json
+import socket
 from collections.abc import Callable
 from pathlib import Path
 
@@ -19,6 +21,56 @@ from app.engine.dns_resolver import DNSAnswer
 FIXTURES = Path(__file__).parent / "fixtures"
 
 MTA_STS_POLICY = "version: STSv1\r\nmode: enforce\r\nmx: mx1.example.com\r\nmx: *.example.com\r\nmax_age: 604800\r\n"
+
+
+# -- offline guard -------------------------------------------------------------------
+_LOOPBACK_NAMES = {"localhost", "localhost.localdomain"}
+
+
+class NetworkAccessError(RuntimeError):
+    """Raised when a test tries to reach anything other than loopback."""
+
+
+def _is_loopback(host) -> bool:
+    if host is None or isinstance(host, bytes):
+        host = host.decode() if host else "localhost"
+    if host in _LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(host.split("%")[0]).is_loopback
+    except ValueError:
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _offline(monkeypatch):
+    """Fail fast on real network access so the suite provably runs offline.
+
+    Loopback stays allowed for the local SMTP servers in test_transport.py.
+    """
+    real_getaddrinfo = socket.getaddrinfo
+    real_connect, real_connect_ex = socket.socket.connect, socket.socket.connect_ex
+
+    def guarded_getaddrinfo(host, *args, **kwargs):
+        if not _is_loopback(host):
+            raise NetworkAccessError(f"test attempted DNS lookup of {host!r}")
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def check(sock, address):
+        if sock.family in (socket.AF_INET, socket.AF_INET6) and not _is_loopback(address[0]):
+            raise NetworkAccessError(f"test attempted to connect to {address!r}")
+
+    def guarded_connect(sock, address):
+        check(sock, address)
+        return real_connect(sock, address)
+
+    def guarded_connect_ex(sock, address):
+        check(sock, address)
+        return real_connect_ex(sock, address)
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
 
 
 class FakeResolver:

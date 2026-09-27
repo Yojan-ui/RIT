@@ -13,13 +13,18 @@ uvicorn app.main:app --reload
 - Dashboard: http://127.0.0.1:8000/
 - API docs:  http://127.0.0.1:8000/docs
 - API base:  `/api/v1` (`GET /health`, `POST /scan`, `GET /scan/{domain}`, `GET /recent`)
+- Exports:   `GET /scan/{domain}/json` (JSON download) and `GET /scan/{domain}/pdf` (formal PDF
+  audit report). Both accept an optional `?dkim_selectors=s1,s2`.
 
 ```bash
 curl -X POST localhost:8000/api/v1/scan -H 'content-type: application/json' \
   -d '{"domain": "example.com", "dkim_selectors": ["s1"], "force_refresh": true}'
 ```
 
-Run tests with `pytest`.
+Run tests with `pytest`. The suite runs fully offline: an autouse fixture fails any test that
+touches the network beyond loopback. `tests/fixtures/scenarios.json` holds end-to-end scan
+scenarios (unprotected domain → F, hardened domain → A, port 25 blocked → A with transport
+excluded), each pinning the grade, every check status and all seven attack path outcomes.
 
 ## What it checks
 
@@ -70,10 +75,12 @@ app/
     checkers/ mx, spf, dkim, dmarc, mta_sts, tls_rpt, transport
   models/     pydantic schemas + enums
   api/        v1 router (JSON + HTMX partials)
+  reports/    PDF audit report (ReportLab)
   templates/  Jinja2 templates (base, index, partials/)
   static/     css, js, assets
 tests/        fixtures/, test_dns_resolver.py, test_checkers.py, test_transport.py,
-              test_engine.py, test_scoring.py
+              test_engine.py, test_scoring.py, test_attack_paths.py, test_scenarios.py,
+              test_exports.py
 ```
 
 ## Adding a checker
