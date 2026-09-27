@@ -7,7 +7,7 @@ import { VectorGrid } from '@/components/VectorGrid'
 import { useReport, type Source } from '@/hooks/useReport'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import type { DemoScenario, VectorId } from '@/lib/types'
+import type { DemoScenario, RecentScan, VectorId } from '@/lib/types'
 
 const DEFAULT_SCENARIO = 'startup'
 
@@ -39,6 +39,7 @@ export default function App() {
   const { status, source, report, error, startedAt, load } = useReport()
   const [scenarios, setScenarios] = useState<DemoScenario[]>([])
   const [apiUp, setApiUp] = useState<boolean | null>(null)
+  const [recent, setRecent] = useState<RecentScan[]>([])
   const [focus, setFocus] = useState<{ id: VectorId; n: number }>()
   const focusVector = useCallback((id: VectorId) => setFocus((f) => ({ id, n: (f?.n ?? 0) + 1 })), [])
 
@@ -74,6 +75,14 @@ export default function App() {
     [initial.delayMs, load],
   )
 
+  // Recent scans: on load, and whenever a live report lands (it was just cached server-side).
+  const liveKey = report?.mode === 'live' ? `${report.domain}-${report.scanned_at}` : ''
+  useEffect(() => {
+    const controller = new AbortController()
+    api.recent(controller.signal).then(setRecent, () => {})
+    return () => controller.abort()
+  }, [liveKey])
+
   const loading = status === 'loading'
   const reportKey = report ? `${report.domain}-${report.scanned_at}` : ''
 
@@ -82,6 +91,7 @@ export default function App() {
       <TopBar
         initialDomain={initial.source.kind === 'live' ? initial.source.domain : ''}
         scenarios={scenarios}
+        recent={recent}
         source={source}
         loading={loading}
         apiUp={apiUp}

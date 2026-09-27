@@ -34,6 +34,10 @@ class Settings:
     # vector otherwise.
     allow_private_targets: bool = _bool("ALLOW_PRIVATE_TARGETS", False)
     static_dir: Path = Path(os.getenv("STATIC_DIR", str(Path(__file__).resolve().parent.parent / "static")))
+    # Scan cache (SQLite). Also backs /api/v1/recent. Mount a volume at its
+    # directory in Docker to keep it across container restarts.
+    cache_path: Path = Path(os.getenv("CACHE_PATH", str(Path(__file__).resolve().parent.parent / "data" / "scans.sqlite3")))
+    cache_ttl: int = int(os.getenv("CACHE_TTL", "900"))
     cors_origins: list[str] = field(
         default_factory=lambda: _csv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     )

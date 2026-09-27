@@ -61,6 +61,15 @@ export interface ScanReport {
   one_fix: Fix | null
   other_fixes: Fix[]
   observations: Observations
+  /** Served from the scan cache rather than scanned just now. */
+  cached?: boolean
+}
+
+export interface RecentScan {
+  domain: string
+  scanned_at: string
+  score: number
+  grade: string
 }
 
 // Raw collector output (backend Observations). The telemetry terminal replays it.

@@ -2,12 +2,13 @@ import { Radar } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { Source } from '@/hooks/useReport'
 import { cn } from '@/lib/utils'
-import type { DemoScenario } from '@/lib/types'
+import type { DemoScenario, RecentScan } from '@/lib/types'
 import { Lamp } from './primitives'
 
 export function TopBar({
   initialDomain = '',
   scenarios,
+  recent = [],
   source,
   loading,
   apiUp,
@@ -15,6 +16,7 @@ export function TopBar({
 }: {
   initialDomain?: string
   scenarios: DemoScenario[]
+  recent?: RecentScan[]
   source?: Source
   loading: boolean
   apiUp: boolean | null
@@ -87,6 +89,34 @@ export function TopBar({
                   )}
                 >
                   {s.title}
+                </button>
+              )
+            })}
+          </div>
+        </nav>
+      )}
+
+      {recent.length > 0 && (
+        <nav aria-label="Recent scans" className="border-t border-line">
+          <div className="mx-auto flex max-w-[1400px] items-center gap-1 overflow-x-auto px-4 py-1.5">
+            <span className="eyebrow mr-2 shrink-0">Recent</span>
+            {recent.map((r) => {
+              const active = source?.kind === 'live' && source.domain === r.domain
+              const tone = r.score >= 80 ? 'text-ok' : r.score >= 50 ? 'text-warn' : 'text-crit'
+              return (
+                <button
+                  key={r.domain}
+                  type="button"
+                  onClick={() => onSelect({ kind: 'live', domain: r.domain, cached: true })}
+                  aria-pressed={active}
+                  title={`Scanned ${new Date(r.scanned_at).toLocaleString()} · ${r.score}/100`}
+                  className={cn(
+                    'inline-flex h-7 shrink-0 items-center gap-2 px-2.5 font-mono text-[11px] transition-colors duration-75',
+                    active ? 'bg-slate-100 text-obsidian' : 'text-slate-400 hover:bg-raised hover:text-slate-200',
+                  )}
+                >
+                  {r.domain}
+                  <span className={cn('font-bold', active ? '' : tone)}>{r.grade}</span>
                 </button>
               )
             })}

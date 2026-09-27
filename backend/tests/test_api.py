@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import demo, main
+from app import demo, main, scanner
 from app.collectors.dns_collect import DomainNotFound
 
 client = TestClient(main.app)
@@ -38,7 +38,7 @@ def test_scan_maps_nxdomain_to_404(monkeypatch):
     async def fake_run_scan(domain, selectors, settings):
         raise DomainNotFound(domain)
 
-    monkeypatch.setattr(main, "run_scan", fake_run_scan)
+    monkeypatch.setattr(scanner, "run_scan", fake_run_scan)
     assert client.get("/api/scan", params={"domain": "nope.example"}).status_code == 404
 
 
@@ -50,7 +50,7 @@ def test_scan_normalises_input(monkeypatch):
         from app.scanner import build_report
         return build_report(demo.observations_for("startup"), mode="live", duration_ms=1)
 
-    monkeypatch.setattr(main, "run_scan", fake_run_scan)
+    monkeypatch.setattr(scanner, "run_scan", fake_run_scan)
     response = client.get("/api/scan", params={"domain": "https://Example.com/x", "dkim_selectors": "s1,s2"})
     assert response.status_code == 200
     assert seen == {"domain": "example.com", "selectors": ["s1", "s2"]}

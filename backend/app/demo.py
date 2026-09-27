@@ -144,6 +144,14 @@ def list_scenarios() -> list[DemoScenario]:
     return [scenario for scenario, _ in SCENARIOS.values()]
 
 
+def observations_for_domain(domain: str) -> Observations | None:
+    """Demo scenarios are also addressable by their .example domain (used by /api/v1)."""
+    for scenario, build in SCENARIOS.values():
+        if scenario.domain == domain:
+            return build()
+    return None
+
+
 def observations_for(scenario_id: str) -> Observations | None:
     entry = SCENARIOS.get(scenario_id)
     return entry[1]() if entry else None

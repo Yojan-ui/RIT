@@ -31,6 +31,7 @@ Docker (from the repo root): `docker build -t securemailscope . && docker run -p
 | `GET /api/demo/{id}?delay_ms=1500` | Canned report run through the real engine, with optional latency |
 | `GET /api/demo-error/{404,422,500,504}` | Forced error responses for UI error states |
 | `GET /api/health` | Liveness |
+| `/api/v1/*` | Versioned API: scan (GET/POST, cached), PDF and JSON export, narrative, recent scans, demo domains. See the root README |
 
 ## How it works
 
@@ -40,7 +41,7 @@ It never recommends a fix that would break mail: no DMARC enforcement without pa
 
 ## Configuration (env vars)
 
-`DNS_TIMEOUT` (4), `SMTP_TIMEOUT` (8), `HTTP_TIMEOUT` (5), `SPF_WALK_BUDGET` (10), `PROBE_BUDGET` (20), `SCAN_TIMEOUT` (30), `EHLO_HOSTNAME`, `CORS_ORIGINS`, `STATIC_DIR`, `ALLOW_PRIVATE_TARGETS` (false: refuses to probe private/loopback IPs, to prevent SSRF).
+`DNS_TIMEOUT` (4), `SMTP_TIMEOUT` (8), `HTTP_TIMEOUT` (5), `SPF_WALK_BUDGET` (10), `PROBE_BUDGET` (20), `SCAN_TIMEOUT` (30), `EHLO_HOSTNAME`, `CORS_ORIGINS`, `STATIC_DIR`, `CACHE_PATH`, `CACHE_TTL` (900), `ALLOW_PRIVATE_TARGETS` (false: refuses to probe private/loopback IPs, to prevent SSRF).
 
 ## Timeouts
 

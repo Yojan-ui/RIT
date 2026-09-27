@@ -83,7 +83,7 @@ def test_unexpected_errors_are_json(monkeypatch):
     async def boom(domain, selectors, settings):
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(main, "run_scan", boom)
+    monkeypatch.setattr(scanner, "run_scan", boom)
     response = TestClient(main.app, raise_server_exceptions=False).get("/api/scan", params={"domain": "example.com"})
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal error while processing the request"}

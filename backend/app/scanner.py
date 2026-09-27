@@ -77,7 +77,9 @@ async def collect(domain: str, dkim_selectors: list[str], settings: Settings) ->
                         tls_rpt=tls_rpt, starttls=starttls)
 
 
-def build_report(obs: Observations, *, mode: str, duration_ms: int) -> ScanReport:
+def build_report(
+    obs: Observations, *, mode: str, duration_ms: int, scanned_at: datetime | None = None, cached: bool = False
+) -> ScanReport:
     result = analyze(obs)
     open_paths = [a for a in result.attack_paths if a.state == "open"]
     if not open_paths:
@@ -88,8 +90,9 @@ def build_report(obs: Observations, *, mode: str, duration_ms: int) -> ScanRepor
     return ScanReport(
         domain=obs.domain,
         mode=mode,
-        scanned_at=datetime.now(timezone.utc),
+        scanned_at=scanned_at or datetime.now(timezone.utc),
         duration_ms=duration_ms,
+        cached=cached,
         score=result.score,
         grade=result.grade,
         summary=summary,

@@ -11,13 +11,12 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app import demo
-from app.collectors.dns_collect import DomainNotFound
+from app import __version__, demo, service
+from app.api_v1 import router as api_v1
 from app.config import get_settings
-from app.domain import InvalidDomain, normalize_domain, parse_selectors
 from app.frontend import FrontendFiles
 from app.models import DemoScenario, ScanReport
-from app.scanner import ScanTimeout, build_report, run_scan
+from app.scanner import build_report
 
 log = logging.getLogger("securemailscope")
 
@@ -25,7 +24,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="SecureMailScope API",
-    version="0.1.0",
+    version=__version__,
     description="Email-security posture scanner: SPF, DKIM, DMARC, MTA-STS, TLS-RPT, MX and a live STARTTLS probe.",
 )
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["GET"], allow_headers=["*"])
@@ -48,17 +47,9 @@ async def scan(
     domain: str = Query(..., max_length=300, description="Domain, URL or email address to scan"),
     dkim_selectors: str | None = Query(None, description="Comma-separated extra DKIM selectors to try"),
 ) -> ScanReport:
-    try:
-        normalized = normalize_domain(domain)
-        selectors = parse_selectors(dkim_selectors)
-    except InvalidDomain as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    try:
-        return await run_scan(normalized, selectors, settings)
-    except DomainNotFound:
-        raise HTTPException(status_code=404, detail=f"{normalized} does not exist (NXDOMAIN)") from None
-    except ScanTimeout as exc:
-        raise HTTPException(status_code=504, detail=str(exc)) from None
+    # The UI's Scan button always scans fresh; the result is cached for /api/v1 and recent scans.
+    normalized, selectors = service.parse_request(domain, dkim_selectors)
+    return await service.scan(normalized, selectors, refresh=True, settings=settings)
 
 
 # ---- Dummy endpoints for UI development (no network access) ---------------- #
@@ -92,6 +83,11 @@ async def demo_error(status_code: int) -> None:
     if status_code not in messages:
         raise HTTPException(status_code=400, detail=f"Supported codes: {sorted(messages)}")
     raise HTTPException(status_code=status_code, detail=messages[status_code])
+
+
+# ---- Versioned API ---------------------------------------------------------- #
+
+app.include_router(api_v1)
 
 
 # ---- Compiled frontend at "/" (registered last so /api/* and /docs win) ---- #

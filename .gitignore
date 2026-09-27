@@ -9,8 +9,9 @@ node_modules/
 dist/
 *.log
 
-# Vite build output (served by FastAPI)
+# Vite build output (served by FastAPI) and the local scan cache
 backend/static/
+backend/data/
 
 # Local config / secrets
 .env

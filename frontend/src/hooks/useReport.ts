@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '@/lib/api'
 import type { ScanReport } from '@/lib/types'
 
-export type Source = { kind: 'demo'; id: string } | { kind: 'live'; domain: string }
+export type Source =
+  | { kind: 'demo'; id: string }
+  /** `cached`: load the latest stored scan (recent list) instead of scanning fresh. */
+  | { kind: 'live'; domain: string; cached?: boolean }
 
 interface ReportState {
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -27,7 +30,9 @@ export function useReport() {
     const request =
       source.kind === 'demo'
         ? api.demo(source.id, delayMs, controller.signal)
-        : api.scan(source.domain, controller.signal)
+        : source.cached
+          ? api.cachedScan(source.domain, controller.signal)
+          : api.scan(source.domain, controller.signal)
 
     request
       .then((report) => {

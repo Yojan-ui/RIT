@@ -29,7 +29,7 @@ COPY --from=frontend /build/backend/static ./static
 
 EXPOSE 80
 
-# Listens on $PORT when the platform sets it (Render does), otherwise 80.
+# Listens on $PORT if set, otherwise 80.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
     CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\", \"80\")}/api/health', timeout=2)"
 

@@ -162,6 +162,58 @@ class ScanReport(BaseModel):
     one_fix: Fix | None
     other_fixes: list[Fix]
     observations: Observations
+    cached: bool = False  # served from the scan cache rather than scanned just now
+
+
+# --------------------------------------------------------------------------- #
+# /api/v1 contracts
+# --------------------------------------------------------------------------- #
+
+
+class ScanRequest(BaseModel):
+    domain: str = Field(..., examples=["example.com"])
+    dkim_selectors: list[str] | str = Field(default_factory=list, description="List, or comma/space separated")
+    force_refresh: bool = False
+
+
+class HealthResponse(BaseModel):
+    status: str = "ok"
+    app: str
+    version: str
+
+
+class DemoDomain(BaseModel):
+    domain: str
+    title: str
+    grade: str
+    score: int
+    story: str
+
+
+class RecentScan(BaseModel):
+    domain: str
+    scanned_at: datetime
+    score: int
+    grade: str
+
+
+class RemediationStep(BaseModel):
+    priority: int
+    title: str
+    detail: str
+    record: DnsRecord | None = None  # None for changes that are not DNS (e.g. enabling STARTTLS)
+    closes: list[str] = Field(default_factory=list)
+
+
+class Narrative(BaseModel):
+    """Plain-English account of a scan, written deterministically from the report."""
+
+    domain: str
+    source: Literal["deterministic"] = "deterministic"
+    summary: str
+    attack_scenarios: list[str] = Field(default_factory=list)
+    remediation_steps: list[RemediationStep] = Field(default_factory=list)
+    generated_at: datetime
 
 
 class DemoScenario(BaseModel):

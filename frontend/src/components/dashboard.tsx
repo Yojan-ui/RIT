@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card'
 import { SplineScene } from '@/components/ui/spline-scene'
 import { Spotlight } from '@/components/ui/spotlight'
 import { CopyButton } from '@/components/primitives'
+import { exportUrl } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { CheckResult, ScanReport, Status, VectorId } from '@/lib/types'
 
@@ -178,9 +179,22 @@ export function SecureMailDashboard({
               </span>
               SecureMailScope <span className="text-neutral-700">//</span> Live Telemetry
             </p>
-            <span className="border border-white/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-neutral-500">
-              {report.mode === 'live' ? 'LIVE' : 'DEMO'}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {(['pdf', 'json'] as const).map((format) => (
+                <a
+                  key={format}
+                  href={exportUrl(report.domain, format)}
+                  download
+                  className="border border-white/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-neutral-300 uppercase transition-colors hover:border-white/40 hover:text-white"
+                  aria-label={`Download ${format === 'pdf' ? 'PDF audit report' : 'JSON'} for ${report.domain}`}
+                >
+                  ↓ {format}
+                </a>
+              ))}
+              <span className="border border-white/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-neutral-500">
+                {report.mode === 'demo' ? 'DEMO' : report.cached ? 'CACHED' : 'LIVE'}
+              </span>
+            </div>
           </header>
 
           <section aria-labelledby="posture-heading">

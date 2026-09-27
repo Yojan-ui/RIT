@@ -1,4 +1,4 @@
-import type { DemoScenario, ScanReport } from './types'
+import type { DemoScenario, RecentScan, ScanReport } from './types'
 
 // Empty by default: dev uses the Vite proxy, production is same-origin.
 const BASE = import.meta.env.VITE_API_BASE ?? ''
@@ -41,6 +41,14 @@ export const api = {
   scenarios: (signal?: AbortSignal) => get<DemoScenario[]>('/api/demo', signal),
   demo: (id: string, delayMs = 0, signal?: AbortSignal) =>
     get<ScanReport>(`/api/demo/${encodeURIComponent(id)}${delayMs ? `?delay_ms=${delayMs}` : ''}`, signal),
+  recent: (signal?: AbortSignal) => get<RecentScan[]>('/api/v1/recent?limit=8', signal),
+  /** Latest scan via the versioned API: served from cache when fresh. */
+  cachedScan: (domain: string, signal?: AbortSignal) =>
+    get<ScanReport>(`/api/v1/scan/${encodeURIComponent(domain)}`, signal),
   scan: (domain: string, signal?: AbortSignal) =>
     get<ScanReport>(`/api/scan?domain=${encodeURIComponent(domain)}`, signal),
 }
+
+/** Download URL for a scan export (PDF audit report or raw JSON). */
+export const exportUrl = (domain: string, format: 'pdf' | 'json') =>
+  `${BASE}/api/v1/scan/${encodeURIComponent(domain)}/${format}`
