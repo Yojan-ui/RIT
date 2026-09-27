@@ -12,8 +12,6 @@
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@react-three/fiber": "^9.8.1",
-    "@splinetool/react-spline": "^4.1.0",
-    "@splinetool/runtime": "^2.0.58",
     "clsx": "^2.1.1",
     "framer-motion": "^13.4.4",
     "lucide-react": "^1.48.0",

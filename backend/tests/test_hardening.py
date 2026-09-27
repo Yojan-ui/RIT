@@ -230,18 +230,6 @@ def test_security_headers_on_app_and_api():
         assert "connect-src 'self';" in csp
 
 
-def test_spline_page_is_isolated_with_its_own_policy(tmp_path, monkeypatch):
-    (tmp_path / "index.html").write_text("app")
-    (tmp_path / "spline.html").write_text("scene")
-    monkeypatch.setattr(main.frontend, "root", tmp_path)
-    headers = client.get("/spline.html").headers
-    csp = headers["content-security-policy"]
-    assert "'unsafe-eval'" in csp and "https://unpkg.com" in csp and "https://*.spline.design" in csp
-    assert "frame-ancestors 'self'" in csp and headers["x-frame-options"] == "SAMEORIGIN"
-    # ...and none of that leaks to the dashboard itself.
-    assert "unpkg.com" not in client.get("/").headers["content-security-policy"]
-
-
 def test_docs_get_their_own_csp_and_https_gets_hsts():
     https = TestClient(main.app, base_url="https://testserver")
     response = https.get("/docs")

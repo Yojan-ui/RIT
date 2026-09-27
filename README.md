@@ -59,7 +59,7 @@ The live scan is the expensive endpoint: each one opens DNS, HTTPS and **port-25
 | Request body | 16 KiB max (`413`) |
 | Headers | CSP, `X-Frame-Options`, `nosniff`, Referrer/Permissions-Policy, HSTS over HTTPS, `X-Request-ID`, JSON access logs with `LOG_FORMAT=json` |
 
-The dashboard's CSP is strict (no `eval`, no inline script, same-origin only) because it renders attacker-controlled DNS text. The Spline runtime needs `eval` and fetches from `unpkg.com`, so it runs in its own same-origin iframe (`/spline.html`), which gets a separate, looser policy.
+The dashboard's CSP is strict (no `eval`, no inline script, same-origin only) because it renders attacker-controlled DNS text.
 
 **Client IPs.** Limits are keyed by client IP and kept in-process (the image runs one worker on purpose). `X-Forwarded-For` is trusted only from `FORWARDED_ALLOW_IPS`, so clients can't forge it:
 

@@ -1,30 +1,15 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy } from 'react'
 import { Telemetry } from '@/components/Telemetry'
 import { Card } from '@/components/ui/card'
 import { Spotlight } from '@/components/ui/spotlight'
 import { CopyButton } from '@/components/primitives'
+import { useTheme, type Theme } from '@/hooks/useTheme'
 import { exportUrl } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { CheckResult, ScanReport, Status, VectorId } from '@/lib/types'
 
-// The Spline scene runs in its own page (see src/spline-main.tsx) so its runtime's CSP needs
-// ('unsafe-eval', unpkg.com) never apply to this page, which renders untrusted DNS data.
-const SPLINE_PAGE = '/spline.html'
-
-// three.js is ~1 MB: only fetched if the Defense Lattice view is opened.
+// three.js is ~1 MB: split into its own chunk so the data panels render first.
 const DefenseLattice = lazy(() => import('@/components/lattice/DefenseLattice'))
-
-type View = 'spline' | 'lattice'
-const VIEW_KEY = 'sms.view'
-
-// The data-bound Defense Lattice is the primary view; Spline is the alternate.
-function readView(): View {
-  try {
-    return localStorage.getItem(VIEW_KEY) === 'spline' ? 'spline' : 'lattice'
-  } catch {
-    return 'lattice'
-  }
-}
 
 // Matrix order and labels, per the terminal spec.
 const MATRIX: { id: VectorId; label: string }[] = [
@@ -126,7 +111,7 @@ function OneFixPanel({ report }: { report: ScanReport }) {
 
 /**
  * The main SecureMailScope terminal: data and metrics on the left, an
- * interactive Spline scene on the right. All values come from the scan report.
+ * data-bound Defense Lattice and telemetry on the right. All values come from the scan report.
  */
 export function SecureMailDashboard({
   report,
@@ -145,23 +130,15 @@ export function SecureMailDashboard({
   onAim?: (id: VectorId | null) => void
   onSelectVector?: (id: VectorId) => void
 }) {
-  const [view, setView] = useState<View>(readView)
-  const chooseView = (next: View) => {
-    setView(next)
-    try {
-      localStorage.setItem(VIEW_KEY, next)
-    } catch {
-      /* private mode: the choice just won't persist */
-    }
-  }
+  const [theme, setTheme] = useTheme()
   const checks = new Map(report.checks.map((c) => [c.id, c]))
   const open = report.attack_paths.filter((a) => a.state === 'open').length
   const intact = report.checks.filter((c) => c.status !== 'fail').length
   const scanned = new Date(report.scanned_at).toLocaleTimeString('en-GB', { timeZone: 'UTC' })
 
   return (
-    <Card className="relative w-full overflow-hidden bg-[#050505] font-mono md:h-[700px]">
-      <Spotlight className="-top-40 left-0 md:-top-20 md:left-60" />
+    <Card className="relative w-full overflow-hidden bg-obsidian font-mono md:h-[700px]">
+      <Spotlight className="-top-40 left-0 light:hidden md:-top-20 md:left-60" />
 
       <div className="flex h-full flex-col md:flex-row">
         {/* LEFT: content & metrics */}
@@ -195,6 +172,22 @@ export function SecureMailDashboard({
               <span className="border border-white/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-neutral-500">
                 {report.mode === 'demo' ? 'DEMO' : report.cached ? 'CACHED' : 'LIVE'}
               </span>
+              <div className="ml-1.5 flex" role="group" aria-label="Colour theme">
+                {(['dark', 'light'] as const satisfies readonly Theme[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTheme(t)}
+                    aria-pressed={theme === t}
+                    className={cn(
+                      '-ml-px border border-white/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] uppercase transition-colors',
+                      theme === t ? 'bg-white text-black' : 'text-neutral-400 hover:text-white',
+                    )}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
           </header>
 
@@ -248,77 +241,33 @@ export function SecureMailDashboard({
           </section>
         </div>
 
-        {/* RIGHT: 3D viewport (Defense Lattice, or the Spline scene) above the email-security telemetry */}
+        {/* RIGHT: the Defense Lattice above the email-security telemetry */}
         <div className="relative flex min-w-0 flex-col md:flex-[1.2]">
-          <div className="relative z-10 flex h-9 shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3">
+          <div className="relative z-10 flex h-9 shrink-0 items-center border-b border-white/10 px-3">
             <Label>
-              3D <span className="text-neutral-700">//</span>{' '}
-              {view === 'spline' ? (
-                'Spline scene'
-              ) : (
-                <>
-                  Defense lattice ·{' '}
-                  <span className={intact === report.checks.length ? 'text-emerald-500' : 'text-red-500'}>
-                    {intact}/{report.checks.length} links intact
-                  </span>
-                </>
-              )}
+              3D <span className="text-neutral-700">//</span> Defense lattice ·{' '}
+              <span className={intact === report.checks.length ? 'text-emerald-500' : 'text-red-500'}>
+                {intact}/{report.checks.length} links intact
+              </span>
             </Label>
-            <div className="flex" role="group" aria-label="3D view">
-              {(
-                [
-                  ['lattice', 'Lattice'],
-                  ['spline', 'Spline'],
-                ] as const
-              ).map(([id, text]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => chooseView(id)}
-                  aria-pressed={view === id}
-                  className={cn(
-                    '-ml-px h-6 border border-white/10 px-2.5 text-[9.5px] tracking-[0.18em] uppercase transition-colors',
-                    view === id ? 'bg-white text-black' : 'text-neutral-400 hover:text-white',
-                  )}
-                >
-                  {text}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="relative h-[380px] min-h-0 md:h-auto md:flex-[1.5]">
-            {view === 'spline' ? (
-              <>
-                <iframe src={SPLINE_PAGE} title="Interactive 3D scene" className="h-full w-full border-0" />
-                {/* CRT vignette */}
-                <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_100px_rgba(0,0,0,0.9)]" aria-hidden />
-                {/* HUD corners with the scan target */}
-                <div className="pointer-events-none absolute top-3 left-4 text-[10px] tracking-[0.2em] text-neutral-500 uppercase">
-                  Target <span className="text-neutral-700">//</span> <span className="text-neutral-300">{report.domain}</span>
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center text-[10px] tracking-[0.2em] text-neutral-500 uppercase">
+                  <span className="animate-pulse">Loading defense lattice…</span>
                 </div>
-                <div className="pointer-events-none absolute right-4 bottom-3 text-right text-[10px] tracking-[0.2em] uppercase">
-                  <span className={open ? 'text-red-500' : 'text-emerald-500'}>{open}</span>
-                  <span className="text-neutral-600"> / {report.attack_paths.length} paths open</span>
-                </div>
-              </>
-            ) : (
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center text-[10px] tracking-[0.2em] text-neutral-500 uppercase">
-                    <span className="animate-pulse">Loading defense lattice…</span>
-                  </div>
-                }
-              >
-                <DefenseLattice
-                  report={report}
-                  dimmed={loading}
-                  flyTo={flyTo}
-                  embedded
-                  onSelectVector={onSelectVector ?? (() => {})}
-                />
-              </Suspense>
-            )}
+              }
+            >
+              <DefenseLattice
+                report={report}
+                dimmed={loading}
+                flyTo={flyTo}
+                embedded
+                onSelectVector={onSelectVector ?? (() => {})}
+              />
+            </Suspense>
           </div>
 
           <div className="h-[260px] shrink-0 border-t border-white/10 md:h-auto md:min-h-[200px] md:flex-1">

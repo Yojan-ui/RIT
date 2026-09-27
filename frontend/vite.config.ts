@@ -16,13 +16,6 @@ export default defineConfig({
     emptyOutDir: true,
     // The lazily loaded three.js chunk is ~1 MB (270 KB gzipped) by design.
     chunkSizeWarningLimit: 1100,
-    // Two pages: the app, and the Spline scene it embeds as an iframe (own, looser CSP).
-    rollupOptions: {
-      input: {
-        main: path.resolve(import.meta.dirname, 'index.html'),
-        spline: path.resolve(import.meta.dirname, 'spline.html'),
-      },
-    },
   },
   server: {
     proxy: {

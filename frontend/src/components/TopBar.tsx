@@ -63,7 +63,7 @@ export function TopBar({
           <button
             type="submit"
             disabled={!domain.trim() || loading}
-            className="h-8 rounded-sm bg-ok px-3 font-mono text-[11px] font-bold tracking-wider text-obsidian transition-colors duration-75 hover:bg-emerald-400 active:translate-y-px disabled:cursor-not-allowed disabled:bg-line-strong disabled:text-slate-500"
+            className="h-8 rounded-sm bg-ok px-3 font-mono text-[11px] font-bold tracking-wider text-obsidian transition-colors duration-75 hover:bg-emerald-400 active:translate-y-px disabled:cursor-not-allowed disabled:bg-line-strong disabled:text-slate-500 light:disabled:bg-[#d4d4d4]"
           >
             SCAN
           </button>

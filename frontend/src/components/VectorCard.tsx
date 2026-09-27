@@ -64,7 +64,7 @@ export function VectorCard({
             aria-hidden
           />
         </div>
-        <div className="h-0.5 w-full overflow-hidden rounded-full bg-line" aria-hidden>
+        <div className="h-0.5 w-full overflow-hidden rounded-full bg-line light:bg-[#d4d4d4]" aria-hidden>
           {check.applicable && <div className={cn('h-full', tone.bg)} style={{ width: `${check.score * 100}%` }} />}
         </div>
         <p className={cn('text-[12.5px] text-slate-400', !expanded && 'line-clamp-2')}>{check.summary}</p>

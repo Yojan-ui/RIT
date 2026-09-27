@@ -73,7 +73,7 @@ export function SeverityPips({ severity }: { severity: number }) {
       {[1, 2, 3, 4, 5].map((n) => (
         <span
           key={n}
-          className={cn('h-2.5 w-1 rounded-[1px]', n <= severity ? 'bg-slate-300' : 'bg-line-strong')}
+          className={cn('h-2.5 w-1 rounded-[1px]', n <= severity ? 'bg-slate-300' : 'bg-line-strong light:bg-[#c8c8c8]')}
         />
       ))}
     </span>

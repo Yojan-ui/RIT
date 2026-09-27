@@ -40,6 +40,66 @@
   --font-sans: var(--font-mono);
 }
 
+/* `light:` utilities apply only under the light theme (data-theme on <html>). */
+@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+
+/* Light theme: harsh, high-contrast brutalism. Pure white surfaces, pure black
+   1px borders, black monospace text. Tailwind v4 utilities resolve through
+   these palette variables, so re-pointing them here re-themes every component
+   (text-white becomes black, bg-black becomes white, and so on). Status
+   accents drop to their 700 shades to keep AA contrast on white. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-obsidian: #ffffff;
+  --color-panel: #ffffff;
+  --color-raised: #efefef;
+  --color-line: #000000;
+  --color-line-strong: #000000;
+  --color-white: #000000;
+  --color-black: #ffffff;
+
+  --color-slate-100: #000000;
+  --color-slate-200: #000000;
+  --color-slate-300: #000000;
+  --color-slate-400: #000000;
+  --color-slate-500: #333333;
+  --color-slate-600: #444444;
+  --color-slate-700: #555555;
+  --color-neutral-300: #000000;
+  --color-neutral-400: #000000;
+  --color-neutral-500: #333333;
+  --color-neutral-600: #444444;
+  --color-neutral-700: #555555;
+
+  --color-ok: #047857;
+  --color-warn: #b45309;
+  --color-crit: #b91c1c;
+  --color-na: #555555;
+  --color-emerald-400: #047857;
+  --color-emerald-500: #047857;
+  --color-amber-500: #b45309;
+  --color-red-500: #b91c1c;
+  --color-sky-400: #0369a1;
+  --color-violet-400: #6d28d9;
+  --color-teal-300: #0f766e;
+
+  --color-grid: rgb(0 0 0 / 0.05);
+  --color-grid-major: rgb(0 0 0 / 0.09);
+}
+
+/* Hairlines drawn as white/N over obsidian become solid black, not a grey tint. */
+:root[data-theme='light'] [class*='border-white/'] {
+  border-color: #000;
+}
+:root[data-theme='light'] [class*='divide-white/'] > * {
+  border-color: #000;
+}
+/* The lattice renders glowing strokes on a transparent canvas; inverting it
+   turns them into dark ink on white while hue-rotate keeps the status hues. */
+:root[data-theme='light'] canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 @layer base {
   html {
     color-scheme: dark;
@@ -76,15 +136,12 @@
       24px 24px;
     mask-image: radial-gradient(ellipse 120% 90% at 50% 0%, #000 45%, transparent 100%);
   }
-  /* Embedded pages (the Spline iframe): no grid, the host panel supplies the backdrop. */
-  body.embed {
-    background: transparent;
-  }
-  body.embed::before {
-    display: none;
-  }
   ::selection {
     background: color-mix(in srgb, var(--color-ok) 35%, transparent);
+    color: #fff;
+  }
+  [data-theme='light'] ::selection {
+    background: #000;
     color: #fff;
   }
   :focus-visible {
@@ -97,6 +154,10 @@
   /* Brutalist container: square, 1px white/10 hairline, pure obsidian. */
   .panel {
     @apply rounded-none border border-white/10 bg-panel shadow-none;
+  }
+  /* Stays in this layer so status borders (border-crit/30 …) still win. */
+  [data-theme='light'] .panel {
+    border-color: #000;
   }
   /* Small uppercase section label: "ATTACK PATH MATRIX" */
   .eyebrow {

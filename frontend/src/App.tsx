@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AttackMatrix } from '@/components/AttackMatrix'
 import { SecureMailDashboard } from '@/components/dashboard'
+import { RemediationPanel } from '@/components/RemediationPanel'
 import { ErrorPanel, ScanningBanner, Skeleton } from '@/components/States'
 import { TopBar } from '@/components/TopBar'
 import { VectorGrid } from '@/components/VectorGrid'
@@ -119,6 +120,7 @@ export default function App() {
             />
 
             <div className={cn('flex flex-col gap-3', loading && 'opacity-40')}>
+              <RemediationPanel report={report} onAim={aim} />
               <AttackMatrix report={report} onAim={aim} />
               <VectorGrid key={reportKey} report={report} focus={focus} />
             </div>

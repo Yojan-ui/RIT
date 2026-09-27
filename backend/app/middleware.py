@@ -25,22 +25,12 @@ HEALTH_PATHS = {"/api/health", "/api/v1/health"}
 
 # The app renders attacker-controlled DNS data (anyone can publish any TXT record), so its
 # policy stays strict: same-origin scripts, styles and connections only, no eval, no inline
-# script. It embeds the Spline scene as a same-origin iframe (frame-src via default-src).
+# script.
 # font-src allows data: because Vite inlines very small font files.
 APP_CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
     "font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; "
     "form-action 'self'; frame-ancestors 'none'"
-)
-# /spline.html runs only the Spline runtime and shows no scan data. The runtime needs eval,
-# WebAssembly, blob: workers, the scene from *.spline.design and a .wasm file from unpkg.com,
-# so it gets its own looser policy, and only this origin may frame it.
-SPLINE_PAGE = "/spline.html"
-SPLINE_CSP = (
-    "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self'; "
-    "img-src 'self' data: blob: https://*.spline.design; media-src 'self' data: blob:; font-src 'self' data:; "
-    "connect-src 'self' https://*.spline.design https://unpkg.com blob: data:; worker-src 'self' blob:; "
-    "object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'"
 )
 # FastAPI's /docs and /redoc pages load their UI from jsDelivr and use an inline bootstrap script.
 DOCS_CSP = (
@@ -89,13 +79,10 @@ def install(app: FastAPI) -> None:
             response = await call_next(request)
 
         response.headers["x-request-id"] = request_id
-        embedded = path == SPLINE_PAGE
-        if embedded:
-            response.headers.setdefault("x-frame-options", "SAMEORIGIN")  # the dashboard frames it
         for name, value in SECURITY_HEADERS.items():
             response.headers.setdefault(name, value)
         docs = path in ("/docs", "/redoc") or path.startswith("/docs/")
-        response.headers.setdefault("content-security-policy", DOCS_CSP if docs else SPLINE_CSP if embedded else APP_CSP)
+        response.headers.setdefault("content-security-policy", DOCS_CSP if docs else APP_CSP)
         if request.url.scheme == "https":
             response.headers.setdefault("strict-transport-security", "max-age=31536000; includeSubDomains")
 
