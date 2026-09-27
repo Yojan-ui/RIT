@@ -5,10 +5,9 @@ import { VectorCard } from './VectorCard'
 
 export function VectorGrid({ report, focus }: { report: ScanReport; focus?: { id: VectorId; n: number } }) {
   const checks = [...report.checks].sort((a, b) => VECTOR_ORDER.indexOf(a.id) - VECTOR_ORDER.indexOf(b.id))
-  // Failures start expanded so the raw evidence is one glance away.
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(checks.filter((c) => c.status === 'fail').map((c) => c.id)),
-  )
+  // Everything starts collapsed: the first read is a plain-English verdict per
+  // protocol, and the technical detail is opt-in.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const allOpen = expanded.size === checks.length
 
   // Clicking a node in the Defense Lattice expands and scrolls to its card.
@@ -31,9 +30,9 @@ export function VectorGrid({ report, focus }: { report: ScanReport; focus?: { id
 
   return (
     <section aria-labelledby="vectors-heading">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between">
         <h2 id="vectors-heading" className="eyebrow">
-          Vectors · {checks.length}
+          Protocol checks · {checks.length}
         </h2>
         <button
           type="button"
@@ -43,7 +42,7 @@ export function VectorGrid({ report, focus }: { report: ScanReport; focus?: { id
           {allOpen ? 'COLLAPSE ALL' : 'EXPAND ALL'}
         </button>
       </div>
-      <div className="grid items-start gap-3 lg:grid-cols-2">
+      <div className="flex flex-col gap-4">
         {checks.map((c) => (
           <VectorCard key={c.id} check={c} expanded={expanded.has(c.id)} onToggle={() => toggle(c.id)} />
         ))}
