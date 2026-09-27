@@ -23,6 +23,19 @@ const PALETTE = Object.fromEntries(Object.entries(HEX).map(([k, v]) => [k, new T
   Status,
   THREE.Color
 >
+// Light theme ("flat"): no bloom, so colours are the exact 700 shades used by
+// the DOM badges, dimming fades toward white, and nothing is pushed past 1.0.
+const FLAT_HEX: Record<Status, string> = {
+  pass: '#047857',
+  warn: '#b45309',
+  fail: '#b91c1c',
+  info: '#475569',
+  error: '#64748b',
+}
+const FLAT = Object.fromEntries(Object.entries(FLAT_HEX).map(([k, v]) => [k, new THREE.Color(v)])) as Record<
+  Status,
+  THREE.Color
+>
 // Bloom only picks up colours brighter than 1.0, so these multipliers decide
 // what glows: live links and passing nodes do, unmeasured ones stay dark.
 const GLOW: Record<Status, number> = { pass: 2.6, warn: 1.9, fail: 3, info: 0.5, error: 0.4 }
@@ -179,16 +192,30 @@ interface SatelliteRefs {
 function Satellite({
   node,
   refs,
+  flat,
   onHover,
   onSelect,
 }: {
   node: LatticeNode
   refs: SatelliteRefs
+  flat: boolean
   onHover: (id: VectorId | null) => void
   onSelect: (id: VectorId) => void
 }) {
-  const label = useMemo(() => makeLabelTexture(node.abbr, HEX[node.status]), [node.abbr, node.status])
+  const label = useMemo(
+    () => makeLabelTexture(node.abbr, (flat ? FLAT_HEX : HEX)[node.status]),
+    [node.abbr, node.status, flat],
+  )
   useEffect(() => () => label.dispose(), [label])
+  const shell = useMemo(() => new THREE.OctahedronGeometry(NODE_R, 0), [])
+  const edges = useMemo(() => new THREE.EdgesGeometry(shell), [shell])
+  useEffect(
+    () => () => {
+      shell.dispose()
+      edges.dispose()
+    },
+    [shell, edges],
+  )
 
   const over = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation()
@@ -204,14 +231,17 @@ function Satellite({
   return (
     <group ref={(g) => void (refs.mount = g)}>
       <group ref={(g) => void (refs.rotor = g)}>
-        <mesh>
-          <octahedronGeometry args={[NODE_R, 0]} />
-          <meshBasicMaterial ref={(m) => void (refs.wire = m)} wireframe toneMapped={false} />
+        {/* Dark: glowing wireframe around a hot heart. Flat: a solid fill with crisp 1px black edges. */}
+        <mesh geometry={shell}>
+          <meshBasicMaterial ref={(m) => void (refs.wire = m)} wireframe={!flat} toneMapped={false} />
         </mesh>
-        <mesh>
+        <mesh visible={!flat}>
           <octahedronGeometry args={[NODE_R * 0.42, 0]} />
           <meshBasicMaterial ref={(m) => void (refs.heart = m)} toneMapped={false} />
         </mesh>
+        <lineSegments geometry={edges} visible={flat}>
+          <lineBasicMaterial color="#000000" toneMapped={false} />
+        </lineSegments>
       </group>
       {/* Invisible, generous hit target: 1px wireframes are hard to hover. */}
       <mesh
@@ -241,6 +271,7 @@ export function Lattice({
   focus,
   positions,
   reducedMotion,
+  flat = false,
   onHover,
   onSelect,
 }: {
@@ -252,14 +283,16 @@ export function Lattice({
   /** Written every frame with each node's (un-jittered) position, read by the camera rig. */
   positions: THREE.Vector3[]
   reducedMotion: boolean
+  /** Light theme: flat, crisp solid colours with no glow (render without bloom). */
+  flat?: boolean
   onHover: (id: VectorId | null) => void
   onSelect: (id: VectorId) => void
 }) {
   const count = nodes.length
-  const live = useRef({ nodes, hovered, focus, score, reducedMotion })
+  const live = useRef({ nodes, hovered, focus, score, reducedMotion, flat })
   useEffect(() => {
-    live.current = { nodes, hovered, focus, score, reducedMotion }
-  }, [nodes, hovered, focus, score, reducedMotion])
+    live.current = { nodes, hovered, focus, score, reducedMotion, flat }
+  }, [nodes, hovered, focus, score, reducedMotion, flat])
 
   const anims = useRef<NodeAnim[]>([])
   if (anims.current.length !== count) anims.current = nodes.map(freshAnim)
@@ -277,7 +310,10 @@ export function Lattice({
   // Two segments per link (core->break, break->node), rewritten every frame.
   const links = useMemo(() => {
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 12), 3).setUsage(THREE.DynamicDrawUsage))
+    g.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(count * 12), 3).setUsage(THREE.DynamicDrawUsage),
+    )
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 12), 3).setUsage(THREE.DynamicDrawUsage))
     return g
   }, [count])
@@ -297,6 +333,13 @@ export function Lattice({
   }, [count])
   const dot = useMemo(makeDotTexture, [])
   const rings = useMemo(() => TILTS.map(orbitRing), [])
+  useEffect(() => {
+    for (const r of rings) {
+      const m = r.material as THREE.LineBasicMaterial
+      m.color.set(flat ? '#000000' : '#1e293b')
+      m.opacity = flat ? 0.3 : 0.8
+    }
+  }, [rings, flat])
   useEffect(
     () => () => {
       links.dispose()
@@ -327,13 +370,14 @@ export function Lattice({
       mid: new THREE.Vector3(),
       q: new THREE.Vector3(),
       axis: new THREE.Vector3(),
+      f: new THREE.Color(),
     }),
     [],
   )
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime
-    const { nodes, hovered, focus, score, reducedMotion } = live.current
+    const { nodes, hovered, focus, score, reducedMotion, flat } = live.current
     const motion = reducedMotion ? 0 : 1
     const lp = links.attributes.position.array as Float32Array
     const lc = links.attributes.color.array as Float32Array
@@ -350,6 +394,9 @@ export function Lattice({
     const writeVec = (arr: Float32Array, idx: number, vec: THREE.Vector3) => write(arr, idx, vec.x, vec.y, vec.z)
     const writeCol = (arr: Float32Array, idx: number, col: THREE.Color, k: number) =>
       write(arr, idx, col.r * k, col.g * k, col.b * k)
+    // Flat: a solid colour faded toward the white page (strength 1 = full colour).
+    const tint = (col: THREE.Color, strength: number) =>
+      v.f.copy(col).lerp(WHITE, 1 - Math.min(1, Math.max(0, strength)))
 
     nodes.forEach((node, i) => {
       const anim = anims.current[i]
@@ -392,7 +439,8 @@ export function Lattice({
         sat.rotor.rotation.set(t * 0.4 * motion + i, t * 0.7 * motion + i, glitching ? rand(-0.6, 0.6) : 0)
       }
       const glow = GLOW[node.status] * (isHovered ? 1.3 : 1) * dim
-      if (sat.wire) {
+      if (sat.wire && flat) sat.wire.color.copy(tint(FLAT[node.status], dim))
+      else if (sat.wire) {
         // Glitch frames flash hot red-white rather than pure white, so the node stays red under bloom.
         if (glitching && Math.random() > 0.5) sat.wire.color.setRGB(2.4 * dim, 0.85 * dim, 0.85 * dim)
         else sat.wire.color.copy(PALETTE[node.status]).multiplyScalar(glow)
@@ -453,6 +501,11 @@ export function Lattice({
         v.p.copy(v.q).addScaledVector(v.axis, sh.length / 2)
         writeVec(dp, idx + 1, v.p)
         const flicker = motion ? 1.4 + 1.8 * Math.random() : 2.2
+        if (flat) {
+          writeCol(dc, idx, tint(FLAT.fail, shatter * dim), 1)
+          writeCol(dc, idx + 1, v.f, 1)
+          return
+        }
         writeCol(dc, idx, v.c.copy(PALETTE.fail), flicker * shatter * dim)
         writeCol(dc, idx + 1, v.c, flicker * 0.5 * shatter * dim)
       })
@@ -460,22 +513,30 @@ export function Lattice({
       v.c.copy(PALETTE[node.status])
       const linkGlow = GLOW[node.status] * (isHovered ? 1.4 : 1) * dim
       const endGlow = failing ? linkGlow * (0.9 + 0.5 * Math.random()) : linkGlow // broken ends crackle
-      writeCol(lc, base, v.c, linkGlow * 0.45)
-      writeCol(lc, base + 1, v.c, endGlow)
-      writeCol(lc, base + 2, v.c, endGlow)
-      writeCol(lc, base + 3, v.c, linkGlow)
+      if (flat) {
+        tint(FLAT[node.status], dim)
+        for (let k = 0; k < 4; k++) writeCol(lc, base + k, v.f, 1)
+      } else {
+        writeCol(lc, base, v.c, linkGlow * 0.45)
+        writeCol(lc, base + 1, v.c, endGlow)
+        writeCol(lc, base + 2, v.c, endGlow)
+        writeCol(lc, base + 3, v.c, linkGlow)
+      }
 
       // ---- data streams ----
       // pass: steady bidirectional traffic. warn: slower, some packets drop
       // mid-link. fail: outbound packets run into the break and die there.
       let slot = i * POINTS_PER_LINK
-      const emit = (col: THREE.Color, k: number) => {
+      // `strength` (0..1) is the flat-mode equivalent of the glow multiplier `k`.
+      const emit = (col: THREE.Color, k: number, strength: number) => {
         writeVec(pp, slot, v.p)
-        writeCol(pc, slot, col, k)
+        if (flat) writeCol(pc, slot, tint(FLAT[node.status], strength), 1)
+        else writeCol(pc, slot, col, k)
         slot++
       }
       const skip = () => {
         writeCol(pc, slot, v.c, 0) // additive blending: black = invisible
+        if (flat) write(pp, slot, 0, 1e4, 0) // opaque in flat mode, so park it off-screen
         slot++
       }
       const flowing = node.status === 'pass' || node.status === 'warn' || failing
@@ -495,20 +556,20 @@ export function Lattice({
           }
           if (failing) {
             v.p.lerpVectors(v.s, v.a, uj)
-            emit(v.c, 3 * (uj > 0.85 ? 1.8 : 1) * TRAIL_FADE[j] * dim)
+            emit(v.c, 3 * (uj > 0.85 ? 1.8 : 1) * TRAIL_FADE[j] * dim, TRAIL_FADE[j] * dim)
           } else {
             v.p.lerpVectors(v.s, v.e, pk.inbound ? 1 - uj : uj)
             const fade = Math.sin(Math.PI * uj) * (node.status === 'warn' ? 0.75 : 1)
-            emit(pk.inbound ? v.inbound : v.c, 3.4 * fade * TRAIL_FADE[j] * dim)
+            emit(pk.inbound ? v.inbound : v.c, 3.4 * fade * TRAIL_FADE[j] * dim, fade * TRAIL_FADE[j] * dim)
           }
         }
       }
       for (let k = 0; k < SPARKS; k++) {
-        if (failing && broken > 0.3) {
+        if (failing && broken > 0.3 && !flat) {
           v.p.copy(k === 0 ? v.a : v.b)
           v.p.x += rand(-0.06, 0.06) * motion
           v.p.y += rand(-0.06, 0.06) * motion
-          emit(v.c, (Math.random() > 0.45 ? 4 : 0.3) * dim)
+          emit(v.c, (Math.random() > 0.45 ? 4 : 0.3) * dim, 1)
         } else skip()
       }
     })
@@ -528,8 +589,14 @@ export function Lattice({
       core.current.scale.setScalar(1 + 0.025 * Math.sin(t * 2) * motion)
     }
     const unstable = score < 50 && motion > 0 && Math.random() > 0.93
-    coreWire.current?.color.copy(tone).multiplyScalar((unstable ? 0.4 : 1.5) * coreDim)
-    coreHeart.current?.color.copy(tone).multiplyScalar((0.35 + 0.1 * Math.sin(t * 2)) * coreDim)
+    if (flat) {
+      const flatTone = score >= 80 ? FLAT.pass : score >= 50 ? FLAT.warn : FLAT.fail
+      coreWire.current?.color.copy(tint(flatTone, (unstable ? 0.5 : 1) * coreDim))
+      coreHeart.current?.color.copy(tint(flatTone, 0.22 * coreDim)) // pale solid fill behind the wire
+    } else {
+      coreWire.current?.color.copy(tone).multiplyScalar((unstable ? 0.4 : 1.5) * coreDim)
+      coreHeart.current?.color.copy(tone).multiplyScalar((0.35 + 0.1 * Math.sin(t * 2)) * coreDim)
+    }
   })
 
   return (
@@ -558,20 +625,26 @@ export function Lattice({
       </lineSegments>
 
       <points geometry={packets} frustumCulled={false}>
-        <pointsMaterial
-          map={dot}
-          size={0.13}
-          sizeAttenuation
-          vertexColors
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
+        {flat ? (
+          // Crisp opaque squares: no soft sprite, no additive glow.
+          <pointsMaterial key="flat" size={0.06} sizeAttenuation vertexColors toneMapped={false} />
+        ) : (
+          <pointsMaterial
+            key="glow"
+            map={dot}
+            size={0.13}
+            sizeAttenuation
+            vertexColors
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        )}
       </points>
 
       {nodes.map((node, i) => (
-        <Satellite key={node.id} node={node} refs={sats[i]} onHover={onHover} onSelect={onSelect} />
+        <Satellite key={node.id} node={node} refs={sats[i]} flat={flat} onHover={onHover} onSelect={onSelect} />
       ))}
     </>
   )

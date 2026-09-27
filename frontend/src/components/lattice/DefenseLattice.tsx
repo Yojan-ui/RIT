@@ -55,6 +55,7 @@ export default function DefenseLattice({
   dimmed = false,
   flyTo = null,
   embedded = false,
+  flat = false,
   onSelectVector,
 }: {
   report: ScanReport
@@ -63,13 +64,17 @@ export default function DefenseLattice({
   embedded?: boolean
   /** Vector the camera should fly to, driven by hovering DOM elements. */
   flyTo?: VectorId | null
+  /** Light theme: flat solid colours, no bloom. */
+  flat?: boolean
   onSelectVector: (id: VectorId) => void
 }) {
   const nodes = useMemo<LatticeNode[]>(
     () =>
       VECTOR_ORDER.flatMap((id) => {
         const check = report.checks.find((c) => c.id === id)
-        return check ? [{ id, abbr: VECTOR_ABBR[id], name: check.name, status: check.status, summary: check.summary }] : []
+        return check
+          ? [{ id, abbr: VECTOR_ABBR[id], name: check.name, status: check.status, summary: check.summary }]
+          : []
       }),
     [report],
   )
@@ -120,6 +125,7 @@ export default function DefenseLattice({
               focus={flyIndex >= 0 ? flyTo : null}
               positions={positions}
               reducedMotion={reducedMotion}
+              flat={flat}
               onHover={setHovered}
               onSelect={onSelectVector}
             />
@@ -129,12 +135,16 @@ export default function DefenseLattice({
               positions={positions}
               reducedMotion={reducedMotion}
             />
-            <UnrealBloom strength={1.0} radius={0.3} threshold={0.8} />
+            {/* Unmounting hands rendering back to R3F's default (un-post-processed) loop. */}
+            {!flat && <UnrealBloom strength={1.0} radius={0.3} threshold={0.8} />}
           </Canvas>
         </WebGLBoundary>
 
         {/* Readout for the hovered/focused node */}
-        <div className="pointer-events-none absolute top-3 left-4 max-w-[min(22rem,calc(100%-2rem))]" aria-live="polite">
+        <div
+          className="pointer-events-none absolute top-3 left-4 max-w-[min(22rem,calc(100%-2rem))]"
+          aria-live="polite"
+        >
           {focus ? (
             <div
               className={cn(

@@ -82,9 +82,6 @@
   --color-sky-400: #0369a1;
   --color-violet-400: #6d28d9;
   --color-teal-300: #0f766e;
-
-  --color-grid: rgb(0 0 0 / 0.05);
-  --color-grid-major: rgb(0 0 0 / 0.09);
 }
 
 /* Hairlines drawn as white/N over obsidian become solid black, not a grey tint. */
@@ -94,10 +91,18 @@
 :root[data-theme='light'] [class*='divide-white/'] > * {
   border-color: #000;
 }
-/* The lattice renders glowing strokes on a transparent canvas; inverting it
-   turns them into dark ink on white while hue-rotate keeps the status hues. */
-:root[data-theme='light'] canvas {
-  filter: invert(1) hue-rotate(180deg);
+/* Light is flat: no shadows (inset severity stripes included), no blur, no
+   glow. The lattice renders its own flat mode (Lattice `flat` prop, no bloom). */
+:root[data-theme='light'] *,
+:root[data-theme='light'] *::before,
+:root[data-theme='light'] *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  backdrop-filter: none !important;
+}
+/* Pure #FFFFFF behind everything: the terminal grid is dark-mode only. */
+:root[data-theme='light'] body::before {
+  display: none;
 }
 
 @layer base {

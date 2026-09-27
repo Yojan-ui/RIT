@@ -277,6 +277,7 @@ export function SecureMailDashboard({
                 dimmed={loading}
                 flyTo={flyTo}
                 embedded
+                flat={theme === 'light'}
                 onSelectVector={onSelectVector ?? (() => {})}
               />
             </Suspense>
