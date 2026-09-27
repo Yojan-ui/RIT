@@ -1,8 +1,7 @@
-"""Built-in demo domains: fixed grades, no network, labelled as demos, same in both editions."""
+"""Built-in demo domains: fixed grades, no network, labelled as demos."""
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from pathlib import Path
@@ -10,9 +9,8 @@ from pathlib import Path
 import pytest
 
 from app.demo import demo_domains, scan_demo
-from app.models.schemas import CheckResult
 from app.engine.scanner import build_result
-from tests.test_offline_build import NODE, _check_view, _path_view, _run_js
+from app.models.schemas import CheckResult
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMOS = demo_domains()
@@ -80,28 +78,6 @@ def test_dashboard_loads_nothing_from_the_internet(client):
     assert (ROOT / "app/static/js/vendor/htmx.min.js").stat().st_size > 10_000
     for font in ("archivo-latin-standard-normal.woff2", "jetbrains-mono-latin-wght-normal.woff2"):
         assert (ROOT / "app/static/fonts" / font).read_bytes()[:4] == b"wOF2"
-
-
-def test_browser_edition_embeds_the_current_demo_zones():
-    html = (ROOT / "offline_scanner.html").read_text()
-    embedded = re.search(r'<script id="demo-zones" type="application/json">(.*?)</script>', html, re.S).group(1)
-    assert json.loads(embedded) == json.loads((ROOT / "app/demo/zones.json").read_text()), (
-        "run: python scripts/sync_browser_edition.py"
-    )
-
-
-@pytest.mark.skipif(NODE is None, reason="Node.js is required to run the browser engine")
-async def test_browser_demo_matches_server_demo(settings):
-    js = _run_js({"demos": sorted(DEMOS)})["demos"]
-    for domain in sorted(DEMOS):
-        server = await scan_demo(domain, settings)
-        # A browser never probes SMTP: compare against the server result with the browser's transport verdict.
-        js_transport = next(c for c in js[domain]["checks"] if c["name"] == "transport")
-        checks = [CheckResult.model_validate(js_transport) if c.name.value == "transport" else c for c in server.checks]
-        py = json.loads(build_result(domain, checks).model_dump_json())
-        assert [_check_view(c) for c in js[domain]["checks"]] == [_check_view(c) for c in py["checks"]], domain
-        assert js[domain]["score"] == py["score"], domain
-        assert [_path_view(p) for p in js[domain]["attack_matrix"]] == [_path_view(p) for p in py["attack_matrix"]]
 
 
 def test_demo_launcher_script():

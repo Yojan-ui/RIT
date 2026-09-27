@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -75,6 +76,13 @@ def create_app() -> FastAPI:
     app.state.templates = templates
     app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
     app.include_router(api_router, prefix=API_PREFIX, tags=["v1"])
+    if settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["content-type"],
+        )
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def dashboard(request: Request, domain: str = "") -> HTMLResponse:

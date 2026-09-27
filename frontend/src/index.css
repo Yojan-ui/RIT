@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource/instrument-sans/400.css';
+@import '@fontsource/instrument-sans/500.css';
+@import '@fontsource/instrument-sans/600.css';
+
+/*
+ * Terminal theme, aligned with MochaTrade: near-black surfaces, 1px rules, monospaced metrics,
+ * and two tactical accents that carry meaning and nothing else.
+ *
+ * Contrast on --color-obsidian: ink 16.7, dim 6.6, phosphor 15.1, cadmium 5.7, amber 11.0,
+ * signal 8.2. --color-faint is 3.5 and is for rules and inactive indicators only, never text.
+ */
+@theme {
+  /* Surfaces */
+  --color-obsidian: #06080b;
+  --color-panel: #0b0e12;
+  --color-raised: #11151b;
+  --color-line: #1c222b;
+  --color-line-strong: #2a323d;
+
+  /* Text */
+  --color-ink: #e6ebf2;
+  --color-dim: #8b95a5;
+  --color-faint: #5d6776;
+
+  /* Tactical accents: text and 1px strokes */
+  --color-phosphor: #33ff88;
+  --color-cadmium: #ff3b30;
+  --color-amber: #ffb020;
+  --color-signal: #5aa9ff;
+  /* Solid fill that carries white text (white on it: 5.4:1) */
+  --color-cadmium-fill: #d70015;
+
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+}
+
+/* Semantic names, so components say what a colour means rather than which colour it is. */
+@theme inline {
+  --color-secure: var(--color-phosphor);
+  --color-vulnerable: var(--color-cadmium);
+  --color-partial: var(--color-amber);
+  --color-unknown: var(--color-dim);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-obsidian);
+  }
+  body {
+    background: var(--color-obsidian);
+    color: var(--color-dim);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-phosphor) 30%, transparent);
+    color: var(--color-ink);
+  }
+  :focus-visible {
+    outline: 1px solid var(--color-phosphor);
+    outline-offset: 2px;
+  }
+}
+
+@utility tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: 'zero' 1;
+}
+
+/* Section label: the one place uppercase tracking is used, as in MochaTrade's panels. */
+@utility label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+}
+
+@keyframes caret {
+  0%, 49.9% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.caret {
+  animation: caret 1s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
+}

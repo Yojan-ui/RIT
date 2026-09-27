@@ -10,17 +10,9 @@ SecureMailScope audits a domain's email security (SPF, DKIM, DMARC, MTA-STS, TLS
 
 | | Link |
 |---|---|
-| **Browser edition** (no install, runs entirely in your browser) | **https://yojan-ui.github.io/SECUREMAILSCOPE/** |
-| **Server edition** (FastAPI, all seven checks, PDF reports, Claude narrative) | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yojan-ui/SECUREMAILSCOPE) |
+| **SecureMailScope** (FastAPI, all seven checks, PDF reports, Claude narrative) | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yojan-ui/SECUREMAILSCOPE) |
 
-It ships in two editions that share one scoring engine:
-
-| | **Server edition** (FastAPI) | **Single-file edition** (`offline_scanner.html`) |
-|---|---|---|
-| Install | Python 3.11+, `pip install` | None: open the file in a browser |
-| Checks | All 7, including a live STARTTLS probe of the mail server | 6 of 7 (browsers can't open SMTP connections) |
-| Output | Dashboard, plain-English narrative, JSON API, JSON and **PDF audit report** | Dashboard, JSON download, print to PDF |
-| Where it runs | Any machine or server | Anywhere a browser runs, including locked-down laptops |
+A new **React terminal UI** (Vite, Tailwind CSS, React Three Fiber) is being built in `frontend/`, alongside the current server-rendered dashboard. See [Frontend](#5-frontend-react-terminal).
 
 ---
 
@@ -30,7 +22,7 @@ It ships in two editions that share one scoring engine:
 2. [The problem](#2-the-problem)
 3. [What you get from a scan](#3-what-you-get-from-a-scan)
 4. [Running the FastAPI backend](#4-running-the-fastapi-backend)
-5. [Using the single-file edition](#5-using-the-single-file-edition-offline_scannerhtml)
+5. [Frontend (React terminal)](#5-frontend-react-terminal)
 6. [How it works](#6-how-it-works)
 7. [API reference](#7-api-reference)
 8. [Testing and verification](#8-testing-and-verification)
@@ -44,9 +36,6 @@ It ships in two editions that share one scoring engine:
 
 **Presenting?** See **[DEMO.md](DEMO.md)** for the five-minute judge walkthrough, a fallback plan and likely questions. `scripts/demo.sh` sets everything up and starts the dashboard, which then works with no internet connection.
 
-**Fastest (no install):** open the [browser edition](https://yojan-ui.github.io/SECUREMAILSCOPE/), or double-click `offline_scanner.html`, type a domain (or click one of the examples), and press **Scan domain**.
-
-**Full edition:**
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
@@ -131,14 +120,14 @@ Under the score, a **"What this means"** section explains the findings for a non
 
 ### Built-in demo domains
 
-Five `.example` domains (a name reserved by RFC 2606, so never real) have fixed DNS records, MTA-STS policies and mail-server behaviour. They run through the real checkers, scoring, attack paths and fix logic, grade **A, B, C, D and F** on the server, and scan with **no network at all**, so a demo gives the same result on any Wi-Fi or none. They are labelled as demos on screen and in PDF reports. Both editions include them; they are defined once in `app/demo/zones.json`.
+Five `.example` domains (a name reserved by RFC 2606, so never real) have fixed DNS records, MTA-STS policies and mail-server behaviour. They run through the real checkers, scoring, attack paths and fix logic, grade **A, B, C, D and F** on the server, and scan with **no network at all**, so a demo gives the same result on any Wi-Fi or none. They are labelled as demos on screen and in PDF reports. They are defined in `app/demo/zones.json` and listed by `GET /api/v1/demo-domains`.
 
 Any result can be linked: `/?domain=monitor-only.example` scans on load, and `#attack-matrix` jumps to the matrix.
 
 ### Reports
 
-- **PDF audit report** (server edition): executive summary, priority remediation, attack path assessment, control results with points, every finding with its recommendation, and a scope and methodology section. Every page carries a running header and page numbers.
-- **JSON export** (both editions): the complete machine-readable result.
+- **PDF audit report**: executive summary, priority remediation, attack path assessment, control results with points, every finding with its recommendation, and a scope and methodology section. Every page carries a running header and page numbers.
+- **JSON export**: the complete machine-readable result.
 
 ---
 
@@ -191,34 +180,47 @@ The ones you are most likely to change:
 
 ---
 
-## 5. Using the single-file edition (`offline_scanner.html`)
+## 5. Frontend (React terminal)
 
-`offline_scanner.html` is the whole scanner (engine, scoring, attack paths, one-fix logic and user interface) in **one HTML file with all CSS and JavaScript embedded**. There are no dependencies, no build step and no server.
+`frontend/` is the next-generation UI: a dark, dense terminal in the visual language of MochaTrade, built with **React 19, Vite, TypeScript, Tailwind CSS 4 and React Three Fiber**. It talks only to the FastAPI API. The server-rendered dashboard at `/` stays in place until the React app covers every view.
 
-### How to use it
+### Run it
 
-1. Open `offline_scanner.html` in Chrome, Edge, Firefox or Safari (double-click, or drag it into a browser window).
-2. Enter a domain and press **Scan domain**. Optionally add your DKIM selectors, e.g. `google` or `selector1`.
-3. Use **Download JSON** or **Print or save as PDF** to keep the result.
+```bash
+# terminal 1: the API
+uvicorn app.main:app --reload
 
-You can also link straight to a scan: `offline_scanner.html?domain=example.com`, or [yojan-ui.github.io/SECUREMAILSCOPE/?domain=example.com](https://yojan-ui.github.io/SECUREMAILSCOPE/?domain=example.com). It works from a USB stick, an email attachment or any static web host. `docs/index.html` is the copy GitHub Pages serves, and a test keeps it identical to `offline_scanner.html`.
+# terminal 2: the React app, with hot reload
+cd frontend && npm install && npm run dev
+```
 
-### How it works without a backend
+Open **http://localhost:5173**. `?domain=monitor-only.example` scans on load.
 
-DNS records are fetched with **DNS-over-HTTPS** (RFC 8484 JSON API) from Cloudflare, with Google as automatic fallback. You can choose the provider in the form. These lookups are the page's only network requests. Nothing is uploaded or stored.
+### How it reaches the API
 
-It needs an internet connection for DNS, but nothing needs to be installed and no data goes to a SecureMailScope server.
+- **Development:** the browser calls `/api/...` on its own origin, and Vite proxies it to `http://127.0.0.1:8000` (override with `SMS_BACKEND_URL`). No CORS is involved.
+- **Production:** either FastAPI serves the built app (same origin), or the app is hosted separately with `VITE_API_BASE_URL=https://api.example` at build time and the backend allows its origin with `SMS_CORS_ORIGINS=https://app.example`. CORS is off unless that variable is set.
 
-### What differs from the server edition
+### Typed API contract
 
-The browser engine is a line-for-line JavaScript port of the Python engine, and the test suite checks that both produce identical results (see [section 8](#8-testing-and-verification)). The browser itself imposes two limits:
+`frontend/src/api/schema.d.ts` is generated from the backend's own Pydantic models, so the UI can't drift from the API:
 
-| Check | Browser behaviour | Why |
-|---|---|---|
-| STARTTLS on the mail server | Always **not measured** | Browsers cannot open raw TCP connections to port 25. |
-| MTA-STS policy file | Read when the domain's web server allows cross-origin requests; otherwise **not measured** | Browser security (CORS) blocks reading most third-party files. The MTA-STS DNS record is always checked. |
+```bash
+cd frontend && npm run gen:api
+```
 
-Both are excluded from the score, not counted as failures, so the browser score can differ from the server score for the same domain. For example, gmail.com scores **65 (C)** on the server, which reads its MTA-STS policy and tests STARTTLS, and **43 (F)** in the browser. There those two passing controls (32 points) drop out, so its `p=none` DMARC policy carries more of the remaining weight. Use the server edition when you need the full picture.
+This dumps FastAPI's OpenAPI schema to `frontend/src/api/openapi.json` and generates the TypeScript types from it. A backend test fails if either file is stale.
+
+### Theme
+
+Colours are named by meaning (`secure`, `partial`, `vulnerable`, `unknown`) and defined once in `frontend/src/index.css`: an obsidian background (`#06080b`), 1px rules, **Phosphor Green** `#33ff88` for secure, **Cadmium Red** `#ff3b30` for vulnerable, amber for partial. Metrics use JetBrains Mono with tabular figures; body text uses Instrument Sans, as in MochaTrade. Every text colour meets WCAG AA contrast on the background.
+
+### Checks
+
+```bash
+cd frontend && npm run build   # type-check and production build
+npm run lint
+```
 
 ---
 
@@ -228,8 +230,8 @@ Both are excluded from the score, not counted as failures, so the browser score 
 flowchart LR
     user(["Browser"])
 
-    subgraph pages["GitHub Pages: docs/index.html"]
-        lite["Browser edition<br/>same engine in JavaScript"]
+    subgraph web["React terminal: Vite + R3F"]
+        spa["React app<br/>typed API client"]
     end
 
     subgraph render["Render: Docker image, Uvicorn + FastAPI"]
@@ -250,15 +252,15 @@ flowchart LR
         narrative -. "no key or rejected" .-> rules["Rule-based writer"]
     end
 
-    user --> lite
+    user --> spa
     user --> ui
-    lite -- "DNS over HTTPS" --> doh["Cloudflare / Google DoH"]
+    spa -- "/api/v1 (JSON)" --> api
     checks -- "DNS" --> dns[("Public DNS")]
     checks -- "SMTP port 25" --> mx["Domain's mail servers"]
     checks -- "HTTPS" --> sts["mta-sts policy file"]
 ```
 
-A scan runs every checker concurrently, then three pure functions turn the check results into the score, the attack-path matrix and the one fix. The browser edition runs the same pipeline in JavaScript, and the test suite requires both engines to produce identical results. The narrative sits after the engine and can only restate what it found.
+A scan runs every checker concurrently, then three pure functions turn the check results into the score, the attack-path matrix and the one fix. The narrative sits after the engine and can only restate what it found.
 
 **What each check verifies**
 
@@ -274,7 +276,7 @@ A scan runs every checker concurrently, then three pure functions turn the check
 
 **Choosing the one fix.** Each open path adds its severity weight (critical 10, high 6, medium 3, low 1) to the control that would fix it, at full weight if open and half if partly open. The control with the most weight wins. Ties go to the fix with the larger score gain, which is measured by re-scoring the scan as if that control passed.
 
-**Tech stack.** Python 3.11+, FastAPI, Pydantic 2, dnspython, httpx, cryptography, ReportLab, the Anthropic Python SDK, Jinja2, HTMX and Tailwind CSS. The single-file edition is vanilla JavaScript with no libraries.
+**Tech stack.** Python 3.11+, FastAPI, Pydantic 2, dnspython, httpx, cryptography, ReportLab, the Anthropic Python SDK, Jinja2, HTMX and Tailwind CSS. The React terminal uses React 19, Vite, TypeScript, Tailwind CSS 4, React Three Fiber and three.js.
 
 ---
 
@@ -290,6 +292,7 @@ Base path: `/api/v1`. Full interactive docs are at `/docs`.
 | `GET` | `/scan/{domain}/json` | Download the scan as a JSON file |
 | `GET` | `/scan/{domain}/pdf` | Download the formal PDF audit report |
 | `GET` | `/scan/{domain}/narrative` | Plain-English summary, attack scenarios and ordered fixes; `source` says whether Claude or the rule-based writer wrote it |
+| `GET` | `/demo-domains` | The built-in `.example` demo domains, one per grade |
 | `GET` | `/recent` | Recently scanned domains |
 
 Both export endpoints accept `?dkim_selectors=s1,s2`. Domains are normalised first, so `https://Example.com/path` and `user@example.com` both mean `example.com`. IP addresses are rejected with HTTP 422.
@@ -312,7 +315,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The suite has **299 tests** and runs in a few seconds, **fully offline**. An autouse guard fails any test that tries to reach the network (other than loopback), so a passing run proves nothing depends on live DNS.
+The suite has **287 tests** and runs in a few seconds, **fully offline**. An autouse guard fails any test that tries to reach the network (other than loopback), so a passing run proves nothing depends on live DNS.
 
 | Area | What is verified |
 |---|---|
@@ -320,12 +323,11 @@ The suite has **299 tests** and runs in a few seconds, **fully offline**. An aut
 | Attack paths (`tests/test_attack_paths.py`) | Every rule's every outcome: 47 cases, plus a check that each of the 7 paths can reach all 4 states. |
 | Checkers | SPF lookup counting and loops, DKIM key parsing (512 to 3072-bit RSA, Ed25519), DMARC tags and inheritance, MTA-STS policy rules, and STARTTLS against a real local SMTP server with generated certificates. |
 | Narrative (`tests/test_narrative.py`) | The rule-based writer on real scenarios, including the clean-domain case (no invented work) and not-assessed checks described as gaps. The grounding validator rejects wrong scores, wrong grades, unknown finding ids and invented issues. The Claude path is tested with a fake client for success, refusal, truncation, timeouts, rate limits and connection failure, all of which must fall back cleanly. |
-| Demo domains (`tests/test_demo.py`) | Every demo scans to its intended grade with the network blocked, is labelled as a demo on screen and in the PDF, and gives identical results in the browser edition. Also that the dashboard loads nothing from the internet, and that `?domain=` deep links are escaped. |
-| Deployment (`tests/test_deploy.py`) | The GitHub Pages copy is identical to `offline_scanner.html`, the Dockerfile and dev template pin the same Tailwind version, the image runs as a non-root user on `$PORT`, and the production stylesheet keeps every colour class the templates build at runtime. |
+| Demo domains (`tests/test_demo.py`) | Every demo scans to its intended grade with the network blocked, is labelled as a demo on screen and in the PDF, and `?domain=` deep links are escaped. The dashboard loads nothing from the internet. |
+| Frontend contract (`tests/test_frontend_contract.py`) | The committed OpenAPI schema and generated TypeScript types match the backend, response fields are required in the contract, and CORS is off unless origins are configured. |
+| Deployment (`tests/test_deploy.py`) | The Dockerfile and dev template pin the same Tailwind version, the image runs as a non-root user on `$PORT`, and the production stylesheet keeps every colour class the templates build at runtime. |
 | Exports (`tests/test_exports.py`) | JSON and PDF endpoints, filenames, invalid input, deterministic PDF output, and escaping of hostile text inside the PDF. |
-| **Browser edition parity** (`tests/test_offline_build.py`) | Extracts the engine from `offline_scanner.html`, runs it under Node.js on the same fixtures as the Python engine, and requires **identical** check statuses, findings, score, attack matrix and one fix across 10 scenarios. It also compares domain normalisation, DNS-over-HTTPS answer parsing, RSA key sizes, and that the HTML file loads nothing external. |
 
-The parity tests need Node.js 18+ and are skipped if it is not installed.
 
 ---
 
@@ -344,20 +346,15 @@ The image builds the dashboard's stylesheet with Tailwind's standalone CLI (no N
 
 `render.yaml` is a Render Blueprint. Click **Deploy to Render** above, or in the Render dashboard choose **New → Blueprint** and select this repository. Add `ANTHROPIC_API_KEY` when prompted if you want Claude-written narratives. Many hosting providers block outbound port 25; when that happens the STARTTLS check is reported as not assessed and left out of the score.
 
-### GitHub Pages (browser edition)
-
-`docs/index.html` is a copy of `offline_scanner.html`. To publish it: repository **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `/docs`**. After changing `offline_scanner.html` or `app/demo/zones.json`, run `python scripts/sync_browser_edition.py` (tests fail if you forget).
-
 ---
 
 ## 10. Project layout
 
 ```
-offline_scanner.html   single-file edition (engine + UI, no dependencies)
+frontend/              React terminal UI (Vite, Tailwind, React Three Fiber)
 DEMO.md                demo-day walkthrough, fallback plan, likely questions
-docs/index.html        GitHub Pages copy of offline_scanner.html
 docs/screenshots/      slide-ready screenshots (regenerate with scripts/screenshots.mjs)
-scripts/               demo.sh (one-command offline demo), sync_browser_edition.py, screenshots.mjs
+scripts/               demo.sh (one-command offline demo), generate_api_types.py, screenshots.mjs
 Dockerfile, render.yaml, .dockerignore
 requirements.txt       runtime dependencies (requirements-dev.txt adds pytest)
 app/
@@ -378,7 +375,6 @@ app/
   templates/, static/  Jinja2 + HTMX + Tailwind dashboard
 tests/
   fixtures/            DNS zones and end-to-end scan scenarios
-  js/                  Node harness for the single-file edition
   test_*.py
 legacy/                earlier prototype, kept for reference (see below)
 ```
@@ -399,5 +395,4 @@ the repository root.
 - **DKIM needs your selector** for a definitive verdict, because selectors cannot be discovered through DNS.
 - **STARTTLS needs outbound port 25**, which many cloud providers and networks block. SecureMailScope detects this and excludes the check instead of guessing.
 - **Organisational domain detection** uses a built-in list of common multi-part suffixes (such as `co.uk` and `co.in`) rather than the full Public Suffix List.
-- **The browser edition cannot measure STARTTLS** (25 points) and usually cannot read MTA-STS policy files, so its score for the same domain can be noticeably lower or higher than the server's. Both editions exclude what they can't measure rather than guessing.
 - **Unless the stylesheet has been built** (`scripts/demo.sh` or the Docker image does it), the dashboard compiles Tailwind in the browser from a CDN, which needs internet. Fonts and HTMX are always served locally.

@@ -25,7 +25,6 @@ If you see five `ok` lines, the laptop is ready. After that nothing needs the in
 
 Also before you leave:
 
-- **Open `offline_scanner.html` once** in the browser you'll present with, so you know it opens (double-click it).
 - **Optional: Claude narratives.** `export ANTHROPIC_API_KEY=...` before starting. Without a key, or without internet, the built-in writer produces the narrative instead. Nothing breaks either way.
 - **Bookmark these** (they scan on load):
   - http://127.0.0.1:8000/?domain=unprotected.example
@@ -53,8 +52,7 @@ Open **http://127.0.0.1:8000**. The five demo domains are the dashed chips under
 | **2:30** | Click **Fully hardened** | "A perfectly configured domain scores 100 and we invent nothing to fix. *All seven attack paths are defended. There is nothing to fix.* A checker that always finds something isn't trustworthy." |
 | **3:00** | Click **Mid-rollout**, scroll to **Attack paths** | "The matrix is the heart of it. Rows are what an attacker can do; columns are the controls that stop it. Each dot shows how well that control defends *that particular* attack. This domain is partly open on four paths: rollout loose ends, not disasters." |
 | **3:45** | Click **Download PDF report** | "A formal audit report: executive summary, the priority fix, every finding with its RFC-based recommendation, and a methodology section. Demo reports are labelled as demonstrations." |
-| **4:15** | Double-click **`offline_scanner.html`**, click **No DMARC** | "The same engine, rewritten in JavaScript, in one HTML file. No install, no server, and it's the same file GitHub Pages serves. A browser can't test STARTTLS, so it leaves it out of the score rather than guessing: that's why this shows F instead of the server's D." |
-| **4:45** | Back to the dashboard | "299 automated tests, all offline, including a test that runs the browser engine and the server engine on the same data and requires identical results." |
+| **4:15** | Back to the dashboard | "287 automated tests, all offline, including a contract test that keeps the new React terminal's types identical to the backend's models." |
 
 If the Wi-Fi works and you have time, scan a real domain the judges suggest. Real results change as domains change their DNS, so don't promise a grade in advance.
 
@@ -64,9 +62,9 @@ If the Wi-Fi works and you have time, scan a real domain the judges suggest. Rea
 
 | Problem | What to do |
 |---|---|
-| No Wi-Fi | Nothing to do. Demo domains, the dashboard, the PDF and the browser edition all work offline. Real domains need DNS, so they won't scan. |
+| No Wi-Fi | Nothing to do. Demo domains, the dashboard and the PDF all work offline. Real domains need DNS, so they won't scan. |
 | Venue Wi-Fi blocks outbound port 25 | Real scans report STARTTLS as *not assessed* and leave it out of the score. This is intended behaviour and a good talking point. |
-| The dashboard won't start | Double-click `offline_scanner.html` and demo from the browser edition. |
+| The dashboard won't start | Run `scripts/demo.sh check` to see which step fails, then show the screenshot pack in `docs/screenshots/`. |
 | The Claude narrative doesn't appear | It falls back to the built-in writer automatically (the footer says which writer was used). |
 | A grade looks different from this guide | Run `scripts/demo.sh check`. It verifies all five demo grades with the network blocked. |
 
@@ -86,9 +84,6 @@ The model only receives the engine's findings. Its output is checked before it i
 **Why is DMARC worth 30 points?**
 It's the only control that tells receiving servers to *reject* forged mail. SPF and DKIM produce a verdict; DMARC acts on it. A domain with perfect SPF and DKIM and no DMARC can still be spoofed.
 
-**Why do the browser and server editions give different scores?**
-A browser can't open connections to mail servers, so STARTTLS (25 points) can't be measured there and is left out of the score. Everything else is identical, and a test enforces that.
-
 **Are the demo domains fake?**
 Their DNS records are fixed, so the demo is repeatable, but the real checkers, scoring, attack paths and fix logic run on them. They use `.example`, a name reserved by RFC 2606 that can never be a real domain, and they are labelled as demos on screen and in the PDF.
 
@@ -96,19 +91,19 @@ Their DNS records are fixed, so the demo is repeatable, but the real checkers, s
 DKIM keys are published at "selectors" that can't be listed through DNS. We probe 16 common ones, and if you give us your selector we assess the key exactly: size, algorithm, testing mode.
 
 **How do you know it's correct?**
-299 tests, all running without internet: every rule of every attack path, complete scenario domains, the PDF, the AI validator, and parity between the two engines. Each check cites its RFC.
+287 tests, all running without internet: every rule of every attack path, complete scenario domains, the PDF, the AI validator, and the frontend's API contract. Each check cites its RFC.
 
 ---
 
 ## Reference numbers
 
-| Demo domain | Chip | Server | Browser | Fix this first |
-|---|---|---|---|---|
-| `hardened.example` | Fully hardened | **A** 100 | A 100 | Nothing to fix |
-| `rollout.example` | Mid-rollout | **B** 86 | B 81 | Strengthen DKIM |
-| `monitor-only.example` | Monitor-only DMARC | **C** 70 | D 60 | Enforce your DMARC policy (+30) |
-| `no-dmarc.example` | No DMARC | **D** 60 | F 47 | Publish a DMARC policy |
-| `unprotected.example` | Unprotected | **F** 0 | F 0 | Publish a DMARC policy |
+| Demo domain | Chip | Grade | Fix this first |
+|---|---|---|---|
+| `hardened.example` | Fully hardened | **A** 100 | Nothing to fix |
+| `rollout.example` | Mid-rollout | **B** 86 | Strengthen DKIM |
+| `monitor-only.example` | Monitor-only DMARC | **C** 70 | Enforce your DMARC policy (+30) |
+| `no-dmarc.example` | No DMARC | **D** 60 | Publish a DMARC policy |
+| `unprotected.example` | Unprotected | **F** 0 | Publish a DMARC policy |
 
 ## Screenshots for slides
 
@@ -121,7 +116,6 @@ DKIM keys are published at "selectors" that can't be listed through DNS. We prob
 | `03-clean-domain-grade-a.png` | "A clean domain scores 100, with nothing invented" |
 | `04-attack-path-matrix.png` | How findings become attack paths |
 | `05-narrative.png` | The plain-English / AI explanation |
-| `06-browser-edition.png` | The zero-install edition |
 | `07-mobile.png` | Responsive design |
 | `08-pdf-report.png` | The audit report |
 

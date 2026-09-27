@@ -1,4 +1,4 @@
-"""Deployment artefacts: GitHub Pages copy, Docker/Render config, production stylesheet switch."""
+"""Deployment artefacts: Docker/Render config and the production stylesheet switch."""
 
 from __future__ import annotations
 
@@ -8,14 +8,6 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 ROOT = Path(__file__).resolve().parent.parent
-
-
-def test_github_pages_copy_matches_offline_scanner():
-    """docs/index.html is what GitHub Pages serves; it must never drift from offline_scanner.html."""
-    assert (ROOT / "docs" / "index.html").read_bytes() == (ROOT / "offline_scanner.html").read_bytes(), (
-        "run: cp offline_scanner.html docs/index.html"
-    )
-    assert (ROOT / "docs" / ".nojekyll").exists()
 
 
 def test_dockerfile_and_template_pin_the_same_tailwind_version():

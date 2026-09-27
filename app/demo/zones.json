@@ -1,5 +1,5 @@
 {
-  "_comment": "Built-in demo domains (RFC 2606 .example names, never real). Scanned with no network: DNS, the MTA-STS policy and the STARTTLS probe all come from here. 'smtp' is tls13 (modern TLS, valid certificate) or no_starttls. Grades are for the server edition; the browser edition cannot measure STARTTLS and excludes it.",
+  "_comment": "Built-in demo domains (RFC 2606 .example names, never real). Scanned with no network: DNS, the MTA-STS policy and the STARTTLS probe all come from here. 'smtp' is tls13 (modern TLS, valid certificate) or no_starttls.",
   "hardened.example": {
     "grade": "A",
     "title": "Fully hardened",

@@ -11,14 +11,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "docs", "screenshots");
 const BASE = (process.env.BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9333;
-const OFFLINE_SCANNER = pathToFileURL(join(ROOT, "offline_scanner.html")).href;
 
 const SHOTS = [
   { file: "01-dashboard-grade-c.png", url: `${BASE}/?domain=monitor-only.example`, width: 1440, clip: { top: 0, height: 1180 }, wait: "narrative" },
@@ -26,14 +25,12 @@ const SHOTS = [
   { file: "03-clean-domain-grade-a.png", url: `${BASE}/?domain=hardened.example`, width: 1440, selector: "#result > div.grid" },
   { file: "04-attack-path-matrix.png", url: `${BASE}/?domain=rollout.example#attack-matrix`, width: 1440, selector: "#attack-matrix", checkScroll: true },
   { file: "05-narrative.png", url: `${BASE}/?domain=unprotected.example`, width: 1440, selector: 'section[aria-labelledby="narrative-heading"]', wait: "narrative" },
-  { file: "06-browser-edition.png", url: `${OFFLINE_SCANNER}?domain=no-dmarc.example`, width: 1440, clip: { top: 0, height: 1250 }, wait: "browser" },
   { file: "07-mobile.png", url: `${BASE}/?domain=monitor-only.example`, width: 390, height: 844, mobile: true, clip: { top: 0, height: 1800 } },
 ];
 
 const READY = {
   scan: "!!document.querySelector('#attack-matrix')",
   narrative: "!!document.querySelector('#narrative > div, #narrative > p.mt-5')",
-  browser: "!!document.querySelector('.mrow')",
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -79,7 +76,7 @@ async function shoot(page, shot) {
   });
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
   await page.send("Page.navigate", { url: shot.url });
-  await waitFor(page, shot.wait === "browser" ? READY.browser : READY.scan, "the scan result");
+  await waitFor(page, READY.scan, "the scan result");
   if (shot.wait === "narrative") await waitFor(page, READY.narrative, "the narrative");
   await evaluate(page, "document.fonts.ready.then(() => true)");
   await sleep(700); // let the postmark animation finish

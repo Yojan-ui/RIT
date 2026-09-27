@@ -4,14 +4,21 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.constants import DKIM_SELECTOR_REGEX
 from app.engine.dns_resolver import normalize_domain
 from app.models.enums import CheckName, CheckStatus, Exposure, Grade, Severity
 
 
-class ScanRequest(BaseModel):
+class _Model(BaseModel):
+    # Fields with defaults are always present in responses, so mark them required in the
+    # response schema (the React app's generated types then need no undefined checks).
+    # Request validation is unaffected.
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+
+class ScanRequest(_Model):
     domain: str = Field(..., examples=["example.com"])
     dkim_selectors: list[str] = Field(default_factory=list)
     force_refresh: bool = False
@@ -40,14 +47,14 @@ class ScanRequest(BaseModel):
         return selectors
 
 
-class Finding(BaseModel):
+class Finding(_Model):
     title: str
     detail: str = ""
     severity: Severity = Severity.INFO
     recommendation: str | None = None
 
 
-class CheckResult(BaseModel):
+class CheckResult(_Model):
     name: CheckName
     status: CheckStatus
     summary: str = ""
@@ -56,7 +63,7 @@ class CheckResult(BaseModel):
     data: dict = Field(default_factory=dict)
 
 
-class AttackPath(BaseModel):
+class AttackPath(_Model):
     id: str
     title: str
     description: str
@@ -72,7 +79,7 @@ class AttackPath(BaseModel):
     fix_control: CheckName | None = None
 
 
-class Remediation(BaseModel):
+class Remediation(_Model):
     """The single change that removes the most attack-path risk."""
 
     control: CheckName
@@ -86,7 +93,7 @@ class Remediation(BaseModel):
     score_gain: int = 0
 
 
-class ScoreBreakdown(BaseModel):
+class ScoreBreakdown(_Model):
     score: int = Field(..., ge=0, le=100)
     grade: Grade
     components: dict[str, float] = Field(default_factory=dict)
@@ -94,7 +101,7 @@ class ScoreBreakdown(BaseModel):
     not_assessed: list[str] = Field(default_factory=list)
 
 
-class ScanResult(BaseModel):
+class ScanResult(_Model):
     domain: str
     scanned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     cached: bool = False
@@ -107,7 +114,7 @@ class ScanResult(BaseModel):
     one_fix: Remediation | None = None
 
 
-class RemediationStep(BaseModel):
+class RemediationStep(_Model):
     priority: int
     finding_id: str
     action: str
@@ -116,7 +123,7 @@ class RemediationStep(BaseModel):
     rationale: str = ""
 
 
-class Narrative(BaseModel):
+class Narrative(_Model):
     """Plain-English account of a scan. ``source`` records who wrote it."""
 
     domain: str
@@ -130,7 +137,14 @@ class Narrative(BaseModel):
     fallback_reason: str | None = None
 
 
-class HealthResponse(BaseModel):
+class DemoDomain(_Model):
+    domain: str
+    title: str
+    grade: Grade
+    story: str
+
+
+class HealthResponse(_Model):
     status: str = "ok"
     app: str
     version: str

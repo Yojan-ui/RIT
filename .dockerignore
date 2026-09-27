@@ -11,5 +11,5 @@ data/
 tests/
 legacy/
 docs/
-offline_scanner.html
+frontend/
 app/static/css/tailwind.css

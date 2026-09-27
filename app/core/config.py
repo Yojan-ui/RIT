@@ -69,6 +69,10 @@ class Settings(BaseModel):
     llm_fallbacks: bool = True
     llm_credentials_present: bool = False
 
+    # Browser origins allowed to call the API cross-origin (only needed when the React app is
+    # hosted separately from the backend; same-origin and the Vite dev proxy need nothing).
+    cors_origins: list[str] = Field(default_factory=list)
+
     templates_dir: Path = BASE_DIR / "templates"
     static_dir: Path = BASE_DIR / "static"
 
@@ -95,6 +99,7 @@ class Settings(BaseModel):
             smtp_helo_name=_env("SMTP_HELO_NAME", "securemailscope.invalid"),
             smtp_max_mx_attempts=int(_env("SMTP_MAX_MX_ATTEMPTS", "2")),
             smtp_egress_probe_host=_env("SMTP_EGRESS_PROBE_HOST", "gmail-smtp-in.l.google.com"),
+            cors_origins=_env_list("CORS_ORIGINS", []),
             llm_provider=_env("LLM_PROVIDER", "auto").lower(),  # type: ignore[arg-type]
             llm_model=_env("LLM_MODEL", "claude-opus-5"),
             llm_timeout_seconds=float(_env("LLM_TIMEOUT_SECONDS", "90")),

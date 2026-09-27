@@ -14,9 +14,9 @@ from pydantic import ValidationError
 from app.core.cache import DomainCache
 from app.core.config import Settings, get_settings
 from app.engine.dns_resolver import DNSResolver
-from app.demo import is_demo, scan_demo
+from app.demo import demo_domains, is_demo, scan_demo
 from app.engine.scanner import build_result, scan_domain
-from app.models.schemas import HealthResponse, Narrative, ScanRequest, ScanResult
+from app.models.schemas import DemoDomain, HealthResponse, Narrative, ScanRequest, ScanResult
 from app.narrative import generate_narrative, llm_enabled
 from app.reports.pdf import render_pdf
 
@@ -68,6 +68,12 @@ async def health(settings: Annotated[Settings, Depends(get_settings)]) -> Health
 @router.post("/scan", response_model=ScanResult)
 async def scan(req: ScanRequest, engine: EngineDep) -> ScanResult:
     return await _scan_with_cache(req, engine)
+
+
+@router.get("/demo-domains", response_model=list[DemoDomain])
+async def list_demo_domains() -> list[DemoDomain]:
+    """Built-in .example domains that scan with no network, one per grade."""
+    return [DemoDomain(domain=d, title=s["title"], grade=s["grade"], story=s["story"]) for d, s in demo_domains().items()]
 
 
 @router.get("/recent")

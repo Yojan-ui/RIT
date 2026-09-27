@@ -1,0 +1,960 @@
+{
+  "components": {
+    "schemas": {
+      "AttackPath": {
+        "properties": {
+          "control_exposure": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Exposure"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/CheckName"
+            },
+            "title": "Control Exposure",
+            "type": "object"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled_by": {
+            "items": {
+              "$ref": "#/components/schemas/CheckName"
+            },
+            "title": "Enabled By",
+            "type": "array"
+          },
+          "exposure": {
+            "$ref": "#/components/schemas/Exposure",
+            "default": "exposed"
+          },
+          "fix_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "severity",
+          "enabled_by",
+          "exposure",
+          "control_exposure",
+          "reason",
+          "fix_control"
+        ],
+        "title": "AttackPath",
+        "type": "object"
+      },
+      "CheckName": {
+        "enum": [
+          "mx",
+          "spf",
+          "dkim",
+          "dmarc",
+          "mta_sts",
+          "tls_rpt",
+          "transport",
+          "bimi",
+          "dnssec"
+        ],
+        "title": "CheckName",
+        "type": "string"
+      },
+      "CheckResult": {
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "name": {
+            "$ref": "#/components/schemas/CheckName"
+          },
+          "records": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CheckStatus"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "summary",
+          "records",
+          "findings",
+          "data"
+        ],
+        "title": "CheckResult",
+        "type": "object"
+      },
+      "CheckStatus": {
+        "enum": [
+          "pass",
+          "warn",
+          "fail",
+          "missing",
+          "error",
+          "not_assessed"
+        ],
+        "title": "CheckStatus",
+        "type": "string"
+      },
+      "DemoDomain": {
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "grade": {
+            "$ref": "#/components/schemas/Grade"
+          },
+          "story": {
+            "title": "Story",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "title",
+          "grade",
+          "story"
+        ],
+        "title": "DemoDomain",
+        "type": "object"
+      },
+      "Exposure": {
+        "description": "How open a domain is to one attack path.",
+        "enum": [
+          "exposed",
+          "partial",
+          "mitigated",
+          "unknown"
+        ],
+        "title": "Exposure",
+        "type": "string"
+      },
+      "Finding": {
+        "properties": {
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "default": "info"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "detail",
+          "severity",
+          "recommendation"
+        ],
+        "title": "Finding",
+        "type": "object"
+      },
+      "Grade": {
+        "enum": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "F"
+        ],
+        "title": "Grade",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "status": {
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "app",
+          "version"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "Narrative": {
+        "description": "Plain-English account of a scan. ``source`` records who wrote it.",
+        "properties": {
+          "attack_scenarios": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Attack Scenarios",
+            "type": "array"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "remediation_steps": {
+            "items": {
+              "$ref": "#/components/schemas/RemediationStep"
+            },
+            "title": "Remediation Steps",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "source",
+          "summary",
+          "attack_scenarios",
+          "remediation_steps",
+          "model",
+          "generated_at",
+          "fallback_reason"
+        ],
+        "title": "Narrative",
+        "type": "object"
+      },
+      "Remediation": {
+        "description": "The single change that removes the most attack-path risk.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "closes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Closes",
+            "type": "array"
+          },
+          "control": {
+            "$ref": "#/components/schemas/CheckName"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "record": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record"
+          },
+          "record_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Type"
+          },
+          "score_gain": {
+            "default": 0,
+            "title": "Score Gain",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "control",
+          "title",
+          "action",
+          "host",
+          "record_type",
+          "record",
+          "closes",
+          "score_gain"
+        ],
+        "title": "Remediation",
+        "type": "object"
+      },
+      "RemediationStep": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Severity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "priority",
+          "finding_id",
+          "action",
+          "title",
+          "severity",
+          "rationale"
+        ],
+        "title": "RemediationStep",
+        "type": "object"
+      },
+      "ScanRequest": {
+        "properties": {
+          "dkim_selectors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Dkim Selectors",
+            "type": "array"
+          },
+          "domain": {
+            "examples": [
+              "example.com"
+            ],
+            "title": "Domain",
+            "type": "string"
+          },
+          "force_refresh": {
+            "default": false,
+            "title": "Force Refresh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "domain"
+        ],
+        "title": "ScanRequest",
+        "type": "object"
+      },
+      "ScanResult": {
+        "properties": {
+          "attack_matrix": {
+            "items": {
+              "$ref": "#/components/schemas/AttackPath"
+            },
+            "title": "Attack Matrix",
+            "type": "array"
+          },
+          "attack_paths": {
+            "items": {
+              "$ref": "#/components/schemas/AttackPath"
+            },
+            "title": "Attack Paths",
+            "type": "array"
+          },
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckResult"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "one_fix": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Remediation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scanned_at": {
+            "format": "date-time",
+            "title": "Scanned At",
+            "type": "string"
+          },
+          "score": {
+            "$ref": "#/components/schemas/ScoreBreakdown"
+          }
+        },
+        "required": [
+          "domain",
+          "scanned_at",
+          "cached",
+          "checks",
+          "score",
+          "attack_paths",
+          "attack_matrix",
+          "one_fix"
+        ],
+        "title": "ScanResult",
+        "type": "object"
+      },
+      "ScoreBreakdown": {
+        "properties": {
+          "components": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Components",
+            "type": "object"
+          },
+          "grade": {
+            "$ref": "#/components/schemas/Grade"
+          },
+          "not_assessed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Assessed",
+            "type": "array"
+          },
+          "score": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "score",
+          "grade",
+          "components",
+          "not_assessed"
+        ],
+        "title": "ScoreBreakdown",
+        "type": "object"
+      },
+      "Severity": {
+        "enum": [
+          "info",
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ],
+        "title": "Severity",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "SecureMailScope",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/demo-domains": {
+      "get": {
+        "description": "Built-in .example domains that scan with no network, one per grade.",
+        "operationId": "list_demo_domains_api_v1_demo_domains_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DemoDomain"
+                  },
+                  "title": "Response List Demo Domains Api V1 Demo Domains Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Demo Domains",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/recent": {
+      "get": {
+        "operationId": "recent_api_v1_recent_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Recent Api V1 Recent Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recent",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/scan": {
+      "post": {
+        "operationId": "scan_api_v1_scan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/scan/{domain}": {
+      "get": {
+        "operationId": "scan_get_api_v1_scan__domain__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "title": "Domain",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Get",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/scan/{domain}/json": {
+      "get": {
+        "description": "Download the scan as a JSON file. Same body as ``GET /scan/{domain}``.",
+        "operationId": "export_json_api_v1_scan__domain__json_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dkim_selectors",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Dkim Selectors",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Json",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/scan/{domain}/narrative": {
+      "get": {
+        "description": "Plain-English summary, attack scenarios and remediation steps for the latest scan.",
+        "operationId": "narrative_api_v1_scan__domain__narrative_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "title": "Domain",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Narrative"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Narrative",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/scan/{domain}/pdf": {
+      "get": {
+        "description": "Download the scan as a formal PDF audit report.",
+        "operationId": "export_pdf_api_v1_scan__domain__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dkim_selectors",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Dkim Selectors",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Pdf",
+        "tags": [
+          "v1"
+        ]
+      }
+    }
+  }
+}
