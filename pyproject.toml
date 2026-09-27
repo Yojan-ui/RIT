@@ -29,7 +29,7 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["templates/**/*", "static/**/*"]
+app = ["templates/**/*", "static/**/*", "demo/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

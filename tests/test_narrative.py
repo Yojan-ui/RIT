@@ -211,3 +211,10 @@ def test_mx_findings_are_reported_even_though_mx_is_unscored():
     from app.engine.scanner import build_result
 
     assert "mx" not in build_result("example.com", result_checks).score.components
+
+
+def test_narrative_leads_with_the_heaviest_weighted_problem(unprotected):
+    """SPF and DMARC findings are both high severity; DMARC is worth more points, so it leads."""
+    n = deterministic.generate(unprotected)
+    assert "The most consequential is No DMARC record (DMARC)" in n.summary
+    assert n.remediation_steps[0].title == "No DMARC record"

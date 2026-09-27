@@ -78,7 +78,10 @@ def _subdomain_spoofing(r: Results) -> Assessment:
     if a := _unmeasured(dmarc, "DMARC"):
         return a
     sp = dmarc.data.get("subdomain_policy")
-    return _dmarc_enforcement(dmarc, sp or dmarc.data.get("policy"), "sp" if sp else "p (inherited by subdomains)")
+    a = _dmarc_enforcement(dmarc, sp or dmarc.data.get("policy"), "sp" if sp else "p")
+    if sp or "policy" not in dmarc.data or dmarc.status is CheckStatus.MISSING:
+        return a
+    return Assessment(a.exposure, f"{a.reason} Subdomains inherit p= because no sp= tag is set.", a.fix, a.cells)
 
 
 def _envelope_spoofing(r: Results) -> Assessment:

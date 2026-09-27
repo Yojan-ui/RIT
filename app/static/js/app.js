@@ -23,3 +23,11 @@ document.addEventListener("click", async (evt) => {
   }
   setTimeout(() => { button.textContent = label; }, 1600);
 });
+
+// Deep links such as /?domain=example.com#attack-matrix: the anchor only exists once the scan
+// result has been swapped in, so scroll to it then.
+document.addEventListener("htmx:afterSettle", (evt) => {
+  if (evt.detail.target.id !== "result" || !location.hash) return;
+  const anchor = document.getElementById(location.hash.slice(1));
+  if (anchor) anchor.scrollIntoView({ block: "start" });
+});

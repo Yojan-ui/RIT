@@ -52,6 +52,11 @@
           Scanned {{ result.scanned_at.strftime("%H:%M UTC,") }} {{ result.scanned_at.day }} {{ result.scanned_at.strftime("%b %Y") }}
           {% if result.cached %}<span class="ml-1 rounded-full border border-line px-2 py-0.5 text-xs">from cache</span>{% endif %}
         </p>
+        {% if is_demo(result.domain) %}
+        <p class="mt-2 rounded-lg border border-dashed border-line px-3 py-1.5 text-sm text-muted">
+          Built-in demo domain. Its DNS records, MTA-STS policy and mail server are simulated, so this result is the same every time.
+        </p>
+        {% endif %}
         <p class="mt-3 flex flex-wrap gap-2 text-sm">
           <a href="/api/v1/scan/{{ result.domain }}/pdf" download
              class="rounded-lg border border-line px-3 py-1.5 font-medium hover:border-ink">Download PDF report</a>
@@ -104,8 +109,9 @@
     <p class="text-sm text-muted">Fix this first</p>
     <h2 class="mt-1 text-2xl font-bold tracking-tight">Nothing urgent</h2>
     <p class="mt-2 max-w-[65ch] text-muted">
-      Every attack path is either defended or couldn't be measured from here.
-      {% if tally.unknown %}Supply a DKIM selector or run the scanner from a network that allows outbound port 25 to measure the rest.{% endif %}
+      {% if tally.unknown %}Every attack path is either defended or couldn't be measured from here. Supply a DKIM selector
+      or run the scanner from a network that allows outbound port 25 to measure the rest.
+      {% else %}All seven attack paths are defended. There is nothing to fix.{% endif %}
     </p>
   </section>
   {% endif %}

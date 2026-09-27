@@ -1,3 +1,19 @@
+/* Self-hosted fonts (SIL Open Font License, see static/fonts/LICENSE-*.txt), so the dashboard
+   needs no internet connection. Archivo carries both weight and width axes. */
+@font-face {
+  font-family: "Archivo";
+  src: url("../fonts/archivo-latin-standard-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
 /* Design tokens (consumed by the Tailwind theme in base.html) plus the few pieces
    that are clearer as plain CSS: the postmark, HTMX states and focus rings. */
 :root {

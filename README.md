@@ -4,6 +4,8 @@
 
 SecureMailScope audits a domain's email security (SPF, DKIM, DMARC, MTA-STS, TLS-RPT, MX and live STARTTLS), turns the findings into a 0–100 score, maps them onto **seven concrete attack paths**, and names the **single highest-impact fix**, including the exact DNS record to publish.
 
+![SecureMailScope dashboard: grade C, the one fix worth +30 points, and the plain-English narrative](docs/screenshots/01-dashboard-grade-c.png)
+
 ## Live demo
 
 | | Link |
@@ -40,6 +42,8 @@ It ships in two editions that share one scoring engine:
 
 ## 1. Try it in two minutes
 
+**Presenting?** See **[DEMO.md](DEMO.md)** for the five-minute judge walkthrough, a fallback plan and likely questions. `scripts/demo.sh` sets everything up and starts the dashboard, which then works with no internet connection.
+
 **Fastest (no install):** open the [browser edition](https://yojan-ui.github.io/SECUREMAILSCOPE/), or double-click `offline_scanner.html`, type a domain (or click one of the examples), and press **Scan domain**.
 
 **Full edition:**
@@ -50,7 +54,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Open **http://localhost:8000**, scan `github.com`, then click **Download PDF report**.
+Open **http://localhost:8000** and click one of the **demo domains** under the form (Fully hardened, Mid-rollout, Monitor-only DMARC, No DMARC, Unprotected). They grade A, B, C, D and F and scan with no network. Or scan a real domain such as `github.com`, then click **Download PDF report**.
 
 ---
 
@@ -124,6 +128,12 @@ Under the score, a **"What this means"** section explains the findings for a non
 - With an `ANTHROPIC_API_KEY` configured, **Claude** (default model `claude-opus-5`) writes it from the scan's findings only.
 - Every Claude response is **checked before it is shown**. It is rejected if it states a score or grade the engine didn't compute, cites a finding that doesn't exist, or proposes fixes when the engine found nothing wrong.
 - A rejected response, a missing key, a timeout, a refusal or an API error all fall back to a built-in **rule-based writer**. The narrative never depends on a live API call, and the page always says who wrote it.
+
+### Built-in demo domains
+
+Five `.example` domains (a name reserved by RFC 2606, so never real) have fixed DNS records, MTA-STS policies and mail-server behaviour. They run through the real checkers, scoring, attack paths and fix logic, grade **A, B, C, D and F** on the server, and scan with **no network at all**, so a demo gives the same result on any Wi-Fi or none. They are labelled as demos on screen and in PDF reports. Both editions include them; they are defined once in `app/demo/zones.json`.
+
+Any result can be linked: `/?domain=monitor-only.example` scans on load, and `#attack-matrix` jumps to the matrix.
 
 ### Reports
 
@@ -302,7 +312,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The suite has **283 tests** and runs in a few seconds, **fully offline**. An autouse guard fails any test that tries to reach the network (other than loopback), so a passing run proves nothing depends on live DNS.
+The suite has **299 tests** and runs in a few seconds, **fully offline**. An autouse guard fails any test that tries to reach the network (other than loopback), so a passing run proves nothing depends on live DNS.
 
 | Area | What is verified |
 |---|---|
@@ -310,6 +320,7 @@ The suite has **283 tests** and runs in a few seconds, **fully offline**. An aut
 | Attack paths (`tests/test_attack_paths.py`) | Every rule's every outcome: 47 cases, plus a check that each of the 7 paths can reach all 4 states. |
 | Checkers | SPF lookup counting and loops, DKIM key parsing (512 to 3072-bit RSA, Ed25519), DMARC tags and inheritance, MTA-STS policy rules, and STARTTLS against a real local SMTP server with generated certificates. |
 | Narrative (`tests/test_narrative.py`) | The rule-based writer on real scenarios, including the clean-domain case (no invented work) and not-assessed checks described as gaps. The grounding validator rejects wrong scores, wrong grades, unknown finding ids and invented issues. The Claude path is tested with a fake client for success, refusal, truncation, timeouts, rate limits and connection failure, all of which must fall back cleanly. |
+| Demo domains (`tests/test_demo.py`) | Every demo scans to its intended grade with the network blocked, is labelled as a demo on screen and in the PDF, and gives identical results in the browser edition. Also that the dashboard loads nothing from the internet, and that `?domain=` deep links are escaped. |
 | Deployment (`tests/test_deploy.py`) | The GitHub Pages copy is identical to `offline_scanner.html`, the Dockerfile and dev template pin the same Tailwind version, the image runs as a non-root user on `$PORT`, and the production stylesheet keeps every colour class the templates build at runtime. |
 | Exports (`tests/test_exports.py`) | JSON and PDF endpoints, filenames, invalid input, deterministic PDF output, and escaping of hostile text inside the PDF. |
 | **Browser edition parity** (`tests/test_offline_build.py`) | Extracts the engine from `offline_scanner.html`, runs it under Node.js on the same fixtures as the Python engine, and requires **identical** check statuses, findings, score, attack matrix and one fix across 10 scenarios. It also compares domain normalisation, DNS-over-HTTPS answer parsing, RSA key sizes, and that the HTML file loads nothing external. |
@@ -335,7 +346,7 @@ The image builds the dashboard's stylesheet with Tailwind's standalone CLI (no N
 
 ### GitHub Pages (browser edition)
 
-`docs/index.html` is a copy of `offline_scanner.html`. To publish it: repository **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `/docs`**. After changing `offline_scanner.html`, run `cp offline_scanner.html docs/index.html` (a test fails if you forget).
+`docs/index.html` is a copy of `offline_scanner.html`. To publish it: repository **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `/docs`**. After changing `offline_scanner.html` or `app/demo/zones.json`, run `python scripts/sync_browser_edition.py` (tests fail if you forget).
 
 ---
 
@@ -343,7 +354,10 @@ The image builds the dashboard's stylesheet with Tailwind's standalone CLI (no N
 
 ```
 offline_scanner.html   single-file edition (engine + UI, no dependencies)
+DEMO.md                demo-day walkthrough, fallback plan, likely questions
 docs/index.html        GitHub Pages copy of offline_scanner.html
+docs/screenshots/      slide-ready screenshots (regenerate with scripts/screenshots.mjs)
+scripts/               demo.sh (one-command offline demo), sync_browser_edition.py, screenshots.mjs
 Dockerfile, render.yaml, .dockerignore
 requirements.txt       runtime dependencies (requirements-dev.txt adds pytest)
 app/
@@ -359,6 +373,7 @@ app/
     remediation.py     one-fix selection and DNS record generation
   models/              Pydantic schemas and enums
   narrative/           rule-based writer, Claude writer, grounding validator
+  demo/                built-in demo domains (zones.json) and their offline resolver
   reports/pdf.py       PDF audit report (ReportLab)
   templates/, static/  Jinja2 + HTMX + Tailwind dashboard
 tests/
@@ -385,4 +400,4 @@ the repository root.
 - **STARTTLS needs outbound port 25**, which many cloud providers and networks block. SecureMailScope detects this and excludes the check instead of guessing.
 - **Organisational domain detection** uses a built-in list of common multi-part suffixes (such as `co.uk` and `co.in`) rather than the full Public Suffix List.
 - **The browser edition cannot measure STARTTLS** (25 points) and usually cannot read MTA-STS policy files, so its score for the same domain can be noticeably lower or higher than the server's. Both editions exclude what they can't measure rather than guessing.
-- **In local development the dashboard compiles Tailwind in the browser** from a CDN. The Docker image ships a prebuilt stylesheet instead.
+- **Unless the stylesheet has been built** (`scripts/demo.sh` or the Docker image does it), the dashboard compiles Tailwind in the browser from a CDN, which needs internet. Fonts and HTMX are always served locally.

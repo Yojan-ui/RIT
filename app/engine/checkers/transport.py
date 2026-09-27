@@ -212,7 +212,7 @@ class TransportChecker(BaseChecker):
         attempts: list[dict] = []
         for mx in hosts[: s.smtp_max_mx_attempts]:
             try:
-                probe = await probe_with_fallback(
+                probe = await (ctx.smtp_probe or probe_with_fallback)(
                     mx.host, s.smtp_port, timeout=s.smtp_timeout_seconds, helo=s.smtp_helo_name
                 )
             except ConnectFailed as exc:
@@ -232,7 +232,7 @@ class TransportChecker(BaseChecker):
             return self._assess(probe, mx.preference, attempts)
 
         # Every MX attempt failed to connect: is it them, or us?
-        if not await self.egress_probe(s.smtp_egress_probe_host, s.smtp_port, s.smtp_timeout_seconds):
+        if not await (ctx.egress_probe or self.egress_probe)(s.smtp_egress_probe_host, s.smtp_port, s.smtp_timeout_seconds):
             return self.not_assessed(
                 f"Outbound port {s.smtp_port} appears to be blocked from the scanner's network "
                 f"(a reference SMTP server was also unreachable), so the MX could not be tested.",

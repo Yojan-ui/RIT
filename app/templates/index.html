@@ -17,7 +17,7 @@
   <div class="flex flex-col gap-3 md:flex-row md:items-end">
     <label class="flex-1">
       <span class="mb-1 block text-sm font-medium">Domain</span>
-      <input type="text" name="domain" placeholder="example.com" autocomplete="off" autocapitalize="off" spellcheck="false" required autofocus
+      <input type="text" name="domain" value="{{ domain }}" placeholder="example.com" autocomplete="off" autocapitalize="off" spellcheck="false" required autofocus
              class="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-lg placeholder:text-muted/70 focus:border-focus focus:outline-none">
     </label>
     <label class="md:w-64">
@@ -38,13 +38,30 @@
   </div>
 </form>
 
-<div class="mt-4 flex flex-wrap items-center gap-2 text-sm"
+<div class="mt-4 flex flex-wrap items-center gap-2 text-sm">
+  <span class="text-muted">Demo domains (work offline):</span>
+  {% for domain, spec in demos.items() %}
+  <button type="button"
+          class="rounded-full border border-dashed border-line bg-surface px-3 py-1 hover:border-ink"
+          title="{{ spec.story }}"
+          hx-post="/api/v1/ui/scan"
+          hx-vals='{"domain": {{ domain | tojson }}}'
+          hx-target="#result"
+          hx-indicator="#scan-status, #result">{{ spec.title }}</button>
+  {% endfor %}
+</div>
+
+<div class="mt-2 flex flex-wrap items-center gap-2 text-sm"
      hx-get="/api/v1/ui/recent"
      hx-trigger="load, scan-complete from:body"
      hx-swap="innerHTML">
 </div>
 
 <section id="result" class="mt-8" aria-live="polite">
+  {% if domain %}
+  <div hx-post="/api/v1/ui/scan" hx-vals='{"domain": {{ domain | tojson }}}' hx-trigger="load"
+       hx-target="#result" hx-indicator="#scan-status, #result"></div>
+  {% endif %}
   <div class="rounded-xl border border-dashed border-line px-6 py-12 text-center text-muted">
     <p class="text-lg text-ink">No domain scanned yet</p>
     <p class="mt-1">Enter a domain above to see its score, the fix to make first, and the attack path matrix.</p>

@@ -17,6 +17,7 @@ from app.core.cache import DomainCache
 from app.core.config import get_settings
 from app.core.constants import API_PREFIX
 from app.core.logging import configure_logging, get_logger
+from app.demo import demo_domains, is_demo
 from app.engine.dns_resolver import DNSResolver, RateLimiter
 
 settings = get_settings()
@@ -70,14 +71,18 @@ def create_app() -> FastAPI:
     # Prebuilt stylesheet (Docker image) when present; otherwise the dev CDN build plus the theme.
     templates.env.globals["tailwind_built"] = (css_dir / "tailwind.css").is_file()
     templates.env.globals["tailwind_theme"] = (css_dir / "theme.css").read_text()
+    templates.env.globals["is_demo"] = is_demo
     app.state.templates = templates
     app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
     app.include_router(api_router, prefix=API_PREFIX, tags=["v1"])
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    async def dashboard(request: Request) -> HTMLResponse:
+    async def dashboard(request: Request, domain: str = "") -> HTMLResponse:
         return app.state.templates.TemplateResponse(
-            request, "index.html", {"app_name": settings.app_name, "version": settings.version}
+            request,
+            "index.html",
+            # ?domain=... pre-fills the form and scans on load, so a result can be bookmarked or linked.
+            {"app_name": settings.app_name, "version": settings.version, "demos": demo_domains(), "domain": domain[:253]},
         )
 
     return app

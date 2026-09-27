@@ -38,6 +38,9 @@ async def scan_domain(
     http: httpx.AsyncClient,
     settings: Settings,
     dkim_selectors: list[str] | None = None,
+    *,
+    smtp_probe=None,
+    egress_probe=None,
 ) -> ScanResult:
     ctx = ScanContext(
         domain=domain,
@@ -45,6 +48,8 @@ async def scan_domain(
         http=http,
         settings=settings,
         dkim_selectors=list(dkim_selectors or []),
+        smtp_probe=smtp_probe,
+        egress_probe=egress_probe,
     )
     results = list(await asyncio.gather(*(_run(cls(), ctx) for cls in CHECKERS)))
     return build_result(domain, results)

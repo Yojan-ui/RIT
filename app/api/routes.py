@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from app.core.cache import DomainCache
 from app.core.config import Settings, get_settings
 from app.engine.dns_resolver import DNSResolver
+from app.demo import is_demo, scan_demo
 from app.engine.scanner import build_result, scan_domain
 from app.models.schemas import HealthResponse, Narrative, ScanRequest, ScanResult
 from app.narrative import generate_narrative, llm_enabled
@@ -48,9 +49,12 @@ async def _scan_with_cache(req: ScanRequest, engine: Engine) -> ScanResult:
         cached = ScanResult.model_validate(hit)
         # Re-derive analysis so cached scans pick up rule changes made since they were stored.
         return build_result(cached.domain, cached.checks, scanned_at=cached.scanned_at, cached=True)
-    result = await scan_domain(
-        req.domain, engine.resolver, engine.http, engine.settings, dkim_selectors=req.dkim_selectors
-    )
+    if is_demo(req.domain):
+        result = await scan_demo(req.domain, engine.settings, dkim_selectors=req.dkim_selectors)
+    else:
+        result = await scan_domain(
+            req.domain, engine.resolver, engine.http, engine.settings, dkim_selectors=req.dkim_selectors
+        )
     await engine.cache.set(req.domain, result.model_dump(mode="json"))
     return result
 

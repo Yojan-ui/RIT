@@ -5,6 +5,7 @@
 //   domains:   [raw input, ...]                                -> normalizeDomain results or {error}
 //   rdata:     [[type, data], ...]                             -> normalizeRdata results
 //   rsa:       [base64 SPKI, ...]                              -> RSA modulus bits
+//   demos:     [demo domain, ...]                              -> scans via the page's embedded demo zones
 "use strict";
 const fs = require("fs");
 const vm = require("vm");
@@ -44,6 +45,14 @@ function fakeHttp(routes) {
       out.scenarios[name] = await SMS.scanDomain(sc.domain, {
         resolver: fakeResolver(sc.zone), http: fakeHttp(sc.http || {}), dkimSelectors: sc.dkim_selectors || [],
       });
+    }
+  }
+  if (job.demos) {
+    // Scan through the page's own demo ports and embedded zones, exactly as the UI does.
+    const embedded = JSON.parse(html.match(/<script id="demo-zones" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+    out.demos = {};
+    for (const domain of job.demos) {
+      out.demos[domain] = await SMS.scanDomain(domain, { ...SMS.createDemoPorts(embedded[domain]), dkimSelectors: [] });
     }
   }
   if (job.domains) out.domains = job.domains.map((d) => { try { return SMS.normalizeDomain(d); } catch (e) { return { error: e.message }; } });

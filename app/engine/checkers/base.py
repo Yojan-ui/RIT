@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
@@ -24,6 +25,9 @@ class ScanContext:
     http: httpx.AsyncClient
     settings: Settings
     dkim_selectors: list[str] = field(default_factory=list)
+    # Optional replacements for the live SMTP probes (used by the offline demo domains).
+    smtp_probe: Callable[..., Awaitable[Any]] | None = None
+    egress_probe: Callable[[str, int, float], Awaitable[bool]] | None = None
 
     async def txt(self, name: str):
         return await self.resolver.txt(name, scope=self.domain)
