@@ -37,3 +37,9 @@ src/
 - **Types come from the backend.** Don't hand-write API shapes; run `npm run gen:api` after
   changing a Pydantic model. A backend test fails if the generated files are stale.
 - **three.js loads lazily** after first paint and the 3D view degrades to text without WebGL.
+- **Animation never re-renders React.** Everything that moves in the 3D view is updated in
+  `useFrame` through refs. Motion must mean something (open = packets into the core, partial =
+  packets that die halfway, defended = still), and `prefers-reduced-motion` turns all of it off:
+  the canvas then renders only on change.
+- **The 3D view and the attack matrix share one hover state** (`App.tsx`), so pointing at either
+  highlights both; the matrix is the keyboard- and screen-reader-accessible way in.

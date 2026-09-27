@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from '@/api/client'
 import type { AttackPath, CheckResult, ScanResult } from '@/api/types'
 import { CopyButton } from '@/components/CopyButton'
@@ -27,7 +27,8 @@ function useOpen(initial: string[] = []) {
       if (!next.delete(id)) next.add(id)
       return next
     })
-  return { isOpen: (id: string) => open.has(id), toggle }
+  const reveal = useCallback((id: string) => setOpen((prev) => (prev.has(id) ? prev : new Set(prev).add(id))), [])
+  return { isOpen: (id: string) => open.has(id), toggle, reveal }
 }
 
 // -- Metric strip ------------------------------------------------------------------------------
@@ -96,9 +97,25 @@ function Dot({ tone, big }: { tone: Tone; big?: boolean }) {
   )
 }
 
-export function AttackMatrix({ result }: { result: ScanResult }) {
+export type MatrixLink = {
+  /** Attack path currently pointed at, in the matrix or the 3D view. */
+  hovered: string | null
+  onHover: (id: string | null) => void
+  /** Set when a vector is clicked in the 3D view: open that row and bring it into view. */
+  focus: { id: string; nonce: number } | null
+}
+
+export function AttackMatrix({ result, link }: { result: ScanResult; link: MatrixLink }) {
   const statuses = new Map(result.checks.map((c) => [c.name, c.status]))
-  const { isOpen, toggle } = useOpen()
+  const { isOpen, toggle, reveal } = useOpen()
+  const rows = useRef(new Map<string, HTMLDivElement>())
+
+  useEffect(() => {
+    if (!link.focus) return
+    reveal(link.focus.id)
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    rows.current.get(link.focus.id)?.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
+  }, [link.focus, reveal])
   const cols = 'md:grid-cols-[minmax(0,1fr)_repeat(6,3.5rem)_5.5rem]'
   return (
     <Panel
@@ -124,13 +141,33 @@ export function AttackMatrix({ result }: { result: ScanResult }) {
           const tone = EXPOSURE_TONE[p.exposure]
           const open = isOpen(p.id)
           return (
-            <div key={p.id} role="row" className="relative border-t border-line first:border-t-0 md:first-of-type:border-t-0">
-              <span className={cn('absolute inset-y-0 left-0 w-0.5', BG[tone])} aria-hidden="true" />
+            <div
+              key={p.id}
+              role="row"
+              ref={(el) => {
+                if (el) rows.current.set(p.id, el)
+                else rows.current.delete(p.id)
+              }}
+              onMouseEnter={() => link.onHover(p.id)}
+              onMouseLeave={() => link.onHover(null)}
+              className={cn(
+                'relative scroll-mt-16 border-t border-line transition-colors first:border-t-0 motion-reduce:transition-none',
+                link.hovered === p.id && 'bg-raised',
+              )}
+            >
+              <span className={cn('absolute inset-y-0 left-0 transition-[width] motion-reduce:transition-none', BG[tone], link.hovered === p.id ? 'w-1' : 'w-0.5')} aria-hidden="true" />
               <div className={cn('grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1.5 py-2 pl-4 pr-3 md:items-center', cols)}>
                 {/* Pinned to column 1: row-locked cells are auto-placed before unpinned ones, so an
                     unpinned title would be pushed behind the six control columns. */}
                 <div role="cell" className="min-w-0 md:col-start-1 md:row-start-1">
-                  <button type="button" onClick={() => toggle(p.id)} aria-expanded={open} className="flex items-center gap-1.5 text-left">
+                  <button
+                    type="button"
+                    onClick={() => toggle(p.id)}
+                    onFocus={() => link.onHover(p.id)}
+                    onBlur={() => link.onHover(null)}
+                    aria-expanded={open}
+                    className="flex items-center gap-1.5 text-left"
+                  >
                     <Chevron open={open} />
                     <span className="text-ink">{p.title}</span>
                     <span className="font-mono text-2xs uppercase text-dim">{p.severity}</span>

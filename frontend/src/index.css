@@ -87,6 +87,22 @@
   color: var(--color-dim);
 }
 
+/* A single 1px packet travelling along a connector (MochaTrade). */
+.packet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 1px;
+  width: 48px;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: packet 1.1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes packet {
+  from { left: 0; }
+  to { left: calc(100% - 48px); }
+}
+
 @keyframes caret {
   0%, 49.9% { opacity: 1; }
   50%, 100% { opacity: 0; }
@@ -96,7 +112,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .caret {
+  .caret,
+  .packet {
     animation: none;
+  }
+  /* Without motion, show scanning as a steady full-width line instead. */
+  .packet {
+    width: 100%;
+    box-shadow: none;
   }
 }

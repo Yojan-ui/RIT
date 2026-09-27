@@ -22,7 +22,12 @@ export function CommandBar({ demos, recent, busy, onScan, initialDomain = '' }: 
   }
 
   return (
-    <div className="border-b border-line bg-panel">
+    <div className="relative border-b border-line bg-panel">
+      {busy && (
+        <div className="absolute inset-x-0 bottom-[-1px] h-px overflow-hidden text-secure" role="presentation">
+          <span className="packet" />
+        </div>
+      )}
       <form onSubmit={submit} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
         <label htmlFor="target" className="font-mono text-xs text-secure">
           scan&nbsp;&gt;

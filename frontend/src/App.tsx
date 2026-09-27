@@ -1,14 +1,16 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { CommandBar } from '@/components/CommandBar'
 import { NarrativePanel } from '@/components/NarrativePanel'
 import { Panel } from '@/components/Panel'
-import { AttackMatrix, ChecksGrid, FixPanel, MetricStrip } from '@/components/Readout'
+import { AttackMatrix, ChecksGrid, FixPanel, MetricStrip, type MatrixLink } from '@/components/Readout'
 import { TopBar } from '@/components/TopBar'
 import { WebGLBoundary } from '@/components/three/WebGLBoundary'
 import { useApiLink } from '@/hooks/useApiLink'
 import { useDemoDomains } from '@/hooks/useDemoDomains'
 import { useRecent } from '@/hooks/useRecent'
 import { useScan } from '@/hooks/useScan'
+import { cn } from '@/lib/cn'
+import { EXPOSURE_LABEL, EXPOSURE_TONE, TEXT } from '@/lib/tone'
 
 // three.js is ~900 kB: load it after the terminal has painted.
 const PostureField = lazy(() => import('@/components/three/PostureField'))
@@ -20,6 +22,13 @@ export default function App() {
   const result = state.status === 'done' ? state.result : null
   const recent = useRecent(result?.scanned_at)
   const isDemo = result !== null && demos.some((d) => d.domain === result.domain)
+
+  // One attack path can be "pointed at" from either the 3D view or the matrix; both highlight it.
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [focus, setFocus] = useState<MatrixLink['focus']>(null)
+  const select = useCallback((id: string) => setFocus({ id, nonce: Date.now() }), [])
+  const matrixLink: MatrixLink = { hovered, onHover: setHovered, focus }
+  const hoveredPath = result?.attack_matrix.find((p) => p.id === hovered) ?? null
 
   // ?domain=example.com scans on load, so a result can be bookmarked or linked.
   const linkedDomain = new URLSearchParams(window.location.search).get('domain') ?? ''
@@ -47,10 +56,32 @@ export default function App() {
         <div className="absolute inset-0">
           <WebGLBoundary>
             <Suspense fallback={null}>
-              <PostureField paths={result?.attack_matrix ?? null} grade={result?.score.grade ?? null} />
+              <PostureField
+                paths={result?.attack_matrix ?? null}
+                grade={result?.score.grade ?? null}
+                resultKey={result ? `${result.domain}@${result.scanned_at}` : null}
+                scanning={state.status === 'scanning'}
+                hovered={hovered}
+                onHover={setHovered}
+                onSelect={select}
+              />
             </Suspense>
           </WebGLBoundary>
         </div>
+        {/* HUD readout for the vector under the pointer (fixed position: never clips or covers a node). */}
+        {result && (
+          <div className="pointer-events-none absolute inset-x-3 bottom-2.5 font-mono text-2xs" aria-live="polite">
+            {hoveredPath ? (
+              <p className="truncate">
+                <span className="text-dim">VECTOR </span>
+                <span className="text-ink">{hoveredPath.title}</span>
+                <span className={cn('ml-2 font-semibold', TEXT[EXPOSURE_TONE[hoveredPath.exposure]])}>{EXPOSURE_LABEL[hoveredPath.exposure]}</span>
+              </p>
+            ) : (
+              <p className="text-dim">Point at a vector, or a row in the attack matrix</p>
+            )}
+          </div>
+        )}
       </div>
     </Panel>
   )
@@ -108,7 +139,7 @@ export default function App() {
               <div className="lg:hidden">
                 <FixPanel result={state.result} />
               </div>
-              <AttackMatrix result={state.result} />
+              <AttackMatrix result={state.result} link={matrixLink} />
               <NarrativePanel result={state.result} />
               <ChecksGrid result={state.result} />
             </>
