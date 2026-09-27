@@ -1,0 +1,52 @@
+# SecureMailScope behind Caddy (see Caddyfile and deploy.sh).
+#
+#   docker compose up -d --build
+#
+# Secrets and tuning come from a .env file next to this one (git-ignored; deploy.sh
+# creates it with mode 600). Anything unset falls back to the defaults below.
+
+name: securemailscope
+
+services:
+  app:
+    build: .
+    image: securemailscope:latest
+    restart: unless-stopped
+    ports:
+      # 8000 -> 8000, bound to loopback only: Caddy on the host is the sole public entry
+      # point (HTTPS). Publishing on 0.0.0.0 would expose plain HTTP to the internet, and
+      # Docker's published ports bypass ufw.
+      - "127.0.0.1:8000:8000"
+    environment:
+      PORT: "8000"
+      # Caddy's connections arrive from this network's gateway (Docker's port forwarding),
+      # so trust X-Forwarded-For/-Proto from that address only. Nothing else can reach
+      # the container through it: the port is bound to loopback.
+      FORWARDED_ALLOW_IPS: "172.30.0.1"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SCAN_RATE_PER_MINUTE: ${SCAN_RATE_PER_MINUTE:-10}
+      SCAN_BURST: ${SCAN_BURST:-8}
+      # Everyone behind one venue Wi-Fi shares a single IP, so raise these with the scan limits.
+      API_RATE_PER_MINUTE: ${API_RATE_PER_MINUTE:-120}
+      API_BURST: ${API_BURST:-60}
+      MAX_CONCURRENT_SCANS: ${MAX_CONCURRENT_SCANS:-8}
+      LOG_FORMAT: json
+    volumes:
+      - scan-data:/app/data # scan cache: keeps "recent scans" across restarts
+    networks:
+      - web
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  web:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+
+volumes:
+  scan-data:

@@ -21,25 +21,29 @@ For frontend development with hot reload, run `npm run dev` in `frontend/` (http
 
 Tests: `cd backend && .venv/bin/python -m pytest`
 
-## Deploy (Docker on a VM with outbound port 25)
+## Deploy (Ubuntu VM, custom domain, automatic HTTPS)
 
-The STARTTLS probe needs **outbound TCP 25**, which most PaaS hosts (Render, Heroku, and default AWS/GCP/Azure accounts) block. Run the image on a VM where it is open:
+The STARTTLS probe needs **outbound TCP 25**, which most PaaS hosts (Render, Heroku, and default AWS/GCP/Azure accounts) block, so run it on a VM where it is open. Infrastructure as code:
+
+| File | Role |
+|---|---|
+| `deploy.sh` | One-shot, re-runnable setup for a fresh Ubuntu VM: installs Docker and Caddy from their official repositories, clones or updates the code, writes `.env`, runs `docker compose up -d --build`, and configures Caddy |
+| `docker-compose.yml` | Builds the image and publishes the app on **127.0.0.1:8000** only (Caddy is the sole public entry point), with a persistent scan-cache volume and log rotation |
+| `Caddyfile` | Automatic Let's Encrypt HTTPS for `$DOMAIN`, reverse proxy to `127.0.0.1:8000`, compression, JSON access log |
+
+1. Point the domain's DNS **A/AAAA** record at the VM and allow inbound **80/443**.
+2. On the VM:
 
 ```bash
-docker build -t securemailscope .
-docker run -d --name securemailscope --restart unless-stopped \
-  -p 80:80 -v sms-data:/app/data securemailscope
+curl -fsSLO https://raw.githubusercontent.com/Yojan-ui/SECUREMAILSCOPE/main/deploy.sh
+sudo DOMAIN=scan.example.com ACME_EMAIL=you@example.com \
+     ANTHROPIC_API_KEY=sk-ant-... SCAN_RATE_PER_MINUTE=100 SCAN_BURST=100 \
+     bash deploy.sh
 ```
 
-`-v sms-data:/app/data` keeps the scan cache (and so *recent scans*) across restarts. Add `-e ANTHROPIC_API_KEY=...` for Claude-written narratives (see below). Check port 25 from the VM with `nc -vz gmail-smtp-in.l.google.com 25`. Settings are environment variables; see `.env.example`.
+Until this branch is merged, fetch the script from `securemailscope-3d-terminal` instead of `main` and add `BRANCH=securemailscope-3d-terminal`. Re-run `sudo bash /opt/securemailscope/deploy.sh` to update: settings are remembered, and any variable you pass again replaces the stored value. Secrets go only to `/opt/securemailscope/.env` (mode 600, git-ignored). The script warns if outbound port 25 is blocked.
 
-## What you see
-
-A brutalist terminal (`#050505`, 1px `white/10` rules, square corners, monospace):
-
-- **Left:** Security Posture score (0-100, grade), the 7-vector check matrix, and The One Fix as a raw zone-file record.
-- **Right:** the **Defense Lattice**, a wireframe sphere for the domain with 7 orbiting check nodes. Passing links are solid green, warnings glow amber, and failing links snap, scatter and glitch red under three.js `UnrealBloomPass`. A Spline scene is available as an alternate view. Below the viewport is the **Real-Time Telemetry** feed, which replays the scan's DNS/SMTP/TLS observations.
-- Below the deck: the attack-path × vector detail table and per-vector cards with raw DNS strings.
+Without Caddy: `docker compose up -d --build` serves the app on `http://127.0.0.1:8000`.
 
 ## Protecting a public deployment
 
@@ -59,8 +63,8 @@ The dashboard's CSP is strict (no `eval`, no inline script, same-origin only) be
 
 **Client IPs.** Limits are keyed by client IP and kept in-process (the image runs one worker on purpose). `X-Forwarded-For` is trusted only from `FORWARDED_ALLOW_IPS`, so clients can't forge it:
 
-- Publishing the container directly (`-p 80:80`): leave the default. The socket peer is the real client.
-- Behind nginx or Caddy on the host: `-e FORWARDED_ALLOW_IPS=172.17.0.1`, the proxy's address as seen from the container.
+- With `docker-compose.yml` + Caddy: already configured. The Compose network has a fixed gateway (`172.30.0.1`), the only address trusted to forward client IPs, and Caddy replaces any client-sent `X-Forwarded-For`.
+- Running the image directly (`docker run -p 80:80`): leave the default. The socket peer is the real client.
 
 Check `client_ip` in the logs (`docker logs securemailscope`) shows real client addresses before sharing the URL.
 

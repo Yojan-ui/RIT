@@ -1,0 +1,36 @@
+# SecureMailScope: public HTTPS front door.
+#
+# Caddy obtains and renews a Let's Encrypt certificate for $DOMAIN automatically and
+# reverse-proxies to the app container, which listens only on 127.0.0.1:8000.
+#
+# DOMAIN and ACME_EMAIL come from the environment (deploy.sh writes them to
+# /etc/caddy/securemailscope.env for the caddy systemd service), so no personal
+# details live in the repo. The domain's DNS A/AAAA record must point at this VM,
+# and ports 80 and 443 must be reachable, before the certificate can be issued.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# 127.0.0.1 rather than "localhost": the app is published on IPv4 loopback only.
+	# Caddy sets X-Forwarded-For to the real client IP (ignoring any value the client
+	# sent) and X-Forwarded-Proto to https; the app trusts these headers only from the
+	# Docker network gateway it sees Caddy through (docker-compose.yml), so its per-IP
+	# rate limits and HSTS work behind the proxy.
+	reverse_proxy 127.0.0.1:8000 {
+		# Live scans can take up to SCAN_TIMEOUT (30 s) plus queueing; don't cut them off.
+		transport http {
+			response_header_timeout 90s
+		}
+	}
+
+	log {
+		output file /var/log/caddy/securemailscope.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
