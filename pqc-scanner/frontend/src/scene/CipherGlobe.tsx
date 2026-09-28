@@ -44,7 +44,8 @@ function glowMap() {
   return glowTexture
 }
 
-export function CipherGlobe({ phase, tone }: { phase: Phase; tone: Tone | null }) {
+/** `pulseKey`: bump it to fire the verdict shockwave without a scan (migration, ledger anchoring). */
+export function CipherGlobe({ phase, tone, pulseKey = 0 }: { phase: Phase; tone: Tone | null; pulseKey?: number }) {
   const drive = useMemo<Drive>(() => ({ color: new THREE.Color(PALETTE.idle), target: new THREE.Color(PALETTE.idle), scan: 0, burstAt: -10 }), [])
   const key = phase === 'result' && tone ? tone : phase === 'scanning' ? 'scanning' : 'idle'
   useEffect(() => {
@@ -53,7 +54,7 @@ export function CipherGlobe({ phase, tone }: { phase: Phase; tone: Tone | null }
 
   return (
     <Canvas camera={{ position: [0, 0.3, 6.2], fov: 42 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
-      <Driver drive={drive} phase={phase} />
+      <Driver drive={drive} phase={phase} pulseKey={pulseKey} />
       <Globe drive={drive} />
       <Rays drive={drive} />
       <Swarm drive={drive} />
@@ -66,10 +67,15 @@ export function CipherGlobe({ phase, tone }: { phase: Phase; tone: Tone | null }
   )
 }
 
-function Driver({ drive, phase }: { drive: Drive; phase: Phase }) {
+function Driver({ drive, phase, pulseKey }: { drive: Drive; phase: Phase; pulseKey: number }) {
   const prev = useRef<Phase>(phase)
+  const pulse = useRef(false)
+  useEffect(() => {
+    if (pulseKey > 0) pulse.current = true
+  }, [pulseKey])
   useFrame(({ clock }, dt) => {
-    if (prev.current === 'scanning' && phase === 'result') drive.burstAt = clock.elapsedTime
+    if ((prev.current === 'scanning' && phase === 'result') || pulse.current) drive.burstAt = clock.elapsedTime
+    pulse.current = false
     prev.current = phase
     drive.color.lerp(drive.target, 1 - Math.exp(-dt * 3.5))
     drive.scan = THREE.MathUtils.damp(drive.scan, phase === 'scanning' ? 1 : 0, phase === 'scanning' ? 4 : 2, dt)

@@ -40,6 +40,23 @@ frontend/   React + React Three Fiber single page: search, 3D cipher globe, resu
 Results from live tests (Sept 2026): cloudflare.com, google.com, example.org and microsoft.com negotiate X25519MLKEM768
 (score 60); github.com uses classical x25519 (score 10).
 
+## The four stages (frontend)
+
+After a scan the page walks through Detect → Score → Defend → Prove, each stage sliding in when the previous one is done:
+
+1. **Detect**: the live scan result: verdict, negotiated key exchange, certificate, and the CycloneDX CBOM (downloadable).
+2. **Score**: Mosca's inequality with sliders for X (migration time, default 4 years) and Y (data shelf life, default 10);
+   Z is fixed at 7 (a 2033 CRQC lower bound). X + Y > Z with classical crypto gives **CRITICAL RISK: FORGEABLE** and turns the
+   globe red; an all-PQC stack shows **SAFE**. Each detected algorithm gets its own verdict (key exchange: readable later;
+   signatures: forgeable).
+3. **Defend**: *Simulate PQC Migration* animates the globe to emerald and rewrites the on-screen certificate and CBOM to
+   ML-DSA-65 (FIPS 204) + X25519MLKEM768, with the OpenSSL 3.5 runbook. This stage is a simulation and is labelled as one.
+4. **Prove**: *Anchor to Merkle Ledger* hashes the three stage records with Web Crypto SHA-256, builds an RFC 6962-style
+   Merkle root, and seals a block chained to the previous one (kept in this browser's localStorage). It then re-verifies
+   every hash and shows **Ledger Verified**. *Tamper test* alters the migration record and shows exactly which checks fail.
+
+Logic lives in `frontend/src/lib/mosca.ts` and `frontend/src/lib/ledger.ts`; stages in `frontend/src/components/stages/`.
+
 ## API
 
 `GET /api/scan?domain=cloudflare.com` returns TLS version, cipher suite, negotiated group, certificate details,

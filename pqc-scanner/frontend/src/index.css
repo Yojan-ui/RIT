@@ -16,3 +16,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 ::selection { background: rgb(52 211 153 / 0.3); }
+
+/* Pulsing ring for the CRITICAL RISK alert */
+@keyframes alarm {
+  0%, 100% { box-shadow: 0 0 30px -12px rgb(244 63 94 / 0.5); }
+  50% { box-shadow: 0 0 60px -6px rgb(244 63 94 / 0.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; }
+}
