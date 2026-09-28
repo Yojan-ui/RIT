@@ -58,10 +58,10 @@ export function Skeleton() {
       <div className="flex flex-col gap-5">
         <div className="h-4 w-48 animate-pulse bg-line" />
         <div className="h-24 w-full max-w-md animate-pulse bg-line" />
-        <div className="h-24 animate-pulse bg-line/70" />
-        <div className="h-32 animate-pulse bg-line/60" />
+        <div className="h-24 animate-pulse bg-sunken border border-line" />
+        <div className="h-32 animate-pulse bg-sunken border border-line" />
       </div>
-      <div className="h-[560px] animate-pulse bg-stage" />
+      <div className="h-[560px] animate-pulse border border-line bg-stage" />
     </div>
   )
 }
