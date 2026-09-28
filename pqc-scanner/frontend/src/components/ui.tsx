@@ -1,10 +1,6 @@
-import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
-import type { Tone } from '../api'
 
 export type Status = 'safe' | 'risk' | 'warn' | 'idle'
-
-export const TONE_STATUS: Record<Tone, Status> = { emerald: 'safe', amber: 'warn', crimson: 'risk' }
 
 const DOT: Record<Status, string> = {
   safe: 'bg-safe',
@@ -12,20 +8,6 @@ const DOT: Record<Status, string> = {
   warn: 'bg-warn',
   idle: 'bg-zinc-600',
 }
-const LINE: Record<Status, string> = {
-  safe: 'border-safe',
-  risk: 'border-risk',
-  warn: 'border-warn',
-  idle: 'border-zinc-700',
-}
-
-/** Snappy, non-bouncy reveal used everywhere. */
-export const reveal = {
-  initial: { opacity: 0, y: 6 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.18, ease: [0.2, 0, 0, 1] as const },
-}
-
 export function Dot({ status, className = '' }: { status: Status; className?: string }) {
   return <span aria-hidden className={`inline-block size-1.5 shrink-0 rounded-full ${DOT[status]} ${className}`} />
 }
@@ -41,39 +23,12 @@ export function StatusLabel({ status, children }: { status: Status; children: Re
 
 export const algoStatus = (quantumSafe: boolean): Status => (quantumSafe ? 'safe' : 'risk')
 
-export function Panel({ title, action, children, className = '' }: { title?: string; action?: ReactNode; children: ReactNode; className?: string }) {
-  return (
-    <section className={`rounded-xl border border-white/10 bg-black/40 backdrop-blur-md ${className}`}>
-      {title && (
-        <header className="flex items-center justify-between border-b border-white/10 px-5 py-3">
-          <h4 className="text-[13px] font-medium text-white">{title}</h4>
-          {action}
-        </header>
-      )}
-      <div className="p-5">{children}</div>
-    </section>
-  )
-}
-
 export function KV({ label, children, mono }: { label: string; children: ReactNode; mono?: boolean }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-baseline gap-4 border-b border-white/[0.06] py-2.5 last:border-0">
       <dt className="text-[13px] text-zinc-500">{label}</dt>
       <dd className={`min-w-0 text-[13px] break-words text-zinc-100 ${mono ? 'font-mono text-[12.5px]' : ''}`}>{children}</dd>
     </div>
-  )
-}
-
-/** Accent-line callout: status carried by a thin left border and a dot, not a coloured box. */
-export function Callout({ status, title, children }: { status: Status; title: string; children?: ReactNode }) {
-  return (
-    <motion.div {...reveal} className={`border-l-2 py-1 pl-4 ${LINE[status]}`} role="status">
-      <div className="flex items-center gap-2 text-sm font-medium text-white">
-        <Dot status={status} />
-        {title}
-      </div>
-      {children && <p className="mt-1 text-[13px] leading-relaxed text-zinc-400">{children}</p>}
-    </motion.div>
   )
 }
 
@@ -135,19 +90,6 @@ export function Terminal({ title, children }: { title: string; children: ReactNo
         <span className="ml-2 font-mono text-[11px] text-zinc-500">{title}</span>
       </div>
       <pre className="overflow-x-auto p-4 font-mono text-[12px] leading-6 text-zinc-300">{children}</pre>
-    </div>
-  )
-}
-
-export function StageHeader({ n, title, description, action }: { n: number; title: string; description: string; action?: ReactNode }) {
-  return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <div className="font-mono text-[11px] text-zinc-500">0{n}</div>
-        <h3 className="mt-1 text-base font-medium text-white">{title}</h3>
-        <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-zinc-400">{description}</p>
-      </div>
-      {action}
     </div>
   )
 }

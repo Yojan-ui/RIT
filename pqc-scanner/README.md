@@ -40,22 +40,29 @@ frontend/   React + React Three Fiber single page: search, 3D cipher globe, resu
 Results from live tests (Sept 2026): cloudflare.com, google.com, example.org and microsoft.com negotiate X25519MLKEM768
 (score 60); github.com uses classical x25519 (score 10).
 
-## The four stages (frontend)
+## The frontend: a four-step story
 
-After a scan, a vertical stepper walks through Detect → Score → Defend → Prove (one stage on screen at a time):
+A full-screen WebGL core (`frontend/src/scene/CryptoCore.tsx`) sits behind a plain-English storybook. The core is a
+noise-displaced sphere with a wireframe shell, 2,000 GPU particles and bloom, and it acts out the state:
 
-1. **Detect**: the live scan result: verdict, negotiated key exchange, certificate, and the CycloneDX CBOM (downloadable).
-2. **Score**: Mosca's inequality with sliders for X (migration time, default 4 years) and Y (data shelf life, default 10);
-   Z is fixed at 7 (a 2033 CRQC lower bound). X + Y > Z with classical crypto gives **Critical risk: forgeable** and tints the
-   globe's orbit line red; an all-PQC stack shows **SAFE**. Each detected algorithm gets its own verdict (key exchange: readable later;
-   signatures: forgeable).
-3. **Defend**: *Simulate PQC migration* shifts the globe accent to green and rewrites the on-screen certificate and CBOM to
-   ML-DSA-65 (FIPS 204) + X25519MLKEM768, with the OpenSSL 3.5 runbook. This stage is a simulation and is labelled as one.
-4. **Prove**: *Anchor to Merkle Ledger* hashes the three stage records with Web Crypto SHA-256, builds an RFC 6962-style
-   Merkle root, and seals a block chained to the previous one (kept in this browser's localStorage). It then re-verifies
-   every hash, printing the block and checks as terminal output with a **Ledger verified** status. *Tamper test* alters the migration record and shows exactly which checks fail.
+| State | Core |
+|---|---|
+| Idle | calm blue |
+| Scanning | pulsing, particles streaming |
+| Weakness found | throbbing amber, erratic swarm |
+| Critical | violent red, jagged surface |
+| Upgraded / sealed | smooth emerald/cyan, particles settle into orbital rings, lattice appears |
 
-Logic lives in `frontend/src/lib/mosca.ts` and `frontend/src/lib/ledger.ts`; stages in `frontend/src/components/stages/`.
+Four clicks tell the story, each with one giant headline generated from the real data (`frontend/src/lib/story.ts`):
+
+1. **Scan** → "Scanning…" → e.g. "⚠️ Weakness found: old ECDSA lock detected." (the lock type comes from the live certificate)
+2. **Calculate risk** → Mosca's inequality (X migration 4, Y shelf life 10, Z fixed 7) → "🚨 Critical: can be forged by a quantum computer."
+3. **Upgrade to Quantum-Safe** → simulated ML-DSA-65 + X25519MLKEM768 → "✅ Success: ML-DSA quantum lock activated."
+4. **Seal the Record** → real Web Crypto SHA-256 Merkle block, chained in localStorage → "🔒 Proof anchored to the ledger."
+
+The **Advanced technical view** toggle reveals the jargon for the current step: handshake details and the CycloneDX CBOM,
+Mosca sliders and per-algorithm verdicts, the change set and OpenSSL 3.5 runbook, and the ledger as terminal output with a
+tamper test. A playback bar lets you revisit completed steps.
 
 ## API
 
