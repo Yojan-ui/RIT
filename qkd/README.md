@@ -34,18 +34,16 @@ npm run dev        # http://localhost:5173 (strict port); /api is proxied to :81
 
 Start the backend first. Set `VITE_API_URL` to call a backend somewhere other than the proxy.
 
-What's on screen:
+The page reads left to right like a storybook:
 
-- **Optical bench** (`src/scene/QuantumScene.tsx`): Alice's laser source and polariser, Bob's waveplate,
-  polarising beam splitter and two SPAD detectors (D0/D1 flash with the outcome). Photons are light
-  packets whose bar shows their real polarisation (H/V/D/A). In attack mode Eve's beam-splitter tap
-  lowers into the beam and sprays red decoherence when it collapses a photon.
-- **Playback** (`src/playback.ts`, `src/hud/PlaybackBar.tsx`): play/pause (space), step one photon (→),
-  timeline scrubbing, speed, and a photon trace table. Each detection is described in the readout chip.
-- **Bloch sphere drawer** (`src/hud/BlochDrawer.tsx`): click any photon in the beam, trace table or
-  readout. Shows Alice's, Eve's and Bob's states and Bob's measurement probabilities. `[` / `]` step photons.
-- **One-time pad test** (`src/hud/OtpCard.tsx`): XORs a message with the sifted key; Bob decrypts with his
-  copy. Clean mode decrypts perfectly; with Eve the key is discarded and Bob's output is corrupted.
+- **Top banner**: the one status to read: green "SECURE CONNECTION" or pulsing red "INTRUDER DETECTED!".
+- **Step 1, Alice**: "SEND SECURE KEY" fires a wave of photon spheres down the fibre (a clean BB84 run).
+- **Step 2, the channel**: a data progress bar, a security-risk gauge (share of photons the spy disturbed,
+  ~50% under intercept-resend), and "SIMULATE EVE (THE SPY)", which re-sends the same photons through an
+  attack. Eve's drone-eye drops over the cable and her hazard lines turn the spheres red and broken.
+- **Step 3, Bob**: the bottom-line result once the photons arrive.
 
-URL options: `?attack` opens in Eve mode · `?photon=N` jumps to photon N (add `&inspect` to open its
-Bloch sphere) · `?lite` turns off bloom and floor reflections for weak GPUs.
+The 3D stage lives in `src/scene/QuantumScene.tsx`; the page overlay is in `src/hud/`.
+
+URL options: `?attack` opens straight into the spy scenario · `?lite` turns off bloom and floor
+reflections for weak GPUs.
