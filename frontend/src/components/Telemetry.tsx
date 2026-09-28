@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { scanTranscript, tailEntry, type Channel, type Level, type LogEntry } from '@/lib/telemetry'
 import type { ScanReport } from '@/lib/types'
-import { Lamp, PanelHeader } from './primitives'
+import { Lamp } from './primitives'
 
 const MAX_LINES = 300
 
@@ -15,16 +15,17 @@ const LEVEL_TEXT: Record<Level, string> = {
   ok: 'text-ok',
   warn: 'text-warn',
   err: 'text-crit',
-  info: 'text-slate-200',
-  dim: 'text-slate-500',
+  info: 'text-ink',
+  dim: 'text-ink-3',
 }
 
+// Channels are told apart by weight, not a rainbow: the text column carries the colour.
 const CHANNEL_TEXT: Record<Channel, string> = {
-  SYS: 'text-slate-300',
-  DNS: 'text-sky-400/80',
-  HTTP: 'text-violet-400/80',
-  SMTP: 'text-ok/80',
-  TLS: 'text-teal-300/80',
+  SYS: 'text-ink-3',
+  DNS: 'text-accent',
+  HTTP: 'text-accent',
+  SMTP: 'text-accent',
+  TLS: 'text-accent',
 }
 
 const clock = (ts: number) => {
@@ -33,7 +34,7 @@ const clock = (ts: number) => {
 }
 
 /**
- * Terminal-style feed. Replays the current scan's observations as a probe
+ * Scan log. Replays the current scan's observations as a probe
  * transcript, then keeps appending simulated monitoring lines. Auto-follows
  * the tail unless the user scrolls up.
  */
@@ -99,32 +100,24 @@ export function Telemetry({
   }
 
   return (
-    <section className={cn('panel relative flex h-full min-h-0 flex-col', className)} aria-labelledby="telemetry-heading">
-      <PanelHeader label="Real-time telemetry">
-        <div className="flex items-center gap-2">
-          <span
-            className="border border-white/10 px-1.5 py-px font-mono text-[9px] tracking-wider text-slate-500"
-            title="Transcript replayed from the scan's observations; follow-on lines are simulated monitoring"
-          >
-            SIMULATED
-          </span>
-          <span className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-slate-400">
-            <Lamp className={paused ? 'bg-warn' : 'bg-ok'} pulse={!paused} />
-            {paused ? 'PAUSED' : 'LIVE'}
-          </span>
-          <button
-            type="button"
-            onClick={() => setPaused((p) => !p)}
-            aria-pressed={paused}
-            className="h-5 border border-white/10 px-2 font-mono text-[9px] tracking-wider text-slate-400 hover:border-white/30 hover:text-slate-200"
-          >
-            {paused ? 'RESUME' : 'PAUSE'}
-          </button>
-        </div>
-      </PanelHeader>
-      <h2 id="telemetry-heading" className="sr-only">
-        Real-time telemetry
-      </h2>
+    <div className={cn('relative flex h-full min-h-0 flex-col', className)}>
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 text-[12px] text-ink-2">
+        <span
+          className="inline-flex items-center gap-2"
+          title="Replayed from this scan's observations; later lines are simulated monitoring"
+        >
+          <Lamp className={paused ? 'bg-warn' : 'bg-ok'} pulse={!paused} />
+          {paused ? 'Paused' : 'Streaming'} (replay of this scan, then simulated monitoring)
+        </span>
+        <button
+          type="button"
+          onClick={() => setPaused((p) => !p)}
+          aria-pressed={paused}
+          className="h-8 border border-line px-3 font-medium text-ink-2 hover:border-line-strong hover:text-ink"
+        >
+          {paused ? 'Resume' : 'Pause'}
+        </button>
+      </div>
 
       <div
         ref={body}
@@ -132,31 +125,26 @@ export function Telemetry({
         role="log"
         aria-live="off"
         aria-label="Probe log"
-        className="min-h-0 flex-1 overflow-y-auto bg-black/30 px-3 py-2 font-mono text-[10.5px] leading-[1.6]"
+        className="min-h-0 flex-1 overflow-y-auto bg-sunken px-4 py-3 font-mono text-[11px] leading-[1.7]"
       >
         {lines.map((l) => (
-          <div key={l.id} className="grid grid-cols-[5.9rem_2.6rem_minmax(0,1fr)] gap-x-2">
-            <span className="text-slate-600 tabular-nums">{clock(l.ts)}</span>
+          <div key={l.id} className="grid grid-cols-[6.6rem_3rem_minmax(0,1fr)] gap-x-3">
+            <span className="text-ink-3">{clock(l.ts)}</span>
             <span className={CHANNEL_TEXT[l.ch]}>{l.ch}</span>
             <span className={cn('break-all', LEVEL_TEXT[l.level])}>{l.text}</span>
           </div>
         ))}
-        <div className="grid grid-cols-[5.9rem_2.6rem_minmax(0,1fr)] gap-x-2" aria-hidden>
-          <span />
-          <span />
-          <span className={cn('inline-block h-3 w-1.5 translate-y-0.5 bg-ok/80', !paused && 'animate-pulse')} />
-        </div>
       </div>
 
       {!following && (
         <button
           type="button"
           onClick={() => setFollowing(true)}
-          className="absolute right-3 bottom-3 border border-ok/40 bg-obsidian px-2.5 py-1 font-mono text-[10px] tracking-wider text-ok"
+          className="absolute right-4 bottom-4 border border-line bg-surface px-3 py-1.5 text-[11.5px] font-medium text-accent"
         >
-          ↓ JUMP TO LIVE
+          Jump to latest
         </button>
       )}
-    </section>
+    </div>
   )
 }

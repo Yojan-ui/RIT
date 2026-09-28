@@ -1,90 +1,27 @@
-import { ShieldCheck } from 'lucide-react'
+import { ChevronDown, ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
 import { EFFORT_INFO } from '@/lib/meta'
 import { cn } from '@/lib/utils'
 import { buildRemediation, type Artifact, type Remedy } from '@/lib/remediation'
 import type { ScanReport, VectorId } from '@/lib/types'
-import { CopyButton, PanelHeader, StatusBadge } from './primitives'
+import { CopyButton, SectionHeader, StatusBadge } from './primitives'
 
-const KIND_LABEL: Record<Artifact['kind'], string> = { dns: 'DNS', file: 'FILE', config: 'CONFIG' }
+const KIND_LABEL: Record<Artifact['kind'], string> = { dns: 'DNS record', file: 'File', config: 'Server config' }
 
 function ArtifactBlock({ artifact }: { artifact: Artifact }) {
   return (
-    <div className="border border-white/10">
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-2.5 py-1">
-        <p className="min-w-0 truncate font-mono text-[10px] tracking-wider text-slate-500">
-          <span className="text-slate-300">{KIND_LABEL[artifact.kind]}</span> · {artifact.label}
-          {artifact.kind !== 'dns' && <span className="text-slate-600"> → {artifact.target}</span>}
+    <div className="overflow-hidden border border-line">
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-3 py-2">
+        <p className="min-w-0 truncate text-[11.5px] text-ink-2">
+          <span className="font-medium text-ink">{KIND_LABEL[artifact.kind]}</span> {artifact.label}
+          {artifact.kind !== 'dns' && <span className="text-ink-3"> at {artifact.target}</span>}
         </p>
         <CopyButton value={artifact.value} label={artifact.label} />
       </div>
-      <pre className="overflow-x-auto bg-black px-2.5 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-emerald-400">
-        {artifact.kind === 'config' && artifact.target === 'shell' && <span className="text-neutral-600">$ </span>}
+      <pre className="overflow-x-auto bg-sunken px-3 py-2.5 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink">
         {artifact.value}
       </pre>
     </div>
-  )
-}
-
-/** Before/after for one fix: status, score and what is published, plus how much work it is. */
-function AfterFix({ remedy, planIndex }: { remedy: Remedy; planIndex: number }) {
-  const effort = EFFORT_INFO[remedy.effort]
-  const after = remedy.step?.statuses_after[remedy.id]
-  return (
-    <section className="border border-white/10">
-      <div className="grid grid-cols-2 divide-x divide-white/10 border-b border-white/10">
-        <div className="px-3 py-2">
-          <p className="eyebrow mb-1.5">Now</p>
-          <StatusBadge status={remedy.status} />
-        </div>
-        <div className="px-3 py-2">
-          <p className="eyebrow mb-1.5">After this fix</p>
-          {after ? (
-            <StatusBadge status={after} />
-          ) : (
-            <span className="inline-flex h-5 items-center border border-dashed border-na px-1.5 font-mono text-[10px] tracking-wider text-slate-500">
-              MANUAL · NOT SIMULATED
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="space-y-1 px-3 py-2 font-mono text-[11px] text-slate-400">
-        {remedy.fix ? (
-          <p>
-            Score if done now: <span className="text-slate-100 tabular-nums">{remedy.fix.score_before}</span> →{' '}
-            <span className="text-ok tabular-nums">{remedy.fix.score_after}</span>
-          </p>
-        ) : remedy.step ? (
-          <p>
-            As step {planIndex + 1} of the fix plan:{' '}
-            <span className="text-slate-100 tabular-nums">{remedy.step.score_before}</span> →{' '}
-            <span className="text-ok tabular-nums">{remedy.step.score_after}</span>
-          </p>
-        ) : null}
-        <p>
-          <span className="text-slate-500">Effort:</span> <span className="text-slate-100">{effort.time}</span> ·{' '}
-          {effort.who}. {effort.note}
-        </p>
-        {remedy.id === 'dmarc' && remedy.step && remedy.fix?.record.value.includes('p=quarantine') && (
-          <p className="text-warn">Then wait 2 to 4 weeks of clean reports before tightening to p=reject.</p>
-        )}
-      </div>
-      <div className="border-t border-white/10 px-3 py-2">
-        <p className="eyebrow mb-1">Published now</p>
-        {remedy.current.length ? (
-          remedy.current.map((r) => (
-            <pre
-              key={r}
-              className="font-mono text-[10.5px] leading-relaxed break-all whitespace-pre-wrap text-slate-500"
-            >
-              {r}
-            </pre>
-          ))
-        ) : (
-          <p className="font-mono text-[10.5px] text-slate-600">— nothing published —</p>
-        )}
-      </div>
-    </section>
   )
 }
 
@@ -99,70 +36,87 @@ function RemedyItem({
   planIndex: number
   onAim?: (id: VectorId | null) => void
 }) {
-  const gain = remedy.fix ? remedy.fix.score_after - remedy.fix.score_before : 0
+  const effort = EFFORT_INFO[remedy.effort]
+  const after = remedy.step?.statuses_after[remedy.id]
+  const gain = remedy.fix
+    ? remedy.fix.score_after - remedy.fix.score_before
+    : remedy.step
+      ? remedy.step.score_after - remedy.step.score_before
+      : 0
   return (
     <details
-      open={index < 2}
-      className={cn(
-        'group border-b border-white/10 last:border-b-0',
-        remedy.status === 'fail' && 'shadow-[inset_2px_0_0_var(--color-crit)]',
-      )}
+      open={index === 0}
+      className="group"
       onMouseEnter={() => onAim?.(remedy.id)}
       onMouseLeave={() => onAim?.(null)}
     >
-      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 hover:bg-raised [&::-webkit-details-marker]:hidden">
-        <span className="font-mono text-[10px] text-slate-600 tabular-nums">{String(index + 1).padStart(2, '0')}</span>
-        <StatusBadge status={remedy.status} />
-        <span className="w-20 font-mono text-[11px] font-bold tracking-wider text-slate-100">
-          {remedy.name.split(' ')[0]}
+      <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 px-4 py-3 hover:bg-sunken sm:grid-cols-[6rem_minmax(0,1fr)_auto] [&::-webkit-details-marker]:hidden">
+        <span className="hidden pt-0.5 sm:block">
+          <StatusBadge status={remedy.status} />
         </span>
-        <span className="min-w-0 flex-1 text-[12.5px] text-slate-200">{remedy.headline}</span>
-        <span className="flex items-center gap-2 font-mono text-[10px] tracking-wider">
-          {remedy.isOneFix && <span className="border border-ok/50 px-1.5 py-px text-ok">ONE FIX</span>}
-          {remedy.serverSide && <span className="border border-warn/40 px-1.5 py-px text-warn">SERVER</span>}
-          {gain > 0 && <span className="text-ok tabular-nums">+{gain} PTS</span>}
-          <span className={remedy.closes.length ? 'text-crit' : 'text-slate-600'}>
-            {remedy.closes.length} OPEN PATH{remedy.closes.length === 1 ? '' : 'S'}
-          </span>
-          <span className="text-slate-500 transition-transform group-open:rotate-90" aria-hidden>
-            ›
+        <span className="min-w-0">
+          <span className="block text-[13px] font-bold text-ink">{remedy.headline}</span>
+          <span className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-2">
+            <span>{remedy.name}</span>
+            <span>{effort.time}</span>
+            {gain > 0 && <span className="text-ok">+{gain} points</span>}
+            {remedy.isOneFix && <span className="font-medium text-accent">Start here</span>}
+            {remedy.serverSide && <span className="text-warn">Server change</span>}
           </span>
         </span>
+        <ChevronDown className="mt-1 size-4.5 text-ink-3 transition-transform group-open:rotate-180" aria-hidden />
       </summary>
 
-      <div className="grid gap-4 px-4 pt-1 pb-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-        <div className="space-y-3">
+      <div className="grid gap-5 px-4 pb-4 sm:pl-[8rem] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+        <div className="space-y-4">
+          <p className="border-l border-ink pl-3 text-[13px] text-ink">{remedy.impact}</p>
           <section>
-            <h4 className="eyebrow mb-1.5">How to fix</h4>
-            <ol className="space-y-1.5 text-[12.5px] text-slate-300">
-              {remedy.steps.map((step, i) => (
-                <li key={step} className="flex gap-2.5">
-                  <span className="shrink-0 font-mono text-[10.5px] text-slate-600 tabular-nums">{i + 1}.</span>
-                  <span>{step}</span>
+            <h4 className="subhead mb-2">Steps</h4>
+            <ol className="list-decimal space-y-2 pl-5 text-[12.5px] text-ink-2 marker:text-ink-3">
+              {remedy.steps.map((step) => (
+                <li key={step} className="pl-1">
+                  {step}
                 </li>
               ))}
             </ol>
           </section>
-          <AfterFix remedy={remedy} planIndex={planIndex} />
+          <section className="grid grid-cols-2 gap-4 text-[12.5px]">
+            <div>
+              <p className="mb-1.5 text-[10.5px] font-bold tracking-[0.12em] text-ink-3 uppercase">Today</p>
+              <StatusBadge status={remedy.status} />
+            </div>
+            <div>
+              <p className="mb-1.5 text-[10.5px] font-bold tracking-[0.12em] text-ink-3 uppercase">After this fix</p>
+              {after ? <StatusBadge status={after} /> : <span className="text-ink-3">Manual, not simulated</span>}
+            </div>
+            <p className="col-span-2 text-ink-2">
+              {remedy.fix
+                ? `Done on its own, the score goes from ${remedy.fix.score_before} to ${remedy.fix.score_after}.`
+                : remedy.step
+                  ? `As step ${planIndex + 1} of the plan, the score goes from ${remedy.step.score_before} to ${remedy.step.score_after}.`
+                  : null}{' '}
+              Owner: {effort.who}. {effort.note}
+            </p>
+            {remedy.id === 'dmarc' && remedy.step && remedy.fix?.record.value.includes('p=quarantine') && (
+              <p className="col-span-2 text-warn">
+                Then wait for 2 to 4 weeks of clean reports before tightening to p=reject.
+              </p>
+            )}
+          </section>
           {remedy.closes.length > 0 && (
             <section>
-              <h4 className="eyebrow mb-1.5">Closes</h4>
-              <ul className="space-y-0.5 text-[12px] text-slate-400">
+              <h4 className="subhead mb-2">Attack paths this closes</h4>
+              <ul className="space-y-1 text-[12.5px] text-ink-2">
                 {remedy.closes.map((p) => (
-                  <li key={p.id} className="flex gap-2">
-                    <span className="font-mono text-crit" aria-hidden>
-                      ×
-                    </span>
-                    {p.title}
-                  </li>
+                  <li key={p.id}>{p.title}</li>
                 ))}
               </ul>
             </section>
           )}
           {remedy.fix && remedy.fix.caveats.length > 0 && (
             <section>
-              <h4 className="eyebrow mb-1.5">Before you publish</h4>
-              <ul className="space-y-1 text-[12px] text-warn">
+              <h4 className="subhead mb-2">Before you publish</h4>
+              <ul className="space-y-1.5 text-[12.5px] text-warn">
                 {/* The MTA-STS caveat embeds the policy file, already shown as an artifact. */}
                 {remedy.fix.caveats.map((c) => (
                   <li key={c}>{c.split('\n')[0]}</li>
@@ -171,15 +125,23 @@ function RemedyItem({
             </section>
           )}
         </div>
-        <div className="space-y-2">
-          <div className="border border-l-2 border-line border-l-ok px-3 py-2">
-            <p className="eyebrow mb-0.5">What this fix does</p>
-            <p className="text-[12.5px] leading-snug text-slate-100">{remedy.impact}</p>
-          </div>
-          <h4 className="eyebrow pt-1">Exact records</h4>
+        <div className="space-y-3">
+          <h4 className="subhead">What to publish</h4>
           {remedy.artifacts.map((a) => (
             <ArtifactBlock key={`${a.label}-${a.value}`} artifact={a} />
           ))}
+          <div className="pt-2">
+            <p className="mb-1.5 text-[10.5px] font-bold tracking-[0.12em] text-ink-3 uppercase">Published today</p>
+            {remedy.current.length ? (
+              remedy.current.map((r) => (
+                <pre key={r} className="font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap text-ink-3">
+                  {r}
+                </pre>
+              ))
+            ) : (
+              <p className="text-[12px] text-ink-3">Nothing</p>
+            )}
+          </div>
         </div>
       </div>
     </details>
@@ -187,36 +149,35 @@ function RemedyItem({
 }
 
 /**
- * HOW TO FIX: every FAIL/WARN vector with ordered steps and the exact DNS
- * records, hosted files or server config to deploy. Hover aims the lattice.
+ * Every failing or weak protection with ordered steps and the exact DNS
+ * records, hosted files or server config to deploy. Hover aims the 3D view.
  */
 export function RemediationPanel({ report, onAim }: { report: ScanReport; onAim?: (id: VectorId | null) => void }) {
   const remedies = useMemo(() => buildRemediation(report), [report])
-  const fails = remedies.filter((r) => r.status === 'fail').length
 
   return (
-    <section className="panel" aria-labelledby="remediation-heading">
-      <PanelHeader label="Remediation steps · how to fix">
-        <span id="remediation-heading" className="font-mono text-[10px] tracking-wider">
-          <span className={fails ? 'text-crit' : 'text-ok'}>{fails} FAIL</span>
-          <span className="text-slate-600"> · </span>
-          <span className="text-warn">{remedies.length - fails} WARN</span>
-        </span>
-      </PanelHeader>
+    <section aria-labelledby="remediation-heading">
+      <SectionHeader
+        id="remediation-heading"
+        title="How to fix each one"
+        lede="The exact records and settings to hand to whoever manages your DNS and mail server."
+      />
       {remedies.length ? (
-        remedies.map((r, i) => (
-          <RemedyItem
-            key={`${report.domain}-${r.id}`}
-            remedy={r}
-            index={i}
-            planIndex={r.step ? (report.fix_plan?.steps.indexOf(r.step) ?? -1) : -1}
-            onAim={onAim}
-          />
-        ))
+        <div className={cn('card divide-y divide-line overflow-hidden')}>
+          {remedies.map((r, i) => (
+            <RemedyItem
+              key={`${report.domain}-${r.id}`}
+              remedy={r}
+              index={i}
+              planIndex={r.step ? (report.fix_plan?.steps.indexOf(r.step) ?? -1) : -1}
+              onAim={onAim}
+            />
+          ))}
+        </div>
       ) : (
-        <p className="flex items-center gap-2 px-4 py-4 font-mono text-[11px] tracking-wider text-ok">
-          <ShieldCheck className="size-4" aria-hidden />
-          NOTHING TO FIX: NO VECTOR IS FAILING OR WARNING FOR {report.domain.toUpperCase()}
+        <p className="card flex items-center gap-3 px-4 py-3 text-[13px] text-ok">
+          <ShieldCheck className="size-5" aria-hidden />
+          Nothing to fix. No protection is failing or weak for {report.domain}.
         </p>
       )}
     </section>

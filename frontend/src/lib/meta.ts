@@ -12,6 +12,17 @@ export const VECTOR_ABBR: Record<VectorId, string> = {
   tls_rpt: 'RPT',
 }
 
+/** What each protocol does, in words a non-specialist can follow. */
+export const VECTOR_PLAIN: Record<VectorId, string> = {
+  spf: 'Approved senders',
+  dkim: 'Email signatures',
+  dmarc: 'Anti-spoofing policy',
+  mx: 'Incoming mail route',
+  starttls: 'Encryption in transit',
+  mta_sts: 'Enforced encryption',
+  tls_rpt: 'Encryption failure reports',
+}
+
 // Which vectors govern each attack path (mirrors the predicates in
 // backend/app/analysis/scoring.py). Drives the matrix columns. The primary
 // vector is listed first; the 3D fly-to uses it to break ties.
@@ -34,17 +45,17 @@ interface Tone {
 }
 
 export const STATUS_TONE: Record<Status, Tone> = {
-  pass: { label: 'PASS', text: 'text-ok', bg: 'bg-ok', border: 'border-ok/40' },
-  warn: { label: 'WARN', text: 'text-warn', bg: 'bg-warn', border: 'border-warn/40' },
-  fail: { label: 'FAIL', text: 'text-crit', bg: 'bg-crit', border: 'border-crit/50' },
-  info: { label: 'INFO', text: 'text-slate-400', bg: 'bg-slate-400', border: 'border-line-strong' },
-  error: { label: 'UNMEASURED', text: 'text-slate-500', bg: 'bg-na', border: 'border-line-strong' },
+  pass: { label: 'PASS', text: 'text-ok', bg: 'bg-ok', border: 'border-ok' },
+  warn: { label: 'WARN', text: 'text-warn', bg: 'bg-warn', border: 'border-warn' },
+  fail: { label: 'FAIL', text: 'text-crit', bg: 'bg-crit', border: 'border-crit' },
+  info: { label: 'N/A', text: 'text-ink-3', bg: 'bg-na', border: 'border-line-strong' },
+  error: { label: 'N/M', text: 'text-ink-3', bg: 'bg-na', border: 'border-line-strong' },
 }
 
 export const PATH_TONE: Record<PathState, Tone> = {
-  open: { label: 'OPEN', text: 'text-crit', bg: 'bg-crit', border: 'border-crit/50' },
-  closed: { label: 'CLOSED', text: 'text-ok', bg: 'bg-ok', border: 'border-ok/40' },
-  not_applicable: { label: 'N/A', text: 'text-slate-600', bg: 'bg-na', border: 'border-line' },
+  open: { label: 'OPEN', text: 'text-crit', bg: 'bg-crit', border: 'border-crit' },
+  closed: { label: 'CLOSED', text: 'text-ok', bg: 'bg-ok', border: 'border-ok' },
+  not_applicable: { label: 'N/A', text: 'text-ink-3', bg: 'bg-na', border: 'border-line' },
 }
 
 export const EFFORT_LABEL: Record<Effort, string> = {

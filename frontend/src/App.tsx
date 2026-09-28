@@ -1,15 +1,18 @@
+import { ChevronDown } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AttackMatrix } from '@/components/AttackMatrix'
-import { SecureMailDashboard } from '@/components/dashboard'
+import { Hero, LatticeStage } from '@/components/dashboard'
 import { FixPlanPanel } from '@/components/FixPlanPanel'
 import { RemediationPanel } from '@/components/RemediationPanel'
 import { ErrorPanel, ScanningBanner, Skeleton } from '@/components/States'
+import { Telemetry } from '@/components/Telemetry'
 import { TopBar } from '@/components/TopBar'
 import { VectorGrid } from '@/components/VectorGrid'
 import { useReport, type Source } from '@/hooks/useReport'
+import { useTheme } from '@/hooks/useTheme'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import type { DemoScenario, RecentScan, VectorId } from '@/lib/types'
+import type { DemoScenario, RecentScan, ScanReport, VectorId } from '@/lib/types'
 
 const DEFAULT_SCENARIO = 'startup'
 
@@ -38,6 +41,7 @@ const describe = (source?: Source) => (!source ? '' : source.kind === 'demo' ? `
 
 export default function App() {
   const [initial] = useState(sourceFromUrl)
+  const [theme, setTheme] = useTheme()
   const { status, source, report, error, startedAt, load } = useReport()
   const [scenarios, setScenarios] = useState<DemoScenario[]>([])
   const [apiUp, setApiUp] = useState<boolean | null>(null)
@@ -97,10 +101,12 @@ export default function App() {
         source={source}
         loading={loading}
         apiUp={apiUp}
+        theme={theme}
+        onTheme={setTheme}
         onSelect={select}
       />
 
-      <main className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-4">
+      <main className="mx-auto flex max-w-[1240px] flex-col gap-6 px-4 pt-5 pb-10 md:px-6 md:pt-6">
         {loading && startedAt !== undefined && <ScanningBanner target={describe(source)} since={startedAt} />}
 
         {status === 'error' && error && source && (
@@ -110,29 +116,68 @@ export default function App() {
         {!report && loading && <Skeleton />}
 
         {report && status !== 'error' && (
-          <div className={cn('flex flex-col gap-3', loading && 'pointer-events-none')} aria-busy={loading}>
-            <SecureMailDashboard
-              report={report}
-              loading={loading}
-              pending={loading ? describe(source) : undefined}
-              flyTo={flyTo}
-              onAim={aim}
-              onSelectVector={focusVector}
-            />
+          <div className={cn('flex flex-col gap-8', loading && 'pointer-events-none')} aria-busy={loading}>
+            {/* Verdict and protections on the left; the 3D view stays pinned beside
+                them, so hovering any protection flies the camera to it. */}
+            <div className="grid gap-x-6 gap-y-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+              <Hero report={report} loading={loading} />
+              <div className="lg:col-start-2 lg:row-span-2 lg:row-start-1">
+                <div className="h-[440px] sm:h-[520px] lg:sticky lg:top-28 lg:h-[min(640px,calc(100dvh-8.5rem))]">
+                  <LatticeStage
+                    report={report}
+                    loading={loading}
+                    dark={theme === 'dark'}
+                    flyTo={flyTo}
+                    onSelectVector={focusVector}
+                  />
+                </div>
+              </div>
+              <div className={cn('lg:pt-6', loading && 'opacity-40')}>
+                <VectorGrid key={reportKey} report={report} focus={focus} onAim={aim} />
+              </div>
+            </div>
 
-            <div className={cn('flex flex-col gap-3', loading && 'opacity-40')}>
+            <div className={cn('flex flex-col gap-8', loading && 'opacity-40')}>
               <FixPlanPanel report={report} onAim={aim} />
               <RemediationPanel report={report} onAim={aim} />
               <AttackMatrix report={report} onAim={aim} />
-              <VectorGrid key={reportKey} report={report} focus={focus} />
+              <ScanLog report={report} pending={loading ? describe(source) : undefined} />
             </div>
           </div>
         )}
       </main>
 
-      <footer className="mx-auto max-w-[1400px] px-4 pb-6 font-mono text-[10px] tracking-wider text-slate-600">
-        SPF · DKIM · DMARC · MX · STARTTLS/25 · MTA-STS · TLS-RPT
+      <footer className="border-t border-line">
+        <p className="mx-auto max-w-[1240px] px-4 py-8 text-[12px] text-ink-3 md:px-6">
+          SecureMailScope checks SPF, DKIM, DMARC, MX, STARTTLS, MTA-STS and TLS-RPT using public DNS and a live
+          SMTP probe. Nothing is sent from your domain.
+        </p>
       </footer>
     </div>
+  )
+}
+
+/** The raw probe transcript, folded away; it only mounts (and streams) once opened. */
+function ScanLog({ report, pending }: { report: ScanReport; pending?: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section aria-labelledby="log-heading">
+      <details className="group card overflow-hidden" onToggle={(e) => setOpen(e.currentTarget.open)}>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 hover:bg-sunken [&::-webkit-details-marker]:hidden">
+          <span>
+            <span id="log-heading" className="block text-[13px] font-bold text-ink">
+              Scan log
+            </span>
+            <span className="text-[12.5px] text-ink-2">Every DNS lookup and mail-server exchange behind this report.</span>
+          </span>
+          <ChevronDown className="size-4.5 shrink-0 text-ink-3 transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
+        {open && (
+          <div className="h-[360px] border-t border-line">
+            <Telemetry report={report} pending={pending} />
+          </div>
+        )}
+      </details>
+    </section>
   )
 }

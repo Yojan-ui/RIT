@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { cn } from '@/lib/utils'
 import { STATUS_TONE, VECTOR_ABBR, VECTOR_ORDER } from '@/lib/meta'
 import type { ScanReport, VectorId } from '@/lib/types'
-import { Lamp, PanelHeader } from '../primitives'
+import { Lamp } from '../primitives'
 import { Controls } from './Controls'
 import { Lattice, type LatticeNode } from './Lattice'
 import { UnrealBloom } from './UnrealBloom'
@@ -42,8 +42,8 @@ class WebGLBoundary extends Component<{ children: ReactNode }, { failed: boolean
   render() {
     if (this.state.failed)
       return (
-        <div className="grid h-full place-items-center font-mono text-[11px] tracking-wider text-slate-500">
-          3D VIEW UNAVAILABLE (WEBGL DISABLED)
+        <div className="grid h-full place-items-center px-6 text-center text-[12.5px] text-ink-3">
+          The 3D view needs WebGL, which is turned off in this browser.
         </div>
       )
     return this.props.children
@@ -54,18 +54,18 @@ export default function DefenseLattice({
   report,
   dimmed = false,
   flyTo = null,
-  embedded = false,
   flat = false,
+  dark = false,
   onSelectVector,
 }: {
   report: ScanReport
   dimmed?: boolean
-  /** Render borderless and headerless, filling the parent (host supplies the chrome). */
-  embedded?: boolean
   /** Vector the camera should fly to, driven by hovering DOM elements. */
   flyTo?: VectorId | null
-  /** Light theme: flat solid colours, no bloom. */
+  /** Flat solid colours, no bloom (the brutalist theme never glows). */
   flat?: boolean
+  /** Black stage (dark theme) rather than white. */
+  dark?: boolean
   onSelectVector: (id: VectorId) => void
 }) {
   const nodes = useMemo<LatticeNode[]>(
@@ -88,26 +88,18 @@ export default function DefenseLattice({
   const focus = nodes.find((n) => n.id === (flyTo ?? hovered))
 
   return (
-    <section
-      className={cn('flex h-full flex-col overflow-hidden', !embedded && 'panel')}
-      aria-labelledby="lattice-heading"
-    >
-      <PanelHeader label="Defense lattice" hidden={embedded}>
-        <span id="lattice-heading" className="font-mono text-[10px] tracking-wider">
+    <section className="flex h-full flex-col" aria-labelledby="lattice-heading">
+      <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line px-3 py-2 text-[11px] font-bold tracking-[0.12em]">
+        <h2 id="lattice-heading" className="text-ink">
+          3D DEFENSE LATTICE{' '}
           <span className={intact === nodes.length ? 'text-ok' : 'text-crit'}>
-            {intact}/{nodes.length} LINKS INTACT
+            [{intact}/{nodes.length} LINKS INTACT]
           </span>
-        </span>
-      </PanelHeader>
+        </h2>
+        <p className="hidden shrink-0 text-ink-3 sm:block">DRAG TO ORBIT / CLICK A NODE</p>
+      </div>
 
-      <div
-        ref={frameRef}
-        className={cn(
-          embedded ? 'relative min-h-0 flex-1' : 'relative h-[340px] sm:h-[440px] xl:h-auto xl:min-h-0 xl:flex-1',
-          'transition-opacity',
-          dimmed && 'opacity-40',
-        )}
-      >
+      <div ref={frameRef} className={cn('relative min-h-0 flex-1 transition-opacity', dimmed && 'opacity-40')}>
         <WebGLBoundary>
           <Canvas
             flat
@@ -126,6 +118,7 @@ export default function DefenseLattice({
               positions={positions}
               reducedMotion={reducedMotion}
               flat={flat}
+              dark={dark}
               onHover={setHovered}
               onSelect={onSelectVector}
             />
@@ -142,32 +135,24 @@ export default function DefenseLattice({
 
         {/* Readout for the hovered/focused node */}
         <div
-          className="pointer-events-none absolute top-3 left-4 max-w-[min(22rem,calc(100%-2rem))]"
+          className="pointer-events-none absolute top-3 right-3 left-3 flex"
           aria-live="polite"
         >
-          {focus ? (
-            <div
-              className={cn(
-                'rounded-sm border bg-obsidian/85 px-3 py-2 backdrop-blur-sm',
-                flyTo ? STATUS_TONE[focus.status].border : 'border-line-strong',
-              )}
-            >
-              {flyTo && <p className="eyebrow mb-1 text-slate-400">▸ Target lock</p>}
-              <p className="flex items-center gap-2 font-mono text-[11px] tracking-wider">
-                <span className="text-slate-100">{focus.name}</span>
-                <span className={STATUS_TONE[focus.status].text}>{STATUS_TONE[focus.status].label}</span>
+          {focus && (
+            <div className={cn('max-w-[26rem] border bg-surface px-3 py-2', STATUS_TONE[focus.status].border)}>
+              <p className="flex items-center gap-2 text-[12px] font-bold">
+                <span className="text-ink">{focus.name}</span>
+                <span className={STATUS_TONE[focus.status].text}>
+                  {STATUS_TONE[focus.status].label}
+                </span>
               </p>
-              <p className="mt-1 text-[12px] text-slate-400">{focus.summary}</p>
+              <p className="mt-0.5 text-[12px] leading-snug text-ink-2">{focus.summary}</p>
             </div>
-          ) : (
-            <p className="font-mono text-[10px] tracking-wider text-slate-600">
-              CORE · <span className="text-slate-400">{report.domain}</span>
-            </p>
           )}
         </div>
 
         {/* Legend doubles as a keyboard-accessible way to inspect each node */}
-        <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1 px-3 pb-3">
+        <div className="absolute inset-x-0 bottom-0 flex flex-wrap gap-1 px-3 pb-3">
           {nodes.map((n) => {
             const tone = STATUS_TONE[n.status]
             return (
@@ -181,8 +166,8 @@ export default function DefenseLattice({
                 onClick={() => onSelectVector(n.id)}
                 aria-label={`${n.name}: ${tone.label}. Show details`}
                 className={cn(
-                  'inline-flex h-6 items-center gap-1.5 rounded-sm border bg-obsidian/80 px-1.5 font-mono text-[10px] tracking-wider',
-                  hovered === n.id ? 'border-slate-400 text-slate-100' : 'border-line text-slate-400',
+                  'inline-flex h-6 items-center gap-1.5 border bg-surface px-2 text-[11px] font-bold tracking-[0.08em]',
+                  hovered === n.id ? 'border-ink text-ink' : 'border-line text-ink-2 hover:text-ink',
                 )}
               >
                 <Lamp className={tone.bg} />
@@ -190,9 +175,6 @@ export default function DefenseLattice({
               </button>
             )
           })}
-          <span className="ml-auto hidden font-mono text-[10px] tracking-wider text-slate-600 sm:inline">
-            DRAG TO ORBIT · CLICK A NODE
-          </span>
         </div>
       </div>
     </section>

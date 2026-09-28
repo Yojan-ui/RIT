@@ -3,10 +3,10 @@ import { useCallback, useState } from 'react'
 export type Theme = 'dark' | 'light'
 
 const THEME_KEY = 'sms.theme'
-// Matches --color-obsidian in each theme, for the mobile browser chrome.
+// Matches --page in each theme, for the mobile browser chrome.
 const CHROME: Record<Theme, string> = { dark: '#050505', light: '#ffffff' }
 
-// Dark (brutalist obsidian) is the default; light is opt-in and remembered per browser.
+// The dark terminal is the default; light is opt-in and remembered per browser.
 export function readTheme(): Theme {
   try {
     return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'

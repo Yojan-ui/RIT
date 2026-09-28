@@ -24,14 +24,16 @@ const PALETTE = Object.fromEntries(Object.entries(HEX).map(([k, v]) => [k, new T
   THREE.Color
 >
 // Light theme ("flat"): no bloom, so colours are the exact 700 shades used by
-// the DOM badges, dimming fades toward white, and nothing is pushed past 1.0.
+// the DOM badges, dimming fades toward the stage colour, and nothing is pushed past 1.0.
 const FLAT_HEX: Record<Status, string> = {
-  pass: '#047857',
-  warn: '#b45309',
-  fail: '#b91c1c',
-  info: '#475569',
-  error: '#64748b',
+  pass: '#1d7a4e',
+  warn: '#a86a0c',
+  fail: '#c4362b',
+  info: '#7a8398',
+  error: '#7a8398',
 }
+// Structure (rings, edges) is drawn in the ink colour of the active theme.
+const INK = { light: '#000000', dark: '#ffffff' }
 const FLAT = Object.fromEntries(Object.entries(FLAT_HEX).map(([k, v]) => [k, new THREE.Color(v)])) as Record<
   Status,
   THREE.Color
@@ -56,6 +58,8 @@ const SPARKS = 2
 const DEBRIS = 6
 const POINTS_PER_LINK = STREAM * TRAIL + SPARKS
 const WHITE = new THREE.Color(1, 1, 1)
+// --stage per theme: flat colours fade toward it when dimmed.
+const STAGE = { light: new THREE.Color('#ffffff'), dark: new THREE.Color('#000000') }
 const UP = new THREE.Vector3(0, 1, 0)
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min)
@@ -193,12 +197,14 @@ function Satellite({
   node,
   refs,
   flat,
+  dark,
   onHover,
   onSelect,
 }: {
   node: LatticeNode
   refs: SatelliteRefs
   flat: boolean
+  dark: boolean
   onHover: (id: VectorId | null) => void
   onSelect: (id: VectorId) => void
 }) {
@@ -240,7 +246,7 @@ function Satellite({
           <meshBasicMaterial ref={(m) => void (refs.heart = m)} toneMapped={false} />
         </mesh>
         <lineSegments geometry={edges} visible={flat}>
-          <lineBasicMaterial color="#000000" toneMapped={false} />
+          <lineBasicMaterial color={INK[dark ? 'dark' : 'light']} toneMapped={false} />
         </lineSegments>
       </group>
       {/* Invisible, generous hit target: 1px wireframes are hard to hover. */}
@@ -272,6 +278,7 @@ export function Lattice({
   positions,
   reducedMotion,
   flat = false,
+  dark = false,
   onHover,
   onSelect,
 }: {
@@ -285,14 +292,16 @@ export function Lattice({
   reducedMotion: boolean
   /** Light theme: flat, crisp solid colours with no glow (render without bloom). */
   flat?: boolean
+  /** Dark stage: flat colours fade toward black and edges are drawn in white. */
+  dark?: boolean
   onHover: (id: VectorId | null) => void
   onSelect: (id: VectorId) => void
 }) {
   const count = nodes.length
-  const live = useRef({ nodes, hovered, focus, score, reducedMotion, flat })
+  const live = useRef({ nodes, hovered, focus, score, reducedMotion, flat, dark })
   useEffect(() => {
-    live.current = { nodes, hovered, focus, score, reducedMotion, flat }
-  }, [nodes, hovered, focus, score, reducedMotion, flat])
+    live.current = { nodes, hovered, focus, score, reducedMotion, flat, dark }
+  }, [nodes, hovered, focus, score, reducedMotion, flat, dark])
 
   const anims = useRef<NodeAnim[]>([])
   if (anims.current.length !== count) anims.current = nodes.map(freshAnim)
@@ -336,10 +345,10 @@ export function Lattice({
   useEffect(() => {
     for (const r of rings) {
       const m = r.material as THREE.LineBasicMaterial
-      m.color.set(flat ? '#000000' : '#1e293b')
-      m.opacity = flat ? 0.3 : 0.8
+      m.color.set(flat ? INK[dark ? 'dark' : 'light'] : '#27385a')
+      m.opacity = flat ? 0.25 : 0.8
     }
-  }, [rings, flat])
+  }, [rings, flat, dark])
   useEffect(
     () => () => {
       links.dispose()
@@ -394,9 +403,9 @@ export function Lattice({
     const writeVec = (arr: Float32Array, idx: number, vec: THREE.Vector3) => write(arr, idx, vec.x, vec.y, vec.z)
     const writeCol = (arr: Float32Array, idx: number, col: THREE.Color, k: number) =>
       write(arr, idx, col.r * k, col.g * k, col.b * k)
-    // Flat: a solid colour faded toward the white page (strength 1 = full colour).
+    // Flat: a solid colour faded toward the stage (strength 1 = full colour).
     const tint = (col: THREE.Color, strength: number) =>
-      v.f.copy(col).lerp(WHITE, 1 - Math.min(1, Math.max(0, strength)))
+      v.f.copy(col).lerp(STAGE[live.current.dark ? 'dark' : 'light'], 1 - Math.min(1, Math.max(0, strength)))
 
     nodes.forEach((node, i) => {
       const anim = anims.current[i]
@@ -421,7 +430,8 @@ export function Lattice({
         anim.nextGlitch = anim.glitchUntil + rand(0.25, 1.2)
         anim.jitter.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(0.16)
       }
-      const glitching = snapped && motion > 0 && t < anim.glitchUntil
+      // The light theme is calm: broken links snap and hang, but nodes do not glitch.
+      const glitching = snapped && !flat && motion > 0 && t < anim.glitchUntil
       const isFocused = focus === node.id
       const isHovered = hovered === node.id || isFocused
       // While the camera is locked on one node, the rest of the lattice drops
@@ -644,7 +654,7 @@ export function Lattice({
       </points>
 
       {nodes.map((node, i) => (
-        <Satellite key={node.id} node={node} refs={sats[i]} flat={flat} onHover={onHover} onSelect={onSelect} />
+        <Satellite key={node.id} node={node} refs={sats[i]} flat={flat} dark={dark} onHover={onHover} onSelect={onSelect} />
       ))}
     </>
   )

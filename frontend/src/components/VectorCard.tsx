@@ -1,9 +1,9 @@
 import { ChevronDown } from 'lucide-react'
 import { useId } from 'react'
 import { cn } from '@/lib/utils'
-import { STATUS_TONE } from '@/lib/meta'
-import type { CheckResult } from '@/lib/types'
+import { STATUS_TONE, VECTOR_PLAIN } from '@/lib/meta'
 import { businessRisk, type Risk } from '@/lib/risk'
+import type { CheckResult } from '@/lib/types'
 import { RawRecord, StatusBadge } from './primitives'
 
 // Keys already shown elsewhere on the card, or too noisy to list.
@@ -25,29 +25,25 @@ function detailRows(details: Record<string, unknown>): [string, string][] {
     .map(([k, v]) => [k.replace(/_/g, ' '), formatValue(v)])
 }
 
-// The collapsed row answers "am I protected?" in plain English; the expanded
-// view adds the technical summary and score, and tucks the raw DNS evidence
-// behind a second disclosure so it never crowds the executive read.
-const RISK_LABEL: Record<Risk['kind'], string> = {
-  risk: 'Business risk',
-  ok: 'Protection status',
-  neutral: 'Note',
-}
-
 function riskTone(kind: Risk['kind'], status: CheckResult['status']): string {
-  if (kind === 'ok') return 'text-ok'
-  if (kind === 'neutral') return 'text-slate-500'
+  if (kind === 'ok') return 'text-ink-2'
+  if (kind === 'neutral') return 'text-ink-3'
   return status === 'fail' ? 'text-crit' : 'text-warn'
 }
 
+// The collapsed row answers "am I protected?" in plain English; opening it adds
+// the technical summary and score, and the raw DNS evidence sits one level
+// further down so it never crowds the first read.
 export function VectorCard({
   check,
   expanded,
   onToggle,
+  onAim,
 }: {
   check: CheckResult
   expanded: boolean
   onToggle: () => void
+  onAim?: (on: boolean) => void
 }) {
   const bodyId = useId()
   const tone = STATUS_TONE[check.status]
@@ -55,68 +51,79 @@ export function VectorCard({
   const risk = businessRisk(check)
 
   return (
-    <article
+    <li
       id={`vector-${check.id}`}
-      className={cn('panel scroll-mt-32', check.status === 'fail' && 'border-crit/40')}
+      className="scroll-mt-40"
+      onMouseEnter={() => onAim?.(true)}
+      onMouseLeave={() => onAim?.(false)}
     >
       <button
         type="button"
         onClick={onToggle}
+        onFocus={() => onAim?.(true)}
+        onBlur={() => onAim?.(false)}
         aria-expanded={expanded}
         aria-controls={bodyId}
-        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-5 gap-y-2 px-6 py-5 text-left transition-colors duration-75 hover:bg-raised"
+        className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 px-4 py-3 text-left transition-colors hover:bg-sunken sm:grid-cols-[6rem_minmax(0,1fr)_auto]"
       >
-        <StatusBadge status={check.status} />
+        <span className="hidden pt-0.5 sm:block">
+          <StatusBadge status={check.status} />
+        </span>
         <span className="min-w-0">
-          <h3 className="font-mono text-[14px] font-bold tracking-wide text-slate-100">{check.name}</h3>
-          <p className="mt-2 max-w-[70ch] text-[13px] leading-relaxed text-slate-300">
-            <span className={cn('mr-2 font-bold', riskTone(risk.kind, check.status))}>{RISK_LABEL[risk.kind]}:</span>
+          <span className="flex flex-wrap items-baseline gap-x-2.5">
+            <span className="text-[13px] font-bold text-ink">{check.name}</span>
+            <span className="text-[12px] text-ink-3">{VECTOR_PLAIN[check.id]}</span>
+          </span>
+          <span className="mt-2 block sm:hidden">
+            <StatusBadge status={check.status} />
+          </span>
+          <span className={cn('mt-1.5 block max-w-[62ch] text-[12.5px] leading-snug', riskTone(risk.kind, check.status))}>
             {risk.text}
-          </p>
+          </span>
         </span>
         <ChevronDown
-          className={cn('mt-0.5 size-4 shrink-0 text-slate-500 transition-transform', expanded && 'rotate-180')}
+          className={cn(
+            'mt-1 size-4.5 shrink-0 text-ink-3 transition-transform group-hover:text-ink',
+            expanded && 'rotate-180',
+          )}
           aria-hidden
         />
       </button>
 
       {expanded && (
-        <div id={bodyId} className="space-y-6 border-t border-line px-6 py-6">
-          <section>
-            <div className="mb-3 flex items-baseline justify-between gap-4">
-              <h4 className="eyebrow">What we checked</h4>
-              <span className="font-mono text-[11px] text-slate-500 tabular-nums">
-                {check.applicable ? (
-                  <>
-                    SCORE <span className="text-slate-200">{check.points.toFixed(1)}</span> / {check.weight}
-                  </>
-                ) : (
-                  'NOT SCORED'
-                )}
-              </span>
+        <div id={bodyId} className="space-y-4 px-4 pb-4 sm:pl-[8rem]">
+          <div>
+            <p className="max-w-[62ch] text-[12.5px] text-ink-2">{check.summary}</p>
+            <div className="mt-4 flex items-center gap-3 text-[12px] text-ink-2">
+              {check.applicable ? (
+                <>
+                  <span className="relative block h-2 w-40 overflow-hidden border border-line" aria-hidden>
+                    <span className={cn('absolute inset-y-0 left-0', tone.bg)} style={{ width: `${check.score * 100}%` }} />
+                  </span>
+                  <span>
+                    <span className="font-bold text-ink">{check.points.toFixed(1)}</span> of {check.weight} points
+                  </span>
+                </>
+              ) : (
+                <span>Not part of the score for this domain</span>
+              )}
             </div>
-            <div className="mb-4 h-px w-full bg-line light:bg-[#d4d4d4]" aria-hidden>
-              {check.applicable && <div className={cn('h-px', tone.bg)} style={{ width: `${check.score * 100}%` }} />}
-            </div>
-            <p className="max-w-[70ch] text-[13px] leading-relaxed text-slate-400">{check.summary}</p>
-          </section>
+          </div>
 
-          <details className="group border border-line">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 hover:bg-raised [&::-webkit-details-marker]:hidden">
-              <span className="eyebrow">Advanced debug data</span>
-              <ChevronDown className="size-3.5 shrink-0 text-slate-500 transition-transform group-open:rotate-180" aria-hidden />
+          <details className="group/adv border border-line bg-surface">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[11px] font-bold tracking-[0.12em] text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden">
+              ADVANCED DEBUG DATA
+              <ChevronDown className="size-4 shrink-0 transition-transform group-open/adv:rotate-180" aria-hidden />
             </summary>
 
-            <div className="space-y-6 border-t border-line px-4 py-5">
+            <div className="space-y-4 border-t border-line px-4 py-3">
               {check.findings.length > 0 && (
                 <section>
-                  <h5 className="eyebrow mb-3">Findings</h5>
-                  <ul className="space-y-2 text-[12.5px] leading-relaxed text-slate-300">
+                  <h4 className="subhead mb-2">Findings</h4>
+                  <ul className="space-y-1.5 text-[12.5px] text-ink-2">
                     {check.findings.map((f) => (
-                      <li key={f} className="flex gap-2">
-                        <span className={cn('font-mono', tone.text)} aria-hidden>
-                          ›
-                        </span>
+                      <li key={f} className="flex gap-2.5">
+                        <span className={cn('mt-2 size-1.5 shrink-0', tone.bg)} aria-hidden />
                         <span>{f}</span>
                       </li>
                     ))}
@@ -125,7 +132,7 @@ export function VectorCard({
               )}
 
               <section>
-                <h5 className="eyebrow mb-3">Raw records</h5>
+                <h4 className="subhead mb-2">Raw records</h4>
                 {check.records.length > 0 ? (
                   <div className="space-y-2">
                     {check.records.map((r, i) => (
@@ -133,20 +140,18 @@ export function VectorCard({
                     ))}
                   </div>
                 ) : (
-                  <p className="border border-dashed border-line-strong px-3 py-3 font-mono text-[11px] text-slate-600">
-                    — no record published —
-                  </p>
+                  <p className="text-[12.5px] text-ink-3">No record is published.</p>
                 )}
               </section>
 
               {details.length > 0 && (
                 <section>
-                  <h5 className="eyebrow mb-3">Parsed</h5>
-                  <dl className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-x-4 gap-y-2 font-mono text-[11.5px]">
+                  <h4 className="subhead mb-2">Parsed</h4>
+                  <dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[12px]">
                     {details.map(([k, v]) => (
                       <div key={k} className="contents">
-                        <dt className="truncate text-slate-500">{k}</dt>
-                        <dd className="break-all text-slate-300">{v}</dd>
+                        <dt className="truncate text-ink-3">{k}</dt>
+                        <dd className="font-mono text-[11.5px] break-all text-ink">{v}</dd>
                       </div>
                     ))}
                   </dl>
@@ -156,6 +161,6 @@ export function VectorCard({
           </details>
         </div>
       )}
-    </article>
+    </li>
   )
 }

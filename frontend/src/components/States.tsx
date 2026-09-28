@@ -15,11 +15,13 @@ export function ScanningBanner({ target, since }: { target: string; since: numbe
   return (
     <div
       role="status"
-      className="flex items-center gap-3 rounded-sm border border-ok/30 bg-ok/5 px-4 py-2 font-mono text-[11px] tracking-wider text-ok"
+      className="flex items-center gap-3 border border-ok px-4 py-2 text-[12px] font-bold tracking-[0.08em] text-ok"
     >
       <span className="animate-pulse">SCANNING</span>
-      <span className="truncate text-slate-300">{target}</span>
-      <span className="ml-auto text-slate-500">
+      <span className="truncate font-normal text-ink">
+        {target.replace(/^demo:/, 'example ')}
+      </span>
+      <span className="ml-auto text-ink-3">
         <Elapsed since={since} />
       </span>
     </div>
@@ -28,18 +30,18 @@ export function ScanningBanner({ target, since }: { target: string; since: numbe
 
 export function ErrorPanel({ error, target, onRetry }: { error: ApiError; target: string; onRetry: () => void }) {
   return (
-    <div role="alert" className="panel border-crit/40 p-6">
+    <div role="alert" className="card border-crit p-4">
       <div className="flex items-start gap-3">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-crit" aria-hidden />
+        <TriangleAlert className="mt-0.5 size-5 shrink-0 text-crit" aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-[11px] tracking-wider text-crit">
-            {error.status ? `ERROR ${error.status}` : 'NETWORK ERROR'} · {target}
+          <p className="text-[13px] font-bold text-ink">ERROR{error.status ? ` ${error.status}` : ''}: {target}</p>
+          <p className="mt-1 text-[12.5px] text-ink-2">
+            {error.message}
           </p>
-          <p className="mt-1.5 text-slate-200">{error.message}</p>
           <button
             type="button"
             onClick={onRetry}
-            className="mt-4 h-7 rounded-sm border border-line-strong px-3 font-mono text-[11px] tracking-wider text-slate-300 hover:border-slate-500 hover:text-slate-100 active:translate-y-px"
+            className="mt-4 h-9 border border-line px-4 text-[12.5px] font-medium text-ink hover:border-line-strong"
           >
             RETRY
           </button>
@@ -49,17 +51,17 @@ export function ErrorPanel({ error, target, onRetry }: { error: ApiError; target
   )
 }
 
-/** First-load placeholder with the dashboard's shape, so nothing jumps when data lands. */
+/** First-load placeholder with the page's shape, so nothing jumps when data lands. */
 export function Skeleton() {
   return (
-    <div className="grid h-[700px] grid-cols-1 border border-white/10 md:grid-cols-[1fr_1.2fr]" aria-hidden>
-      <div className="flex flex-col gap-4 border-white/10 p-8 md:border-r">
-        <div className="h-3 w-56 animate-pulse bg-white/[0.06]" />
-        <div className="h-24 w-64 animate-pulse bg-white/[0.06]" />
-        <div className="h-64 animate-pulse bg-white/[0.04]" />
-        <div className="mt-auto h-28 animate-pulse bg-white/[0.04]" />
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]" aria-hidden>
+      <div className="flex flex-col gap-5">
+        <div className="h-4 w-48 animate-pulse bg-line" />
+        <div className="h-24 w-full max-w-md animate-pulse bg-line" />
+        <div className="h-24 animate-pulse bg-line/70" />
+        <div className="h-32 animate-pulse bg-line/60" />
       </div>
-      <div className="hidden animate-pulse bg-white/[0.02] md:block" />
+      <div className="h-[560px] animate-pulse bg-stage" />
     </div>
   )
 }

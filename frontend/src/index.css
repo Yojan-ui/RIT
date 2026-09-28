@@ -3,117 +3,92 @@
 @import '@fontsource/jetbrains-mono/700.css';
 @import 'tailwindcss';
 
-/* Tailwind v4: the theme lives here (no tailwind.config.js). Every token below
-   becomes a utility, e.g. --color-ok -> text-ok / bg-ok / border-ok/40. */
-@theme {
-  /* Pure obsidian surfaces; structure comes from 1px hairlines, not fills */
-  --color-obsidian: #050505; /* page */
-  --color-panel: #050505;
-  --color-raised: #0d0d0d;
-  --color-line: #1c1c1c; /* = white/10 over obsidian */
-  --color-line-strong: #2e2e2e;
-
-  /* Brutalist: every rounded-* utility renders square. rounded-full is kept
-     for status dots. */
-  --radius-xs: 0;
-  --radius-sm: 0;
-  --radius-md: 0;
-  --radius-lg: 0;
-  --radius-xl: 0;
-  --radius-2xl: 0;
-  --radius-3xl: 0;
-  --radius-4xl: 0;
-
-  /* Status accents */
-  --color-ok: #10b981; /* Phosphor Green: secure */
-  --color-warn: #f59e0b; /* Warning Amber */
-  --color-crit: #ef4444; /* Cadmium Red: vulnerable */
-  --color-na: #475569;
-
-  /* Terminal grid overlay (see body::before) */
-  --color-grid: rgb(148 163 184 / 0.035);
-  --color-grid-major: rgb(148 163 184 / 0.06);
+/* Tailwind v4: the theme lives here (no tailwind.config.js).
+   Palette tokens are CSS variables that each theme re-points (see :root and
+   [data-theme='light'] below); `@theme inline` turns them into utilities, e.g.
+   --color-ink -> text-ink, --color-ok -> bg-ok. */
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-stage: var(--stage);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-crit: var(--crit);
+  --color-na: var(--na);
 
   /* Strictly monospaced: font-sans is aliased to the mono stack so no utility
      can fall back to a proportional face. */
-  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-sans: var(--font-mono);
+  --font-sans: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: var(--font-sans);
 }
 
-/* `light:` utilities apply only under the light theme (data-theme on <html>). */
-@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+/* Terminal (default): solid obsidian, crisp white, flat vivid status fills. */
+:root {
+  color-scheme: dark;
+  --page: #050505;
+  --surface: #050505;
+  --sunken: #0e0e0e;
+  --stage: #000000;
+  --ink: #ffffff;
+  --ink-2: #b8b8b8;
+  --ink-3: #7c7c7c;
+  --line: #3a3a3a;
+  --line-strong: #6a6a6a;
+  --accent: #ffffff;
+  --accent-ink: #000000;
+  --ok: #00d26a;
+  --warn: #ffb000;
+  --crit: #ff2d2d;
+  --na: #7c7c7c;
+}
 
-/* Light theme: harsh, high-contrast brutalism. Pure white surfaces, pure black
-   1px borders, black monospace text. Tailwind v4 utilities resolve through
-   these palette variables, so re-pointing them here re-themes every component
-   (text-white becomes black, bg-black becomes white, and so on). Status
-   accents drop to their 700 shades to keep AA contrast on white. */
+/* Light: pure white paper, pure black 1px rules, darker flat status fills
+   so white badge text keeps AA contrast. */
 :root[data-theme='light'] {
   color-scheme: light;
-  --color-obsidian: #ffffff;
-  --color-panel: #ffffff;
-  --color-raised: #efefef;
-  --color-line: #000000;
-  --color-line-strong: #000000;
-  --color-white: #000000;
-  --color-black: #ffffff;
-
-  --color-slate-100: #000000;
-  --color-slate-200: #000000;
-  --color-slate-300: #000000;
-  --color-slate-400: #000000;
-  --color-slate-500: #333333;
-  --color-slate-600: #444444;
-  --color-slate-700: #555555;
-  --color-neutral-300: #000000;
-  --color-neutral-400: #000000;
-  --color-neutral-500: #333333;
-  --color-neutral-600: #444444;
-  --color-neutral-700: #555555;
-
-  --color-ok: #047857;
-  --color-warn: #b45309;
-  --color-crit: #b91c1c;
-  --color-na: #555555;
-  --color-emerald-400: #047857;
-  --color-emerald-500: #047857;
-  --color-amber-500: #b45309;
-  --color-red-500: #b91c1c;
-  --color-sky-400: #0369a1;
-  --color-violet-400: #6d28d9;
-  --color-teal-300: #0f766e;
+  --page: #ffffff;
+  --surface: #ffffff;
+  --sunken: #f0f0f0;
+  --stage: #ffffff;
+  --ink: #000000;
+  --ink-2: #333333;
+  --ink-3: #666666;
+  --line: #000000;
+  --line-strong: #000000;
+  --accent: #000000;
+  --accent-ink: #ffffff;
+  --ok: #007a3d;
+  --warn: #b35900;
+  --crit: #d00000;
+  --na: #666666;
 }
 
-/* Hairlines drawn as white/N over obsidian become solid black, not a grey tint. */
-:root[data-theme='light'] [class*='border-white/'] {
-  border-color: #000;
-}
-:root[data-theme='light'] [class*='divide-white/'] > * {
-  border-color: #000;
-}
-/* Light is flat: no shadows (inset severity stripes included), no blur, no
-   glow. The lattice renders its own flat mode (Lattice `flat` prop, no bloom). */
-:root[data-theme='light'] *,
-:root[data-theme='light'] *::before,
-:root[data-theme='light'] *::after {
+/* Brutalist invariants, enforced globally so no utility can undo them:
+   perfectly square, no shadows, no glows, no blur. */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
   box-shadow: none !important;
   text-shadow: none !important;
   backdrop-filter: none !important;
 }
-/* Pure #FFFFFF behind everything: the terminal grid is dark-mode only. */
-:root[data-theme='light'] body::before {
-  display: none;
-}
 
 @layer base {
-  html {
-    color-scheme: dark;
-  }
   body {
-    background: var(--color-obsidian);
-    color: var(--color-slate-400);
+    background: var(--page);
+    color: var(--ink);
     font-family: var(--font-mono);
-    font-size: 12.5px;
+    font-size: 13px;
+    line-height: 1.5;
     /* No ligatures (DNS strings must read literally: "->", "!=", "=="), a
        slashed zero to separate 0 from O, and fixed-width digits everywhere. */
     font-variant-ligatures: none;
@@ -121,56 +96,33 @@
     font-variant-numeric: tabular-nums slashed-zero;
     -webkit-font-smoothing: antialiased;
   }
-  /* Faint 24px grid with a 120px major grid, fixed to the viewport and fading
-     out toward the bottom so it frames the data rather than competing with it. */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background-image:
-      linear-gradient(to right, var(--color-grid-major) 1px, transparent 1px),
-      linear-gradient(to bottom, var(--color-grid-major) 1px, transparent 1px),
-      linear-gradient(to right, var(--color-grid) 1px, transparent 1px),
-      linear-gradient(to bottom, var(--color-grid) 1px, transparent 1px);
-    background-size:
-      120px 120px,
-      120px 120px,
-      24px 24px,
-      24px 24px;
-    mask-image: radial-gradient(ellipse 120% 90% at 50% 0%, #000 45%, transparent 100%);
-  }
   ::selection {
-    background: color-mix(in srgb, var(--color-ok) 35%, transparent);
-    color: #fff;
-  }
-  [data-theme='light'] ::selection {
-    background: #000;
-    color: #fff;
+    background: var(--ink);
+    color: var(--page);
   }
   :focus-visible {
-    outline: 1px solid var(--color-ok);
+    outline: 1px solid var(--ink);
     outline-offset: 2px;
   }
 }
 
 @layer components {
-  /* Brutalist container: square, 1px white/10 hairline, pure obsidian. */
-  .panel {
-    @apply rounded-none border border-white/10 bg-panel shadow-none;
+  /* Section opener: a hard-ruled uppercase header bar. */
+  .section-title {
+    @apply text-[13px] leading-tight font-bold tracking-[0.08em] text-ink uppercase;
   }
-  /* Stays in this layer so status borders (border-crit/30 …) still win. */
-  [data-theme='light'] .panel {
-    border-color: #000;
+  .section-lede {
+    @apply mt-1 max-w-[88ch] text-[12px] text-ink-2;
   }
-  /* Small uppercase section label: "ATTACK PATH MATRIX" */
-  .eyebrow {
-    @apply font-mono text-[10px] font-medium tracking-[0.14em] text-slate-500 uppercase;
+  .subhead {
+    @apply text-[11.5px] font-bold tracking-[0.06em] text-ink uppercase;
+  }
+  .card {
+    @apply border border-line bg-surface;
   }
 }
 
-/* 1px scan line that sweeps under the top bar while a request is in flight */
+/* 1px sweep under the header while a request is in flight */
 @keyframes scan {
   from {
     transform: translateX(-100%);

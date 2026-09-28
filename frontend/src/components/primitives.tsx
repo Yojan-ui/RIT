@@ -1,27 +1,37 @@
 import { Check, Copy } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { STATUS_TONE } from '@/lib/meta'
 import type { Status } from '@/lib/types'
 
 export function Lamp({ className, pulse = false }: { className: string; pulse?: boolean }) {
   return (
     <span className="relative inline-flex size-2 shrink-0" aria-hidden>
-      {pulse && <span className={cn('absolute inset-0 animate-ping rounded-full opacity-60', className)} />}
-      <span className={cn('relative inline-block size-2 rounded-full', className)} />
+      {pulse && <span className={cn('absolute inset-0 animate-ping opacity-60', className)} />}
+      <span className={cn('relative inline-block size-2', className)} />
     </span>
   )
 }
 
-export function PanelHeader({ label, children, hidden }: { label: string; children?: ReactNode; hidden?: boolean }) {
+/** Section opener: a title, one plain sentence on what it is for, and optional controls. */
+export function SectionHeader({
+  id,
+  title,
+  lede,
+  children,
+}: {
+  id: string
+  title: string
+  lede?: ReactNode
+  children?: ReactNode
+}) {
   return (
-    <header
-      className={cn(
-        'flex min-h-9 shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-2',
-        hidden && 'sr-only',
-      )}
-    >
-      <h2 className="eyebrow">{label}</h2>
+    <header className="mb-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b border-line pb-2">
+      <div className="min-w-0">
+        <h2 id={id} className="section-title">
+          {title}
+        </h2>
+        {lede && <p className="section-lede">{lede}</p>}
+      </div>
       {children}
     </header>
   )
@@ -32,7 +42,7 @@ export function CopyButton({ value, label, text = 'COPY' }: { value: string; lab
 
   useEffect(() => {
     if (!copied) return
-    const t = setTimeout(() => setCopied(false), 1200)
+    const t = setTimeout(() => setCopied(false), 1400)
     return () => clearTimeout(t)
   }, [copied])
 
@@ -47,11 +57,8 @@ export function CopyButton({ value, label, text = 'COPY' }: { value: string; lab
       }
       aria-label={copied ? `${label} copied` : `Copy ${label}`}
       className={cn(
-        'inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border px-1.5 font-mono text-[10px] tracking-wider',
-        'transition-colors duration-75 active:translate-y-px',
-        copied
-          ? 'border-ok/50 text-ok'
-          : 'border-line-strong text-slate-400 hover:border-slate-500 hover:text-slate-200',
+        'inline-flex h-6 shrink-0 items-center gap-1.5 border px-2 text-[10.5px] font-bold tracking-[0.08em] active:translate-y-px',
+        copied ? 'border-ok bg-ok text-accent-ink' : 'border-line text-ink-2 hover:border-ink hover:text-ink',
       )}
     >
       {copied ? <Check className="size-3" aria-hidden /> : <Copy className="size-3" aria-hidden />}
@@ -60,11 +67,11 @@ export function CopyButton({ value, label, text = 'COPY' }: { value: string; lab
   )
 }
 
-/** Monospace block for raw DNS strings; wraps anywhere so long keys never overflow. */
+/** Literal DNS/config text: monospace, wraps anywhere so long keys never overflow. */
 export function RawRecord({ value, label }: { value: string; label: string }) {
   return (
-    <div className="group flex items-start gap-2 rounded-sm border border-line bg-obsidian p-2">
-      <pre className="min-w-0 flex-1 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap text-slate-300">
+    <div className="flex items-start gap-3 border border-line bg-sunken p-3">
+      <pre className="min-w-0 flex-1 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap text-ink">
         {value}
       </pre>
       <CopyButton value={value} label={label} />
@@ -78,82 +85,40 @@ export function SeverityPips({ severity }: { severity: number }) {
       {[1, 2, 3, 4, 5].map((n) => (
         <span
           key={n}
-          className={cn(
-            'h-2.5 w-1 rounded-[1px]',
-            n <= severity ? 'bg-slate-300' : 'bg-line-strong light:bg-[#c8c8c8]',
-          )}
+          className={cn('h-3 w-1', n <= severity ? (severity >= 4 ? 'bg-crit' : 'bg-warn') : 'bg-line')}
         />
       ))}
     </span>
   )
 }
 
-// Severity reads from fill weight first, glyph second, colour third, so it
-// survives light mode, colour blindness and greyscale print. text-black
-// flips to white in light mode, where the fills drop to their 700 shades.
+// Flat, solid fills with a glyph, so severity survives colour blindness and
+// greyscale print. N/A and N/M are dashed outlines: not a verdict.
 const BADGE: Record<Status, { glyph: string; label: string; meaning: string; className: string }> = {
-  fail: { glyph: '✕', label: 'FAIL', meaning: 'exploitable now', className: 'border-crit bg-crit text-black' },
-  warn: { glyph: '!', label: 'WARN', meaning: 'weakened', className: 'border-warn bg-warn text-black' },
-  pass: { glyph: '✓', label: 'PASS', meaning: 'protected', className: 'border-ok text-ok' },
-  info: { glyph: '–', label: 'N/A', meaning: 'not applicable', className: 'border-dashed border-na text-slate-500' },
-  error: { glyph: '?', label: 'N/M', meaning: 'not measured', className: 'border-dashed border-na text-slate-500' },
+  fail: { glyph: '✕', label: 'FAIL', meaning: 'exploitable now', className: 'border-crit bg-crit text-accent-ink' },
+  warn: { glyph: '!', label: 'WARN', meaning: 'weakened', className: 'border-warn bg-warn text-accent-ink' },
+  pass: { glyph: '✓', label: 'PASS', meaning: 'protected', className: 'border-ok bg-ok text-accent-ink' },
+  info: { glyph: '–', label: 'N/A', meaning: 'not applicable', className: 'border-dashed border-na text-ink-3' },
+  error: { glyph: '?', label: 'N/M', meaning: 'not measured', className: 'border-dashed border-na text-ink-3' },
 }
 
-/** Brutalist status badge: solid block for FAIL/WARN, 1px outline for PASS. */
+/** Square status block: glyph + label. `compact` is a 16px glyph cell for matrices. */
 export function StatusBadge({ status, compact = false }: { status: Status; compact?: boolean }) {
   const b = BADGE[status]
   return (
     <span
       title={`${b.label}: ${b.meaning}`}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center gap-1 border font-mono font-bold tracking-[0.12em]',
-        compact ? 'h-5 w-10 text-[9px]' : 'h-5 min-w-[4.25rem] px-1.5 text-[10px]',
+        'inline-flex shrink-0 items-center justify-center border font-bold',
+        compact ? 'size-4 text-[10px]' : 'h-5 min-w-[4.5rem] gap-1.5 px-1.5 text-[10.5px] tracking-[0.1em]',
         b.className,
       )}
     >
-      {!compact && <span aria-hidden>{b.glyph}</span>}
-      {b.label}
-      <span className="sr-only">, {b.meaning}</span>
+      <span aria-hidden>{b.glyph}</span>
+      {!compact && b.label}
+      <span className="sr-only">
+        {compact ? b.label : ''}, {b.meaning}
+      </span>
     </span>
   )
-}
-
-/** One-line key for the badges, for readers who do not know the jargon. */
-export function StatusLegend() {
-  return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] text-slate-500">
-      {(['fail', 'warn', 'pass'] as const).map((s) => (
-        <span key={s} className="inline-flex items-center gap-1.5">
-          <StatusBadge status={s} />
-          {BADGE[s].meaning}
-        </span>
-      ))}
-    </p>
-  )
-}
-
-/** Minimal pill badge for a check's status. */
-export function StatusPill({ status, className }: { status: Status; className?: string }) {
-  const tone = STATUS_TONE[status]
-  return (
-    <span
-      className={cn(
-        'inline-flex h-5 shrink-0 items-center rounded-full border px-2 font-mono text-[9.5px] font-medium tracking-wider',
-        PILL_FILL[status],
-        tone.border,
-        tone.text,
-        className,
-      )}
-    >
-      {status === 'error' ? 'N/M' : status === 'info' ? 'N/A' : tone.label}
-    </span>
-  )
-}
-
-const PILL_FILL: Record<Status, string> = {
-  pass: 'bg-ok/10',
-  warn: 'bg-warn/10',
-  fail: 'bg-crit/10',
-  info: 'bg-white/[0.03]',
-  error: 'bg-white/[0.03]',
 }

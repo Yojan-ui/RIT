@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 import { PATH_TONE, PATH_VECTORS, VECTOR_ABBR, VECTOR_ORDER } from '@/lib/meta'
 import type { AttackPath, CheckResult, PathState, ScanReport, Status, VectorId } from '@/lib/types'
-import { Lamp, PanelHeader, SeverityPips, StatusBadge } from './primitives'
+import { SectionHeader, SeverityPips, StatusBadge } from './primitives'
 
 const STATE_RANK: Record<PathState, number> = { open: 0, closed: 1, not_applicable: 2 }
 const BROKEN_RANK: Record<Status, number> = { fail: 0, warn: 1, error: 2, info: 3, pass: 4 }
@@ -13,17 +13,11 @@ function aimFor(path: AttackPath, checks: Map<string, CheckResult>): VectorId | 
   return candidates[0] ?? null
 }
 
-function FixCell({ path, fixedByOneFix }: { path: AttackPath; fixedByOneFix: boolean }) {
-  if (path.state !== 'open') return <span className="text-slate-700">—</span>
-  if (fixedByOneFix)
-    return (
-      <span className="rounded-sm border border-ok/50 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-ok">
-        ONE FIX
-      </span>
-    )
-  if (!path.dns_fixable)
-    return <span className="rounded-sm border border-warn/40 px-1.5 py-0.5 text-[10px] text-warn">SERVER</span>
-  return <span className="text-[10px] text-slate-500">DNS</span>
+function fixLabel(path: AttackPath, fixedByOneFix: boolean): { text: string; className: string } | null {
+  if (path.state !== 'open') return null
+  if (fixedByOneFix) return { text: 'Start-here fix', className: 'text-accent font-medium' }
+  if (!path.dns_fixable) return { text: 'Server change', className: 'text-warn' }
+  return { text: 'DNS change', className: 'text-ink-2' }
 }
 
 export function AttackMatrix({
@@ -42,42 +36,38 @@ export function AttackMatrix({
   const open = rows.filter((r) => r.state === 'open').length
 
   return (
-    <section className="panel" aria-labelledby="matrix-heading">
-      <PanelHeader label="Attack paths · detail">
-        <span id="matrix-heading" className="font-mono text-[10px] tracking-wider">
-          <span className={open ? 'text-crit' : 'text-ok'}>{open} OPEN</span>
-          <span className="text-slate-600"> / {rows.length}</span>
-        </span>
-      </PanelHeader>
+    <section aria-labelledby="paths-heading">
+      <SectionHeader
+        id="paths-heading"
+        title="How an attacker would get in"
+        lede={`${open} of ${rows.length} known attack paths are open. Each column shows the protection that blocks it.`}
+      />
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-left">
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[820px] border-collapse text-left text-[12.5px]">
           <thead>
-            <tr className="border-b border-line font-mono text-[10px] tracking-wider text-slate-500">
-              <th scope="col" className="w-16 px-4 py-2 font-medium">
-                SEV
+            <tr className="border-b border-line text-[11.5px] text-ink-3">
+              <th scope="col" className="px-4 py-3 font-medium">
+                Attack path
               </th>
-              <th scope="col" className="px-2 py-2 font-medium">
-                ATTACK PATH
+              <th scope="col" className="w-24 px-2 py-3 font-medium">
+                Severity
               </th>
               {VECTOR_ORDER.map((v) => (
-                <th key={v} scope="col" className="w-12 px-1 py-2 text-center font-medium">
+                <th key={v} scope="col" className="w-14 px-1 py-3 text-center font-medium">
                   {VECTOR_ABBR[v]}
                 </th>
               ))}
-              <th scope="col" className="w-24 px-2 py-2 font-medium">
-                STATE
-              </th>
-              <th scope="col" className="w-24 px-4 py-2 text-right font-medium">
-                FIX
+              <th scope="col" className="w-36 px-4 py-3 font-medium">
+                Status
               </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-line">
             {rows.map((path) => {
               const tone = PATH_TONE[path.state]
               const governed = new Set(PATH_VECTORS[path.id] ?? [])
-              const muted = path.state === 'not_applicable'
+              const fix = fixLabel(path, oneFix.has(path.id))
               return (
                 <tr
                   key={path.id}
@@ -87,46 +77,34 @@ export function AttackMatrix({
                   onFocus={() => onAim?.(aimFor(path, checks))}
                   onBlur={() => onAim?.(null)}
                   className={cn(
-                    'border-b border-line last:border-b-0 hover:bg-raised focus-visible:bg-raised',
-                    path.state === 'open' && 'shadow-[inset_2px_0_0_var(--color-crit)]',
-                    muted && 'opacity-50',
+                    'align-top transition-colors hover:bg-sunken focus-visible:bg-sunken',
+                    path.state === 'not_applicable' && 'opacity-55',
                   )}
                 >
-                  <td className="px-4 py-2.5 align-top">
-                    <SeverityPips severity={path.severity} />
-                  </td>
-                  <td className="px-2 py-2.5 align-top">
-                    <p className={cn('font-medium', path.state === 'open' ? 'text-slate-100' : 'text-slate-300')}>
-                      {path.title}
-                      {/* STATE column sits off-screen on phones; repeat it inline */}
-                      <span className={cn('ml-2 font-mono text-[10px] md:hidden', tone.text)}>{tone.label}</span>
-                    </p>
-                    <p className="mt-0.5 max-w-xl text-[12px] leading-snug text-slate-500">
+                  <td className="px-4 py-2.5">
+                    <p className="font-medium text-ink">{path.title}</p>
+                    <p className="mt-1 max-w-[56ch] text-[12px] leading-snug text-ink-2">
                       {path.state === 'open' ? path.remedy : path.description}
                     </p>
                   </td>
+                  <td className="px-2 py-2.5 pt-5">
+                    <SeverityPips severity={path.severity} />
+                  </td>
                   {VECTOR_ORDER.map((v) => {
                     const check = checks.get(v)
-                    if (!governed.has(v) || !check)
-                      return (
-                        <td key={v} className="px-1 py-2.5 text-center align-top">
-                          <span className="inline-block size-1 rounded-full bg-line-strong" aria-hidden />
-                        </td>
-                      )
                     return (
-                      <td key={v} className="px-1 py-2.5 text-center align-top">
-                        <StatusBadge status={check.status} compact />
+                      <td key={v} className="px-1 py-2.5 text-center">
+                        {governed.has(v) && check ? (
+                          <StatusBadge status={check.status} compact />
+                        ) : (
+                          <span className="inline-block size-1 bg-line-strong" aria-hidden />
+                        )}
                       </td>
                     )
                   })}
-                  <td className="px-2 py-2.5 align-top">
-                    <span className={cn('inline-flex items-center gap-1.5 font-mono text-[11px]', tone.text)}>
-                      <Lamp className={tone.bg} pulse={path.state === 'open'} />
-                      {tone.label}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right align-top font-mono">
-                    <FixCell path={path} fixedByOneFix={oneFix.has(path.id)} />
+                  <td className="px-4 py-2.5">
+                    <p className={cn('font-medium', tone.text)}>{tone.label}</p>
+                    {fix && <p className={cn('mt-0.5 text-[11.5px]', fix.className)}>{fix.text}</p>}
                   </td>
                 </tr>
               )
