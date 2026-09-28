@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuantumLedger</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230f172a'/><path d='M9 11h14M9 16h14M9 21h9' stroke='%2338bdf8' stroke-width='2.4' stroke-linecap='round'/></svg>" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" class="logo" aria-hidden="true">
+          <rect width="32" height="32" rx="8" />
+          <path d="M9 11h14M9 16h14M9 21h9" />
+        </svg>
+        <div>
+          <div class="brand-name">QuantumLedger</div>
+          <div class="brand-sub">Post-quantum signature assurance · SIH 2026 · Team High Cortisol</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="chip"><span class="dot dot-ok"></span>Offline · 127.0.0.1</span>
+        <span id="integrity" class="chip">Ledger not verified</span>
+        <button id="btn-reset" class="btn btn-ghost btn-sm" title="Wipe the demo database">Reset demo</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="pipeline" aria-label="Pipeline">
+        <article class="stage" data-stage="detect">
+          <div class="stage-head"><span class="stage-num">1</span><span class="stage-name">Detect</span></div>
+          <p class="stage-desc">Probe TLS and SSH endpoints and build a CycloneDX&nbsp;1.6 cryptographic bill of materials.</p>
+          <button class="btn btn-primary" data-action="scan">Scan Estate</button>
+          <div class="stage-result" id="res-detect">Not run</div>
+        </article>
+
+        <article class="stage" data-stage="score">
+          <div class="stage-head"><span class="stage-num">2</span><span class="stage-name">Score</span></div>
+          <p class="stage-desc">Rank by Mosca's inequality: an asset is forgeable when <b>X&nbsp;+&nbsp;Y&nbsp;&gt;&nbsp;Z</b>.</p>
+          <label class="field">
+            <span>Z · years to CRQC</span>
+            <input id="z-years" type="number" min="1" max="50" step="1" value="7" />
+          </label>
+          <button class="btn btn-primary" data-action="assess">Score &amp; Rank</button>
+          <div class="stage-result" id="res-score">Not run</div>
+        </article>
+
+        <article class="stage" data-stage="defend">
+          <div class="stage-head"><span class="stage-num">3</span><span class="stage-name">Defend</span></div>
+          <p class="stage-desc">Migrate the riskiest RSA-2048 endpoint to <b>ML-DSA-65</b> (FIPS&nbsp;204) with <b>X25519MLKEM768</b> (FIPS&nbsp;203).</p>
+          <button class="btn btn-primary" data-action="remediate">Migrate to ML-DSA</button>
+          <div class="stage-result" id="res-defend">Not run</div>
+        </article>
+
+        <article class="stage" data-stage="prove">
+          <div class="stage-head"><span class="stage-num">4</span><span class="stage-name">Prove</span></div>
+          <p class="stage-desc">Every step is anchored in a SHA-256 Merkle log. Sign the tree head, then try to rewrite history.</p>
+          <div class="btn-row">
+            <button class="btn btn-secondary" data-action="verify">Verify Ledger</button>
+            <button class="btn btn-secondary" data-action="attest">Publish Attestation</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger" data-action="tamper">Tamper Ledger (Demo)</button>
+            <button class="btn btn-ghost" data-action="restore">Restore</button>
+          </div>
+          <div class="stage-result" id="res-prove">Not run</div>
+        </article>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Cryptographic inventory</h2>
+            <div class="legend">
+              <span class="badge badge-forgeable">forgeable</span>
+              <span class="badge badge-vulnerable">vulnerable</span>
+              <span class="badge badge-safe">safe</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="assets">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Asset</th>
+                  <th>Signature</th>
+                  <th>Key exchange</th>
+                  <th title="Mosca: X (shelf life) + Y (migration) vs Z (CRQC)">Mosca X+Y vs Z</th>
+                  <th>Risk</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="assets-body">
+                <tr><td colspan="7" class="empty">Run <b>Scan Estate</b> to discover cryptographic assets.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Merkle ledger</h2>
+            <span class="muted mono" id="block-count">0 blocks</span>
+          </div>
+          <div id="verify-banner" class="banner banner-idle">Not verified yet.</div>
+          <div class="root-row">
+            <span class="muted">Merkle root</span>
+            <code id="merkle-root" class="mono">—</code>
+          </div>
+          <ol id="blocks" class="blocks"></ol>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="tabs" role="tablist">
+          <button class="tab active" role="tab" data-tab="cbom">CBOM · CycloneDX 1.6</button>
+          <button class="tab" role="tab" data-tab="evidence">Migration evidence</button>
+          <button class="tab" role="tab" data-tab="detail">Block detail</button>
+          <button class="tab" role="tab" data-tab="log">Activity</button>
+          <a class="tab-link" href="/cbom" target="_blank" rel="noopener">Open raw CBOM ↗</a>
+        </div>
+        <pre id="tab-cbom" class="code tab-panel">No CBOM yet.</pre>
+        <pre id="tab-evidence" class="code tab-panel" hidden>No migration yet.</pre>
+        <pre id="tab-detail" class="code tab-panel" hidden>Select a block in the ledger.</pre>
+        <ol id="tab-log" class="log tab-panel" hidden></ol>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
