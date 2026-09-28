@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import { AlertCircle, ArrowDown, ArrowRight, Check, Loader2, Search } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { ArrowRight, Check, Loader2 } from 'lucide-react'
 import { scanDomain, type ScanResult, type Tone } from './api'
 import { CipherGlobe, type Phase } from './scene/CipherGlobe'
-import { TONE, NextButton } from './components/ui'
+import { Button, Callout, Dot, TONE_STATUS, reveal, type Status } from './components/ui'
 import { DetectStage } from './components/stages/DetectStage'
 import { ScoreStage } from './components/stages/ScoreStage'
 import { DefendStage, MIGRATE_MS, type MigrationPhase } from './components/stages/DefendStage'
@@ -11,17 +11,16 @@ import { ProveStage } from './components/stages/ProveStage'
 import { MIGRATED, cryptoFromScan, mosca, type MoscaResult } from './lib/mosca'
 import { anchor, verify, type LedgerBlock, type Verification } from './lib/ledger'
 
-const EXAMPLES = ['cloudflare.com', 'google.com', 'github.com', 'microsoft.com', 'example.org']
-const STEPS = [
-  'Resolving and vetting address…',
-  'Sending ClientHello with X25519MLKEM768…',
-  'Reading the ServerHello key share…',
-  'Fetching the certificate chain…',
-  'Building the CBOM…',
-]
-const MIN_SCAN_MS = 1600
-const STAGE_NAMES = ['Detect', 'Score', 'Defend', 'Prove']
+const EXAMPLES = ['cloudflare.com', 'google.com', 'github.com', 'microsoft.com']
+const STEPS = ['Resolving address', 'Sending ClientHello with X25519MLKEM768', 'Reading ServerHello key share', 'Fetching certificate chain', 'Building CBOM']
+const MIN_SCAN_MS = 1200
 const MOSCA_TONE: Record<MoscaResult['verdict'], Tone> = { critical: 'crimson', window: 'amber', safe: 'emerald' }
+const SUMMARY: Record<ScanResult['assessment']['status'], string> = {
+  'quantum-ready': 'Quantum ready',
+  hybrid: 'Hybrid PQ key exchange · classical certificate',
+  classical: 'Classical key exchange and certificate',
+  legacy: 'Legacy TLS configuration',
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export default function App() {
@@ -31,7 +30,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState(0)
 
-  // The four-stage story
+  const [active, setActive] = useState(1)
   const [unlocked, setUnlocked] = useState(1)
   const [x, setX] = useState(4)
   const [y, setY] = useState(10)
@@ -41,25 +40,15 @@ export default function App() {
   const [verification, setVerification] = useState<Verification | null>(null)
   const [anchoring, setAnchoring] = useState(false)
   const [tampered, setTampered] = useState(false)
-  const [globeTone, setGlobeTone] = useState<Tone | null>(null)
   const [pulse, setPulse] = useState(0)
 
   const abort = useRef<AbortController | null>(null)
-  const stageRefs = useRef<(HTMLElement | null)[]>([])
+  const resultsRef = useRef<HTMLDivElement>(null)
 
   const before = useMemo(() => (result ? cryptoFromScan(result) : null), [result])
   const preview = useMemo(() => (before ? mosca(x, y, before) : null), [before, x, y])
   const moscaResult = scored ? preview : null
   const migrated = migration === 'done'
-
-  const resetStory = () => {
-    setUnlocked(1)
-    setScored(false)
-    setMigration('idle')
-    setBlock(null)
-    setVerification(null)
-    setTampered(false)
-  }
 
   const scan = useCallback(async (raw: string) => {
     const domain = raw.trim()
@@ -76,11 +65,16 @@ export default function App() {
     try {
       const [res] = await Promise.all([scanDomain(domain, ctrl.signal), sleep(MIN_SCAN_MS)])
       if (ctrl.signal.aborted) return
-      resetStory()
+      setActive(1)
+      setUnlocked(1)
+      setScored(false)
+      setMigration('idle')
+      setBlock(null)
+      setVerification(null)
+      setTampered(false)
       setResult(res)
-      setGlobeTone(res.assessment.color)
       setScanning(false)
-      setTimeout(() => stageRefs.current[0]?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400)
+      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
     } catch (e) {
       if ((e as Error).name === 'AbortError') return
       setError((e as Error).message)
@@ -88,14 +82,12 @@ export default function App() {
     }
   }, [])
 
-  // Scanning status line
   useEffect(() => {
     if (!scanning) return
-    const id = setInterval(() => setStep((s) => Math.min(STEPS.length - 1, s + 1)), 380)
+    const id = setInterval(() => setStep((s) => Math.min(STEPS.length - 1, s + 1)), 300)
     return () => clearInterval(id)
   }, [scanning])
 
-  // Deep link: ?domain= scans on load
   const booted = useRef(false)
   useEffect(() => {
     if (booted.current) return
@@ -104,28 +96,21 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Globe follows the live Mosca verdict once scored (until migrated)
-  useEffect(() => {
-    if (moscaResult && !migrated && migration !== 'migrating') setGlobeTone(MOSCA_TONE[moscaResult.verdict])
-  }, [moscaResult, migrated, migration])
-
-  const reveal = (n: number) => {
+  const go = (n: number) => {
     setUnlocked((u) => Math.max(u, n))
-    setTimeout(() => stageRefs.current[n - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350)
+    setActive(n)
+    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const calculate = () => {
     setScored(true)
     setPulse((p) => p + 1)
-    setTimeout(() => reveal(3), 1100)
   }
 
   const migrate = async () => {
     setMigration('migrating')
     await sleep(MIGRATE_MS)
     setMigration('done')
-    setGlobeTone('emerald')
-    setTimeout(() => reveal(4), 900)
   }
 
   const records = () => {
@@ -159,12 +144,11 @@ export default function App() {
   const anchorToLedger = async () => {
     if (!result) return
     setAnchoring(true)
-    const [b] = await Promise.all([anchor(result.domain, records()), sleep(700)])
+    const [b] = await Promise.all([anchor(result.domain, records()), sleep(450)])
     setBlock(b)
     setVerification(await verify(b))
     setAnchoring(false)
-    setTimeout(() => stageRefs.current[3]?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 250)
-    setTimeout(() => setPulse((p) => p + 1), 900)
+    setPulse((p) => p + 1)
   }
 
   const toggleTamper = async () => {
@@ -174,194 +158,246 @@ export default function App() {
       setTampered(false)
       return
     }
-    // An attacker rewrites history: "the endpoint was migrated to RSA-2048". Hashes are left untouched.
+    // Rewrite history ("migrated to RSA-2048") without touching any hash.
     const forged: LedgerBlock = structuredClone(block)
-    const defend = forged.records[2].data as { after: { signature: string } }
-    defend.after.signature = 'RSA-2048'
+    ;(forged.records[2].data as { after: { signature: string } }).after.signature = 'RSA-2048'
     setVerification(await verify(forged))
     setTampered(true)
   }
 
+  // Globe accent follows the story: scan verdict → Mosca verdict → migrated.
+  const globeTone: Tone | null = !result ? null : migrated ? 'emerald' : moscaResult ? MOSCA_TONE[moscaResult.verdict] : result.assessment.color
   const globePhase: Phase = scanning || migration === 'migrating' ? 'scanning' : result ? 'result' : 'idle'
-  const stageStatus = (n: number) => (n < unlocked || (n === 4 && verification?.valid) ? 'done' : 'active')
-  const caption = result
-    ? migrated
-      ? `${result.domain} · X25519MLKEM768 · ML-DSA-65 (simulated)`
-      : `${result.domain} · ${result.tls.key_exchange.group} · ${result.certificate.public_key.name}`
-    : ''
+
+  const stepsMeta: { title: string; sub: string; status: Status; done: boolean }[] = result && before
+    ? [
+        { title: 'Detect', sub: `${result.cbom_summary.length} algorithms · ${before.kex}`, status: TONE_STATUS[result.assessment.color], done: unlocked > 1 },
+        {
+          title: 'Score',
+          sub: moscaResult ? (moscaResult.verdict === 'critical' ? 'Critical · forgeable' : moscaResult.verdict === 'safe' ? 'Safe' : 'Within window') : 'X + Y > Z',
+          status: moscaResult ? TONE_STATUS[MOSCA_TONE[moscaResult.verdict]] : 'idle',
+          done: !!moscaResult,
+        },
+        { title: 'Defend', sub: migrated ? 'Migrated · simulated' : 'ML-DSA-65 · X25519MLKEM768', status: migrated ? 'safe' : 'idle', done: migrated },
+        {
+          title: 'Prove',
+          sub: verification ? (verification.valid ? `Verified · block #${block?.index}` : 'Verification failed') : 'Merkle ledger',
+          status: verification ? (verification.valid ? 'safe' : 'risk') : 'idle',
+          done: !!verification?.valid,
+        },
+      ]
+    : []
 
   return (
-    <div className="relative min-h-full overflow-x-clip">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,rgb(14_30_48/0.9),transparent_60%)]" />
-
-      <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-5 py-5">
-        <div className="flex items-center gap-2.5">
-          <svg viewBox="0 0 32 32" className="size-7" aria-hidden>
-            <circle cx="16" cy="16" r="12" fill="none" stroke="#34d399" strokeWidth="1.8" />
-            <path d="M4 16h24M16 4c5 4 5 20 0 24M16 4c-5 4-5 20 0 24" stroke="#34d399" strokeWidth="1.2" fill="none" />
-          </svg>
-          <span className="text-sm font-semibold tracking-tight text-white">PQC Scanner</span>
+    <div className="relative min-h-full overflow-x-clip bg-black">
+      {/* Calm WebGL backdrop */}
+      <div className="pointer-events-none fixed inset-0" aria-hidden>
+        <div className="absolute top-0 left-1/2 aspect-square w-[min(1100px,140vw)] -translate-x-1/2 -translate-y-[12%] opacity-80 [mask-image:radial-gradient(circle_at_center,black_30%,transparent_68%)]">
+          <CipherGlobe phase={globePhase} tone={globeTone} pulseKey={pulse} />
         </div>
-        <span className="hidden rounded-full border border-white/10 px-3 py-1 text-[11px] text-zinc-400 sm:inline">
-          Detect · Score · Defend · Prove
-        </span>
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/40 to-black" />
+      </div>
+
+      <header className="relative z-10 border-b border-white/10 bg-black/40 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
+          <div className="flex items-center gap-2.5">
+            <svg viewBox="0 0 20 20" className="size-5" aria-hidden>
+              <circle cx="10" cy="10" r="8" fill="none" stroke="white" strokeWidth="1.3" />
+              <path d="M2 10h16M10 2c3 2.5 3 13.5 0 16M10 2c-3 2.5-3 13.5 0 16" stroke="white" strokeWidth="1" fill="none" opacity="0.6" />
+            </svg>
+            <span className="text-[14px] font-medium text-white">PQC Scanner</span>
+          </div>
+          <span className="font-mono text-[11px] text-zinc-500">FIPS 203 · FIPS 204 · CycloneDX 1.6</span>
+        </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-5xl px-5 pb-24">
-        <section className="pt-6 text-center sm:pt-10">
-          <h1 className="text-3xl font-semibold tracking-tight text-balance text-white sm:text-5xl">
-            Is your domain ready for <span className="bg-gradient-to-r from-sky-300 via-emerald-300 to-teal-200 bg-clip-text text-transparent">quantum computers</span>?
-          </h1>
-          <p className="mx-auto mt-3 max-w-2xl text-sm text-balance text-zinc-400 sm:text-base">
-            Detect the live cryptography, score it with Mosca's inequality, simulate the post-quantum fix, and prove it on a Merkle ledger.
+      <main className="relative z-10 mx-auto max-w-6xl px-6 pb-32">
+        <section className="mx-auto max-w-2xl pt-24 pb-16 text-center sm:pt-32">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-[12px] text-zinc-400 backdrop-blur-md">
+            <Dot status="safe" /> Live TLS analysis
+          </div>
+          <h1 className="mt-6 text-4xl font-semibold tracking-[-0.03em] text-balance text-white sm:text-5xl">Post-quantum readiness, verified.</h1>
+          <p className="mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-balance text-zinc-400">
+            Scan a domain's live TLS handshake. Detect its cryptography, score it with Mosca's inequality, simulate the migration, and prove it on a Merkle ledger.
           </p>
 
           <form
-            className="mx-auto mt-8 flex max-w-2xl items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-2 shadow-[0_0_60px_-20px_rgb(56_189_248/0.5)] backdrop-blur-xl focus-within:border-sky-300/40"
+            className="mx-auto mt-10 flex max-w-xl gap-2"
             onSubmit={(e) => {
               e.preventDefault()
               scan(query)
             }}
           >
-            <Search className="ml-2 shrink-0 text-zinc-500" size={18} />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Enter domain to test PQC readiness (e.g., cloudflare.com, google.com, example.org)"
+              placeholder="Enter domain to test PQC readiness (e.g., cloudflare.com)"
               aria-label="Domain to scan"
               autoFocus
               spellCheck={false}
               autoCapitalize="none"
-              className="min-w-0 flex-1 bg-transparent py-2.5 text-[15px] text-white outline-none placeholder:text-zinc-500"
+              className="h-11 min-w-0 flex-1 rounded-md border border-white/10 bg-black/40 px-4 font-mono text-[13px] text-white backdrop-blur-md transition-colors outline-none placeholder:font-sans placeholder:text-zinc-600 focus:border-white/30"
             />
             <button
               type="submit"
               disabled={scanning || !query.trim()}
-              className="flex shrink-0 items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-sky-100 disabled:opacity-50"
+              className="inline-flex h-11 items-center gap-2 rounded-md bg-white px-5 text-[13px] font-medium text-black transition-colors hover:bg-zinc-200 disabled:opacity-40"
             >
-              {scanning ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+              {scanning ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
               {scanning ? 'Scanning' : 'Scan'}
             </button>
           </form>
 
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[12px] text-zinc-600">
+            <span>Try</span>
             {EXAMPLES.map((d) => (
               <button
                 key={d}
+                disabled={scanning}
                 onClick={() => {
                   setQuery(d)
                   scan(d)
                 }}
-                disabled={scanning}
-                className="rounded-full border border-white/10 px-3 py-1 font-mono text-xs text-zinc-400 transition hover:border-white/25 hover:text-white disabled:opacity-40"
+                className="font-mono text-zinc-500 transition-colors hover:text-white disabled:opacity-40"
               >
                 {d}
               </button>
             ))}
           </div>
 
-          <AnimatePresence>
-            {error && (
-              <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} role="alert" className="mx-auto mt-4 flex max-w-xl items-center justify-center gap-2 text-sm text-rose-300">
-                <AlertCircle size={15} /> {error}
-              </motion.p>
-            )}
-          </AnimatePresence>
-        </section>
-
-        <section className="relative mt-4 h-[44vh] min-h-[300px] sm:h-[48vh]" aria-label="Scan visualisation">
-          <div className="absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black_45%,transparent_78%)]">
-            <CipherGlobe phase={globePhase} tone={globeTone} pulseKey={pulse} />
-          </div>
-          <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center font-mono text-xs">
+          <div className="mt-6 h-5 font-mono text-[12px] text-zinc-500" aria-live="polite">
             {scanning && (
-              <motion.p key={step} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sky-300/90">{STEPS[step]}</motion.p>
+              <span className="inline-flex items-center gap-2">
+                <Loader2 size={12} className="animate-spin" /> {STEPS[step]}
+              </span>
             )}
-            {migration === 'migrating' && <p className="text-emerald-300/90">Migrating to ML-DSA-65 + X25519MLKEM768…</p>}
-            {!scanning && migration !== 'migrating' && result && globeTone && <p className={TONE[globeTone].text}>{caption}</p>}
-            {!scanning && !result && <p className="text-zinc-600">awaiting target</p>}
           </div>
+          {error && (
+            <div className="mx-auto mt-2 max-w-md text-left">
+              <Callout status="risk" title="Scan failed">{error}</Callout>
+            </div>
+          )}
         </section>
 
         {result && before && preview && (
-          <>
-            {/* Progress rail */}
-            <nav className="sticky top-3 z-30 mx-auto mb-6 flex w-fit items-center gap-1 rounded-full border border-white/10 bg-zinc-950/70 p-1 backdrop-blur-xl" aria-label="Stages">
-              {STAGE_NAMES.map((name, i) => {
-                const n = i + 1
-                const open = n <= unlocked
-                const done = stageStatus(n) === 'done'
-                return (
-                  <button
-                    key={name}
-                    disabled={!open}
-                    onClick={() => stageRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                      done ? 'bg-emerald-400/15 text-emerald-300' : open ? 'bg-white/10 text-white' : 'text-zinc-600'
-                    }`}
-                  >
-                    {done ? <Check size={12} strokeWidth={3} /> : <span className="font-mono">{n}</span>}
-                    <span className="hidden sm:inline">{name}</span>
-                  </button>
-                )
-              })}
-            </nav>
+          <div ref={resultsRef} className="scroll-mt-20">
+            {/* Target summary */}
+            <motion.div {...reveal} className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-[1.1fr_1fr_0.7fr_2fr_0.8fr]">
+              {[
+                ['Target', <span className="font-mono">{result.domain}</span>],
+                ['Address', <span className="font-mono">{result.resolved_ip}</span>],
+                ['Protocol', <span className="font-mono">{result.tls.version}</span>],
+                [
+                  'Status',
+                  <span className="inline-flex items-center gap-2">
+                    <Dot status={migrated ? 'safe' : TONE_STATUS[result.assessment.color]} />
+                    {migrated ? 'Quantum ready · simulated' : SUMMARY[result.assessment.status]}
+                  </span>,
+                ],
+                ['PQC score', <span className="font-mono">{migrated ? 100 : result.assessment.score}<span className="text-zinc-600"> / 100</span></span>],
+              ].map(([label, value], i) => (
+                <div key={i} className={`bg-black/80 px-5 py-4 backdrop-blur-md ${i === 3 ? 'order-last col-span-2 md:order-none md:col-span-1' : ''}`}>
+                  <div className="text-[11px] font-medium tracking-wide text-zinc-500 uppercase">{label as string}</div>
+                  <div className="mt-1.5 truncate text-[13px] text-white">{value}</div>
+                </div>
+              ))}
+            </motion.div>
 
-            <div className="space-y-6">
-              <DetectStage ref={(el) => { stageRefs.current[0] = el }} result={result} migrated={migrated} status={stageStatus(1)}>
-                {unlocked === 1 && (
-                  <div className="mt-5 flex justify-center">
-                    <NextButton onClick={() => reveal(2)} icon={<ArrowDown size={18} />}>Continue to Stage 2 · Score</NextButton>
-                  </div>
+            <div className="mt-10 grid gap-10 lg:grid-cols-[220px_1fr]">
+              {/* Stepper */}
+              <nav aria-label="Stages" className="lg:sticky lg:top-20 lg:self-start">
+                <ol className="flex gap-2 overflow-x-auto lg:flex-col lg:gap-0">
+                  {stepsMeta.map((s, i) => {
+                    const n = i + 1
+                    const locked = n > unlocked
+                    const isActive = n === active
+                    return (
+                      <li key={s.title} className="relative shrink-0 lg:pb-6 lg:last:pb-0">
+                        {i < 3 && <span className="absolute top-7 bottom-0 left-[11px] hidden w-px bg-white/10 lg:block" aria-hidden />}
+                        <button
+                          disabled={locked}
+                          onClick={() => setActive(n)}
+                          aria-current={isActive ? 'step' : undefined}
+                          className={`flex items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors lg:w-full lg:px-0 ${
+                            isActive ? 'bg-white/[0.06] lg:bg-transparent' : ''
+                          } ${locked ? 'cursor-not-allowed' : 'hover:bg-white/[0.04] lg:hover:bg-transparent'}`}
+                        >
+                          <span
+                            className={`relative z-10 grid size-6 shrink-0 place-items-center rounded-full border bg-black font-mono text-[11px] transition-colors ${
+                              s.done ? 'border-white/20 text-white' : isActive ? 'border-white text-white' : 'border-white/10 text-zinc-600'
+                            }`}
+                          >
+                            {s.done ? <Check size={12} strokeWidth={2.5} /> : n}
+                          </span>
+                          <span className="min-w-0">
+                            <span className={`block text-[13px] font-medium ${isActive ? 'text-white' : locked ? 'text-zinc-600' : 'text-zinc-300'}`}>{s.title}</span>
+                            <span className="mt-0.5 hidden items-center gap-1.5 text-[12px] text-zinc-500 lg:flex">
+                              {s.status !== 'idle' && <Dot status={s.status} />}
+                              <span className="truncate">{s.sub}</span>
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </nav>
+
+              {/* Active stage */}
+              <div className="min-w-0">
+                {active === 1 && <DetectStage key="detect" result={result} migrated={migrated} onNext={() => go(2)} showNext />}
+                {active === 2 && (
+                  <ScoreStage
+                    key="score"
+                    x={x}
+                    y={y}
+                    setX={setX}
+                    setY={setY}
+                    preview={preview}
+                    result={moscaResult}
+                    onCalculate={calculate}
+                    onNext={() => go(3)}
+                    showNext
+                  />
                 )}
-              </DetectStage>
-
-              {unlocked >= 2 && (
-                <ScoreStage
-                  ref={(el) => { stageRefs.current[1] = el }}
-                  status={stageStatus(2)}
-                  x={x}
-                  y={y}
-                  setX={setX}
-                  setY={setY}
-                  preview={preview}
-                  result={moscaResult}
-                  onCalculate={calculate}
-                />
-              )}
-
-              {unlocked >= 3 && (
-                <DefendStage
-                  ref={(el) => { stageRefs.current[2] = el }}
-                  status={stageStatus(3)}
-                  domain={result.domain}
-                  before={before}
-                  phase={migration}
-                  scoreBefore={result.assessment.score}
-                  onMigrate={migrate}
-                />
-              )}
-
-              {unlocked >= 4 && (
-                <ProveStage
-                  ref={(el) => { stageRefs.current[3] = el }}
-                  status={stageStatus(4)}
-                  anchoring={anchoring}
-                  block={block}
-                  verification={verification}
-                  tampered={tampered}
-                  onAnchor={anchorToLedger}
-                  onTamperToggle={toggleTamper}
-                />
-              )}
+                {active === 3 && (
+                  <DefendStage
+                    key="defend"
+                    domain={result.domain}
+                    before={before}
+                    phase={migration}
+                    scoreBefore={result.assessment.score}
+                    onMigrate={migrate}
+                    onNext={() => go(4)}
+                    showNext
+                  />
+                )}
+                {active === 4 && (
+                  <ProveStage
+                    key="prove"
+                    anchoring={anchoring}
+                    block={block}
+                    verification={verification}
+                    tampered={tampered}
+                    onAnchor={anchorToLedger}
+                    onTamperToggle={toggleTamper}
+                  />
+                )}
+                {active === 1 && migrated && (
+                  <p className="mt-4 text-[12px] text-zinc-500">Showing the simulated post-migration state.</p>
+                )}
+              </div>
             </div>
-          </>
+          </div>
         )}
-
-        <footer className="mt-12 text-center text-xs text-zinc-600">
-          Stage 1 is a live TLS handshake. Stage 3's migration is simulated. Stage 4's hashes are real SHA-256, stored in this browser only.
-        </footer>
       </main>
+
+      <footer className="relative z-10 border-t border-white/10">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-6 text-[12px] text-zinc-600">
+          <span>Detect is a live handshake. Defend is simulated. Prove uses real SHA-256, stored in this browser.</span>
+          <Button variant="ghost" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Back to top</Button>
+        </div>
+      </footer>
     </div>
   )
 }

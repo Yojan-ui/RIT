@@ -1,74 +1,61 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { Calculator, ShieldAlert, ShieldCheck, Timer } from 'lucide-react'
-import { forwardRef, type ReactNode } from 'react'
-import { BASE_YEAR, Z_YEARS, type MoscaResult } from '../../lib/mosca'
-import { Card, Locked, NextButton, Stage, type StageStatus } from '../ui'
+import { motion } from 'framer-motion'
+import { ArrowRight, Lock } from 'lucide-react'
+import { BASE_YEAR, Z_YEARS, type AlgoVerdict, type MoscaResult } from '../../lib/mosca'
+import { Button, Callout, DataTable, Panel, StageHeader, StatusLabel, Td, Th, reveal, type Status } from '../ui'
 
-const VERDICT_STYLE = {
-  safe: 'bg-emerald-400/10 text-emerald-300',
-  window: 'bg-amber-400/10 text-amber-300',
-  forgeable: 'bg-rose-500/15 text-rose-300',
-  readable: 'bg-rose-500/15 text-rose-300',
-} as const
-const VERDICT_LABEL = { safe: 'SAFE', window: 'IN WINDOW', forgeable: 'FORGEABLE', readable: 'READABLE (HNDL)' } as const
+const VERDICT: Record<AlgoVerdict, { status: Status; label: string }> = {
+  safe: { status: 'safe', label: 'Safe' },
+  window: { status: 'warn', label: 'Within window' },
+  forgeable: { status: 'risk', label: 'Forgeable' },
+  readable: { status: 'risk', label: 'Readable later' },
+}
 
-function Slider({ label, hint, value, min, max, onChange, color }: { label: string; hint: string; value: number; min: number; max: number; onChange: (v: number) => void; color: string }) {
+function Slider({ label, hint, value, min, max, onChange }: { label: string; hint: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
   return (
     <label className="block">
       <div className="flex items-baseline justify-between">
-        <span className="text-sm font-medium text-zinc-100">{label}</span>
-        <span className="font-mono text-2xl font-semibold tabular-nums" style={{ color }}>
-          {value}<span className="ml-1 text-sm text-zinc-500">yrs</span>
-        </span>
+        <span className="text-[13px] text-zinc-200">{label}</span>
+        <span className="font-mono text-[13px] text-white tabular-nums">{value} yrs</span>
       </div>
-      <p className="text-xs text-zinc-500">{hint}</p>
-      <input type="range" min={min} max={max} step={1} value={value} onChange={(e) => onChange(Number(e.target.value))} className="mt-2 w-full" style={{ accentColor: color }} />
+      <p className="mt-0.5 text-[12px] text-zinc-500">{hint}</p>
+      <input type="range" min={min} max={max} step={1} value={value} onChange={(e) => onChange(Number(e.target.value))} className="mt-2" />
     </label>
   )
 }
 
-/** Years on a line: migration (X) then shelf life (Y) from today, against the CRQC marker (Z). */
+/** Hairline timeline: X then Y from today, against the CRQC marker at Z. */
 function Timeline({ m }: { m: MoscaResult }) {
   const span = Math.max(m.sum, m.z) + 2
-  const pct = (years: number) => `${(years / span) * 100}%`
+  const pct = (v: number) => `${(v / span) * 100}%`
+  const t = { duration: 0.2, ease: [0.2, 0, 0, 1] as const }
   return (
-    <div className="mt-2">
-      <div className="relative h-10 rounded-xl bg-white/[0.04]">
-        <motion.div className="absolute inset-y-2 left-0 rounded-l-lg bg-sky-400/70" animate={{ width: pct(m.x) }} transition={{ type: 'spring', stiffness: 160, damping: 22 }} />
-        <motion.div
-          className="absolute inset-y-2 rounded-r-lg bg-violet-400/70"
-          animate={{ left: pct(m.x), width: pct(m.y) }}
-          transition={{ type: 'spring', stiffness: 160, damping: 22 }}
-        />
+    <div>
+      <div className="relative h-6">
+        <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
+        <motion.div className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-zinc-300" animate={{ left: 0, width: pct(m.x) }} transition={t} />
+        <motion.div className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-zinc-500" animate={{ left: pct(m.x), width: pct(m.y) }} transition={t} />
         {m.exposedYears > 0 && (
-          <motion.div
-            className="absolute inset-y-0 rounded-r-xl bg-[repeating-linear-gradient(135deg,rgb(244_63_94/0.55)_0_6px,rgb(244_63_94/0.25)_6px_12px)] ring-1 ring-rose-400/60"
-            animate={{ left: pct(m.z), width: pct(m.exposedYears) }}
-            transition={{ type: 'spring', stiffness: 160, damping: 22 }}
-          />
+          <motion.div className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-risk" animate={{ left: pct(m.z), width: pct(m.exposedYears) }} transition={t} />
         )}
-        <div className="absolute -top-1 -bottom-1 w-0.5 bg-rose-400 shadow-[0_0_10px_#f43f5e]" style={{ left: pct(m.z) }} />
+        <div className="absolute top-0 bottom-0 w-px bg-risk" style={{ left: pct(m.z) }} />
       </div>
-      <div className="relative mt-1 h-8 font-mono text-[11px]">
-        <span className="absolute left-0 text-zinc-500">{BASE_YEAR}</span>
-        <span className="absolute -translate-x-1/2 text-center text-rose-300" style={{ left: pct(m.z) }}>
-          Z · CRQC
-          <br />
-          {BASE_YEAR + m.z}
+      <div className="relative mt-1 h-4 font-mono text-[11px] text-zinc-500">
+        <span className="absolute left-0">{BASE_YEAR}</span>
+        <span className="absolute -translate-x-1/2 text-zinc-300" style={{ left: pct(m.z) }}>
+          CRQC {BASE_YEAR + m.z}
         </span>
-        <span className="absolute right-0 text-zinc-500">{BASE_YEAR + span}</span>
+        <span className="absolute right-0">{BASE_YEAR + span}</span>
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400">
-        <span><span className="mr-1 inline-block size-2 rounded-sm bg-sky-400/70" />X · migration</span>
-        <span><span className="mr-1 inline-block size-2 rounded-sm bg-violet-400/70" />Y · shelf life</span>
-        {m.exposedYears > 0 && <span className="text-rose-300"><span className="mr-1 inline-block size-2 rounded-sm bg-rose-500/60" />{m.exposedYears} years exposed after a CRQC</span>}
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-zinc-500">
+        <span className="inline-flex items-center gap-2"><span className="h-[3px] w-3 bg-zinc-300" />X migration</span>
+        <span className="inline-flex items-center gap-2"><span className="h-[3px] w-3 bg-zinc-500" />Y shelf life</span>
+        {m.exposedYears > 0 && <span className="inline-flex items-center gap-2"><span className="h-[3px] w-3 bg-risk" />{m.exposedYears} years exposed</span>}
       </div>
     </div>
   )
 }
 
-export const ScoreStage = forwardRef<HTMLElement, {
-  status: StageStatus
+export function ScoreStage({ x, y, setX, setY, preview, result, onCalculate, onNext, showNext }: {
   x: number
   y: number
   setX: (v: number) => void
@@ -76,107 +63,83 @@ export const ScoreStage = forwardRef<HTMLElement, {
   preview: MoscaResult
   result: MoscaResult | null
   onCalculate: () => void
-  children?: ReactNode
-}>(function ScoreStage({ status, x, y, setX, setY, preview, result, onCalculate, children }, ref) {
+  onNext: () => void
+  showNext: boolean
+}) {
   const m = result ?? preview
   return (
-    <Stage ref={ref} n={2} title="Score" subtitle="Mosca's inequality  X + Y > Z" status={status} accent="#a78bfa">
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.25fr]">
-        <Card title="Inputs" icon={<Timer size={14} />}>
-          <div className="space-y-5">
-            <Slider label="X · Migration time" hint="Years to move this endpoint to post-quantum crypto" value={x} min={0} max={15} onChange={setX} color="#38bdf8" />
-            <Slider label="Y · Data shelf life" hint="Years signatures and data must stay trustworthy" value={y} min={0} max={30} onChange={setY} color="#a78bfa" />
-            <div className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2.5">
-              <div>
-                <div className="text-sm font-medium text-zinc-100">Z · Years to a quantum computer</div>
-                <div className="text-xs text-zinc-500">{BASE_YEAR + Z_YEARS} lower bound for a CRQC</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Locked label="fixed" />
-                <span className="font-mono text-2xl font-semibold text-rose-300">{Z_YEARS}<span className="ml-1 text-sm text-zinc-500">yrs</span></span>
-              </div>
-            </div>
-          </div>
-        </Card>
+    <motion.div {...reveal}>
+      <StageHeader
+        n={2}
+        title="Score"
+        description="Mosca's inequality: if migration time plus the time data must stay protected exceeds the time until a quantum computer, classical cryptography fails while it still matters."
+        action={
+          result ? (
+            showNext && <Button onClick={onNext} icon={<ArrowRight size={14} />}>Continue to defend</Button>
+          ) : (
+            <Button onClick={onCalculate}>Calculate risk</Button>
+          )
+        }
+      />
 
-        <Card title="Mosca timeline" icon={<Calculator size={14} />}>
-          <div className="flex items-baseline justify-center gap-3 font-mono text-2xl font-semibold sm:text-3xl">
-            <span className="text-sky-300">{m.x}</span>
-            <span className="text-zinc-600">+</span>
-            <span className="text-violet-300">{m.y}</span>
-            <span className="text-zinc-600">=</span>
-            <span className="text-white">{m.sum}</span>
-            <span className={m.holds ? 'text-rose-400' : 'text-emerald-300'}>{m.holds ? '>' : '≤'}</span>
-            <span className="text-rose-300">{m.z}</span>
-          </div>
-          <Timeline m={m} />
-          {!result && (
-            <div className="mt-4 flex justify-center">
-              <NextButton onClick={onCalculate} tone="white" icon={<Calculator size={18} />}>Calculate Risk</NextButton>
+      <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
+        <Panel title="Inputs">
+          <div className="space-y-6">
+            <Slider label="X · Migration time" hint="Years to move this endpoint to post-quantum cryptography" value={x} min={0} max={15} onChange={setX} />
+            <Slider label="Y · Data shelf life" hint="Years signatures and data must remain trustworthy" value={y} min={0} max={30} onChange={setY} />
+            <div className="flex items-baseline justify-between border-t border-white/[0.06] pt-4">
+              <div>
+                <div className="flex items-center gap-2 text-[13px] text-zinc-200">
+                  Z · Years to a quantum computer <Lock size={11} className="text-zinc-500" />
+                </div>
+                <p className="mt-0.5 text-[12px] text-zinc-500">Fixed at the {BASE_YEAR + Z_YEARS} lower bound</p>
+              </div>
+              <span className="font-mono text-[13px] text-white">{Z_YEARS} yrs</span>
             </div>
-          )}
-        </Card>
+          </div>
+        </Panel>
+
+        <Panel title="Inequality">
+          <div className="font-mono text-2xl tracking-tight text-white tabular-nums">
+            {m.x} <span className="text-zinc-600">+</span> {m.y} <span className="text-zinc-600">=</span> {m.sum}{' '}
+            <span className={m.holds ? 'text-risk' : 'text-safe'}>{m.holds ? '>' : '≤'}</span> {m.z}
+          </div>
+          <p className="mt-1 text-[12px] text-zinc-500">X + Y {m.holds ? '>' : '≤'} Z</p>
+          <div className="mt-6">
+            <Timeline m={m} />
+          </div>
+        </Panel>
       </div>
 
-      <AnimatePresence>
-        {result && (
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 160, damping: 20 }}>
-            {result.verdict === 'critical' ? (
-              <div className="mt-4 flex items-center gap-4 rounded-2xl bg-rose-600/15 p-5 ring-2 ring-rose-500/70 [animation:alarm_1.2s_ease-in-out_infinite]">
-                <ShieldAlert className="shrink-0 text-rose-400" size={36} />
-                <div>
-                  <div className="text-xl font-black tracking-tight text-rose-300 sm:text-2xl">CRITICAL RISK: FORGEABLE</div>
-                  <p className="mt-1 text-sm text-rose-200/80">
-                    X + Y = {result.sum} &gt; Z = {result.z}. Crypto deployed today must stay trustworthy until {BASE_YEAR + result.sum}, {result.exposedYears} years past a {BASE_YEAR + result.z} quantum computer.
-                  </p>
-                </div>
-              </div>
-            ) : result.verdict === 'safe' ? (
-              <div className="mt-4 flex items-center gap-4 rounded-2xl bg-emerald-400/10 p-5 ring-2 ring-emerald-400/60">
-                <ShieldCheck className="shrink-0 text-emerald-300" size={36} />
-                <div>
-                  <div className="text-xl font-black tracking-tight text-emerald-300 sm:text-2xl">SAFE</div>
-                  <p className="mt-1 text-sm text-emerald-100/80">Everything detected is already post-quantum; Mosca's inequality doesn't apply.</p>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 flex items-center gap-4 rounded-2xl bg-amber-400/10 p-5 ring-2 ring-amber-400/50">
-                <Timer className="shrink-0 text-amber-300" size={36} />
-                <div>
-                  <div className="text-xl font-black tracking-tight text-amber-300 sm:text-2xl">WITHIN THE WINDOW</div>
-                  <p className="mt-1 text-sm text-amber-100/80">X + Y = {result.sum} ≤ Z = {result.z}: migration completes before a CRQC, but only if it starts now.</p>
-                </div>
-              </div>
-            )}
+      {result && (
+        <div className="mt-6 space-y-5">
+          {result.verdict === 'critical' ? (
+            <Callout status="risk" title="Critical risk: forgeable">
+              {result.x} + {result.y} = {result.sum} &gt; {result.z}. Cryptography deployed today must stay trustworthy until {BASE_YEAR + result.sum},{' '}
+              {result.exposedYears} years after a {BASE_YEAR + result.z} quantum computer could break it.
+            </Callout>
+          ) : result.verdict === 'safe' ? (
+            <Callout status="safe" title="Safe">Everything detected is already post-quantum; the inequality does not apply.</Callout>
+          ) : (
+            <Callout status="warn" title="Within the window">
+              {result.sum} ≤ {result.z}: migration completes before a quantum computer, provided it starts now.
+            </Callout>
+          )}
 
-            <div className="mt-4 -mx-1 overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left text-sm">
-                <thead>
-                  <tr className="text-[11px] tracking-wider text-zinc-500 uppercase">
-                    <th className="px-1 pb-2 font-medium">Detected</th>
-                    <th className="px-1 pb-2 font-medium">Algorithm</th>
-                    <th className="px-1 pb-2 font-medium">Mosca verdict</th>
-                    <th className="px-1 pb-2 font-medium">Why</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.rows.map((r, i) => (
-                    <motion.tr key={r.role} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 + i * 0.1 }} className="border-t border-white/[0.05] align-top">
-                      <td className="px-1 py-2.5 text-zinc-300">{r.role}</td>
-                      <td className="px-1 py-2.5 font-mono text-[13px] text-zinc-100">{r.algorithm}</td>
-                      <td className="px-1 py-2.5">
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap ${VERDICT_STYLE[r.verdict]}`}>{VERDICT_LABEL[r.verdict]}</span>
-                      </td>
-                      <td className="px-1 py-2.5 text-xs text-zinc-400">{r.why}</td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {children}
-    </Stage>
+          <Panel title="Per-algorithm verdict">
+            <DataTable head={<><Th>Component</Th><Th>Algorithm</Th><Th>Verdict</Th><Th>Reason</Th></>}>
+              {result.rows.map((r) => (
+                <tr key={r.role}>
+                  <Td>{r.role}</Td>
+                  <Td mono>{r.algorithm}</Td>
+                  <Td><StatusLabel status={VERDICT[r.verdict].status}>{VERDICT[r.verdict].label}</StatusLabel></Td>
+                  <Td className="text-zinc-500!">{r.why}</Td>
+                </tr>
+              ))}
+            </DataTable>
+          </Panel>
+        </div>
+      )}
+    </motion.div>
   )
-})
+}

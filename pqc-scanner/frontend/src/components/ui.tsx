@@ -1,142 +1,153 @@
 import { motion } from 'framer-motion'
-import { Check, Lock, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { forwardRef, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { Tone } from '../api'
 
-export const TONE: Record<Tone, { text: string; bg: string; ring: string; hex: string }> = {
-  emerald: { text: 'text-emerald-300', bg: 'bg-emerald-400/10', ring: 'ring-emerald-400/40', hex: '#34d399' },
-  amber: { text: 'text-amber-300', bg: 'bg-amber-400/10', ring: 'ring-amber-400/40', hex: '#fbbf24' },
-  crimson: { text: 'text-rose-300', bg: 'bg-rose-500/10', ring: 'ring-rose-400/50', hex: '#f43f5e' },
+export type Status = 'safe' | 'risk' | 'warn' | 'idle'
+
+export const TONE_STATUS: Record<Tone, Status> = { emerald: 'safe', amber: 'warn', crimson: 'risk' }
+
+const DOT: Record<Status, string> = {
+  safe: 'bg-safe',
+  risk: 'bg-risk',
+  warn: 'bg-warn',
+  idle: 'bg-zinc-600',
+}
+const LINE: Record<Status, string> = {
+  safe: 'border-safe',
+  risk: 'border-risk',
+  warn: 'border-warn',
+  idle: 'border-zinc-700',
 }
 
-export function Card({ title, icon, children, className = '' }: { title: string; icon: ReactNode; children: ReactNode; className?: string }) {
+/** Snappy, non-bouncy reveal used everywhere. */
+export const reveal = {
+  initial: { opacity: 0, y: 6 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.18, ease: [0.2, 0, 0, 1] as const },
+}
+
+export function Dot({ status, className = '' }: { status: Status; className?: string }) {
+  return <span aria-hidden className={`inline-block size-1.5 shrink-0 rounded-full ${DOT[status]} ${className}`} />
+}
+
+export function StatusLabel({ status, children }: { status: Status; children: ReactNode }) {
   return (
-    <section className={`rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5 ${className}`}>
-      <h4 className="mb-3 flex items-center gap-2 text-[11px] font-semibold tracking-[0.14em] text-zinc-400 uppercase">
-        <span className="text-zinc-500">{icon}</span>
-        {title}
-      </h4>
+    <span className="inline-flex items-center gap-2 text-[13px] whitespace-nowrap text-zinc-300">
+      <Dot status={status} />
       {children}
+    </span>
+  )
+}
+
+export const algoStatus = (quantumSafe: boolean): Status => (quantumSafe ? 'safe' : 'risk')
+
+export function Panel({ title, action, children, className = '' }: { title?: string; action?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <section className={`rounded-xl border border-white/10 bg-black/40 backdrop-blur-md ${className}`}>
+      {title && (
+        <header className="flex items-center justify-between border-b border-white/10 px-5 py-3">
+          <h4 className="text-[13px] font-medium text-white">{title}</h4>
+          {action}
+        </header>
+      )}
+      <div className="p-5">{children}</div>
     </section>
   )
 }
 
-export function Field({ label, children, mono }: { label: string; children: ReactNode; mono?: boolean }) {
+export function KV({ label, children, mono }: { label: string; children: ReactNode; mono?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.05] py-2 last:border-0">
-      <dt className="shrink-0 text-xs text-zinc-500">{label}</dt>
-      <dd className={`min-w-0 text-right text-sm break-words text-zinc-100 ${mono ? 'font-mono text-[13px]' : ''}`}>{children}</dd>
+    <div className="grid grid-cols-[140px_1fr] items-baseline gap-4 border-b border-white/[0.06] py-2.5 last:border-0">
+      <dt className="text-[13px] text-zinc-500">{label}</dt>
+      <dd className={`min-w-0 text-[13px] break-words text-zinc-100 ${mono ? 'font-mono text-[12.5px]' : ''}`}>{children}</dd>
     </div>
   )
 }
 
-export function Verdict({ safe }: { safe: boolean }) {
-  return safe ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-emerald-300">
-      <ShieldCheck size={12} /> Quantum-safe
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-rose-300">
-      <ShieldAlert size={12} /> Shor-vulnerable
-    </span>
-  )
-}
-
-/** Shows `now`; when `was` differs it is struck through beside the new value, marked simulated. */
-export function Changed({ was, now, migrated }: { was: string; now: string; migrated: boolean }) {
-  if (!migrated || was === now) return <span>{now}</span>
+/** Accent-line callout: status carried by a thin left border and a dot, not a coloured box. */
+export function Callout({ status, title, children }: { status: Status; title: string; children?: ReactNode }) {
   return (
-    <motion.span initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="inline-flex flex-wrap items-baseline justify-end gap-x-2">
-      <span className="text-zinc-500 line-through decoration-rose-400/70">{was}</span>
-      <span className="text-emerald-300">{now}</span>
-    </motion.span>
-  )
-}
-
-export function ScoreRing({ score, tone, grade, size = 'size-32' }: { score: number; tone: Tone; grade: string; size?: string }) {
-  const r = 46
-  const c = 2 * Math.PI * r
-  return (
-    <div className={`relative shrink-0 ${size}`}>
-      <svg viewBox="0 0 120 120" className="size-full -rotate-90">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="rgb(255 255 255 / 0.08)" strokeWidth="9" />
-        <motion.circle
-          cx="60" cy="60" r={r} fill="none" stroke={TONE[tone].hex} strokeWidth="9" strokeLinecap="round" strokeDasharray={c}
-          initial={{ strokeDashoffset: c }}
-          animate={{ strokeDashoffset: c * (1 - score / 100), stroke: TONE[tone].hex }}
-          transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-          style={{ filter: `drop-shadow(0 0 8px ${TONE[tone].hex})` }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <motion.span key={score} initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-3xl font-semibold tracking-tight text-white tabular-nums">
-          {score}
-        </motion.span>
-        <span className="text-[10px] tracking-widest text-zinc-500 uppercase">PQC score</span>
-        <span className="mt-0.5 text-[11px] font-semibold text-zinc-300">Grade {grade}</span>
+    <motion.div {...reveal} className={`border-l-2 py-1 pl-4 ${LINE[status]}`} role="status">
+      <div className="flex items-center gap-2 text-sm font-medium text-white">
+        <Dot status={status} />
+        {title}
       </div>
-    </div>
+      {children && <p className="mt-1 text-[13px] leading-relaxed text-zinc-400">{children}</p>}
+    </motion.div>
   )
 }
 
-export type StageStatus = 'active' | 'done'
-
-/** One chapter of the Detect → Score → Defend → Prove story. Slides in when unlocked. */
-export const Stage = forwardRef<HTMLElement, { n: number; title: string; subtitle: string; status: StageStatus; accent: string; children: ReactNode }>(
-  function Stage({ n, title, subtitle, status, accent, children }, ref) {
-    return (
-      <motion.section
-        ref={ref}
-        initial={{ opacity: 0, y: 40, filter: 'blur(6px)' }}
-        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-        transition={{ type: 'spring', stiffness: 120, damping: 20 }}
-        className="relative scroll-mt-24 rounded-3xl border border-white/10 bg-zinc-950/60 p-4 shadow-[0_40px_120px_-40px_rgb(0_0_0/0.9)] backdrop-blur-2xl sm:p-6"
-      >
-        <header className="mb-5 flex items-center gap-3">
-          <span
-            className="grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold text-zinc-950"
-            style={{ background: accent, boxShadow: `0 0 24px -4px ${accent}` }}
-          >
-            {status === 'done' ? <Check size={18} strokeWidth={3} /> : n}
-          </span>
-          <div>
-            <div className="text-[11px] font-semibold tracking-[0.2em] text-zinc-500 uppercase">Stage {n}</div>
-            <h3 className="text-lg font-semibold tracking-tight text-white sm:text-xl">
-              {title} <span className="font-normal text-zinc-500">· {subtitle}</span>
-            </h3>
-          </div>
-        </header>
-        {children}
-      </motion.section>
-    )
-  },
-)
-
-export function NextButton({ onClick, children, tone = 'white', disabled, icon }: { onClick: () => void; children: ReactNode; tone?: 'white' | 'rose' | 'emerald' | 'sky'; disabled?: boolean; icon?: ReactNode }) {
-  const styles = {
-    white: 'bg-white text-zinc-950 hover:bg-zinc-100',
-    rose: 'bg-rose-500 text-white hover:bg-rose-400 shadow-[0_0_40px_-8px_#f43f5e]',
-    emerald: 'bg-emerald-400 text-emerald-950 hover:bg-emerald-300 shadow-[0_0_40px_-8px_#34d399]',
-    sky: 'bg-sky-400 text-sky-950 hover:bg-sky-300 shadow-[0_0_40px_-8px_#38bdf8]',
-  }[tone]
+export function Button({ children, onClick, variant = 'primary', disabled, type = 'button', icon }: {
+  children: ReactNode
+  onClick?: () => void
+  variant?: 'primary' | 'ghost'
+  disabled?: boolean
+  type?: 'button' | 'submit'
+  icon?: ReactNode
+}) {
+  const style =
+    variant === 'primary'
+      ? 'bg-white text-black hover:bg-zinc-200'
+      : 'border border-white/10 text-zinc-300 hover:border-white/20 hover:bg-white/[0.04] hover:text-white'
   return (
-    <motion.button
-      whileHover={{ scale: disabled ? 1 : 1.02 }}
-      whileTap={{ scale: disabled ? 1 : 0.98 }}
+    <button
+      type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50 sm:text-base ${styles}`}
+      className={`inline-flex h-9 items-center justify-center gap-2 rounded-md px-3.5 text-[13px] font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-white/50 disabled:cursor-not-allowed disabled:opacity-40 ${style}`}
     >
       {icon}
       {children}
-    </motion.button>
+    </button>
   )
 }
 
-export function Locked({ label }: { label: string }) {
+export function Th({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <th className={`px-3 py-2.5 text-left text-[11px] font-medium tracking-wide text-zinc-500 uppercase ${className}`}>{children}</th>
+}
+export function Td({ children, mono, className = '' }: { children: ReactNode; mono?: boolean; className?: string }) {
+  return <td className={`px-3 py-2.5 align-top text-[13px] ${mono ? 'font-mono text-[12.5px] text-zinc-100' : 'text-zinc-300'} ${className}`}>{children}</td>
+}
+
+export function DataTable({ head, children, minWidth = 560 }: { head: ReactNode; children: ReactNode; minWidth?: number }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium text-zinc-400">
-      <Lock size={11} /> {label}
-    </span>
+    <div className="-mx-5 overflow-x-auto">
+      <table className="w-full border-collapse" style={{ minWidth }}>
+        <thead className="border-b border-white/10">
+          <tr>{head}</tr>
+        </thead>
+        <tbody className="[&>tr]:border-b [&>tr]:border-white/[0.06] [&>tr:last-child]:border-0 [&_td:first-child]:pl-5 [&_td:last-child]:pr-5 [&_th:first-child]:pl-5">
+          {children}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Terminal-style block for commands and ledger output. */
+export function Terminal({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-white/10 bg-zinc-950">
+      <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
+        <span className="size-2 rounded-full bg-zinc-700" />
+        <span className="size-2 rounded-full bg-zinc-700" />
+        <span className="size-2 rounded-full bg-zinc-700" />
+        <span className="ml-2 font-mono text-[11px] text-zinc-500">{title}</span>
+      </div>
+      <pre className="overflow-x-auto p-4 font-mono text-[12px] leading-6 text-zinc-300">{children}</pre>
+    </div>
+  )
+}
+
+export function StageHeader({ n, title, description, action }: { n: number; title: string; description: string; action?: ReactNode }) {
+  return (
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <div className="font-mono text-[11px] text-zinc-500">0{n}</div>
+        <h3 className="mt-1 text-base font-medium text-white">{title}</h3>
+        <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-zinc-400">{description}</p>
+      </div>
+      {action}
+    </div>
   )
 }

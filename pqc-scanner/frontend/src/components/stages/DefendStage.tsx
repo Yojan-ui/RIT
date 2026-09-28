@@ -1,121 +1,102 @@
 import { motion } from 'framer-motion'
-import { ArrowRight, CheckCircle2, Loader2, ShieldCheck, Wrench } from 'lucide-react'
-import { forwardRef, type ReactNode } from 'react'
+import { ArrowRight, Loader2 } from 'lucide-react'
 import { MIGRATED, type CryptoState } from '../../lib/mosca'
-import { Card, NextButton, Stage, Verdict, type StageStatus } from '../ui'
+import { Button, Callout, DataTable, Panel, StageHeader, StatusLabel, Td, Terminal, Th, algoStatus, reveal } from '../ui'
 
 export type MigrationPhase = 'idle' | 'migrating' | 'done'
-export const MIGRATE_MS = 2600
+export const MIGRATE_MS = 2000
 
-function steps(domain: string, before: CryptoState) {
+function runbook(domain: string, before: CryptoState) {
   return [
-    { label: 'Generate ML-DSA-65 key pair (FIPS 204)', cmd: `openssl genpkey -algorithm ML-DSA-65 -out ${domain}.mldsa65.key` },
-    { label: 'Issue ML-DSA-65 certificate', cmd: `openssl req -new -x509 -key ${domain}.mldsa65.key -subj "/CN=${domain}" -days 90` },
-    {
-      label: before.kexPq ? 'Hybrid key exchange already enabled' : 'Enable hybrid ML-KEM key exchange (FIPS 203)',
-      cmd: before.kexPq ? `server already negotiates ${before.kex}` : 'ssl_ecdh_curve X25519MLKEM768:X25519;   # nginx + OpenSSL 3.5',
-    },
-    { label: 'Re-probe and confirm', cmd: `openssl s_client -connect ${domain}:443 -groups X25519MLKEM768 -sigalgs mldsa65` },
+    `openssl genpkey -algorithm ML-DSA-65 -out ${domain}.key`,
+    `openssl req -new -x509 -key ${domain}.key -subj "/CN=${domain}" -days 90 -out ${domain}.pem`,
+    before.kexPq ? `# key exchange already ${before.kex}` : `echo 'ssl_ecdh_curve X25519MLKEM768:X25519;' >> nginx.conf`,
+    `openssl s_client -connect ${domain}:443 -groups X25519MLKEM768 -sigalgs mldsa65 -brief`,
   ]
 }
 
-function Stack({ title, state, tone }: { title: string; state: CryptoState; tone: 'before' | 'after' }) {
-  const rows: [string, string, boolean][] = [
-    ['Key exchange', state.kex, state.kexPq],
-    ['Server key', state.leafKey, state.leafPq],
-    ['Certificate signature', state.signature, state.sigPq],
-  ]
-  return (
-    <div className={`flex-1 rounded-2xl p-4 ring-1 ${tone === 'after' ? 'bg-emerald-400/[0.06] ring-emerald-400/40' : 'bg-white/[0.03] ring-white/10'}`}>
-      <div className={`mb-2 text-[11px] font-semibold tracking-[0.14em] uppercase ${tone === 'after' ? 'text-emerald-300' : 'text-zinc-400'}`}>{title}</div>
-      <dl className="space-y-2">
-        {rows.map(([role, alg, pq]) => (
-          <div key={role} className="flex flex-wrap items-center justify-between gap-2">
-            <dt className="text-xs text-zinc-500">{role}</dt>
-            <dd className="flex items-center gap-2">
-              <span className="font-mono text-[13px] text-zinc-100">{alg}</span>
-              <Verdict safe={pq} />
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  )
-}
-
-export const DefendStage = forwardRef<HTMLElement, {
-  status: StageStatus
+export function DefendStage({ domain, before, phase, scoreBefore, onMigrate, onNext, showNext }: {
   domain: string
   before: CryptoState
   phase: MigrationPhase
   scoreBefore: number
   onMigrate: () => void
-  children?: ReactNode
-}>(function DefendStage({ status, domain, before, phase, scoreBefore, onMigrate, children }, ref) {
-  const plan = steps(domain, before)
-  return (
-    <Stage ref={ref} n={3} title="Defend" subtitle="simulated PQC migration" status={status} accent="#34d399">
-      <div className="flex flex-col items-stretch gap-3 md:flex-row md:items-center">
-        <Stack title="Before · live scan" state={before} tone="before" />
-        <ArrowRight className="mx-auto shrink-0 rotate-90 text-zinc-600 md:rotate-0" size={22} />
-        {phase === 'done' ? (
-          <motion.div className="flex-1" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
-            <Stack title="After · simulated" state={MIGRATED} tone="after" />
-          </motion.div>
-        ) : (
-          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-white/15 p-4">
-            <p className="text-center text-sm text-zinc-500">Target: ML-DSA-65 (FIPS 204) signatures + X25519MLKEM768 key exchange</p>
-          </div>
-        )}
-      </div>
+  onNext: () => void
+  showNext: boolean
+}) {
+  const steps = runbook(domain, before)
+  const rows: [string, string, boolean, string, boolean][] = [
+    ['Key exchange', before.kex, before.kexPq, MIGRATED.kex, true],
+    ['Server key', before.leafKey, before.leafPq, MIGRATED.leafKey, true],
+    ['Certificate signature', before.signature, before.sigPq, MIGRATED.signature, true],
+  ]
+  const done = phase === 'done'
 
-      {phase === 'idle' && (
-        <div className="mt-5 flex justify-center">
-          <NextButton onClick={onMigrate} tone="emerald" icon={<ShieldCheck size={20} />}>
-            Simulate PQC Migration
-          </NextButton>
+  return (
+    <motion.div {...reveal}>
+      <StageHeader
+        n={3}
+        title="Defend"
+        description="Simulate migrating the endpoint to ML-DSA-65 (FIPS 204) signatures and X25519MLKEM768 (FIPS 203) hybrid key exchange. Nothing is changed on the real server."
+        action={
+          phase === 'idle' ? (
+            <Button onClick={onMigrate}>Simulate PQC migration</Button>
+          ) : phase === 'migrating' ? (
+            <Button disabled icon={<Loader2 size={14} className="animate-spin" />}>Migrating</Button>
+          ) : (
+            showNext && <Button onClick={onNext} icon={<ArrowRight size={14} />}>Continue to prove</Button>
+          )
+        }
+      />
+
+      <Panel title="Change set">
+        <DataTable head={<><Th>Component</Th><Th>Current</Th><Th>Target</Th></>}>
+          {rows.map(([role, was, wasPq, now]) => (
+            <tr key={role}>
+              <Td>{role}</Td>
+              <Td mono>
+                <span className="inline-flex flex-wrap items-center gap-3">
+                  <span className={done && was !== now ? 'text-zinc-600 line-through' : ''}>{was}</span>
+                  {!done && <StatusLabel status={algoStatus(wasPq)}>{wasPq ? 'PQ' : 'Classical'}</StatusLabel>}
+                </span>
+              </Td>
+              <Td mono>
+                <span className="inline-flex flex-wrap items-center gap-3">
+                  <span className={done ? 'text-white' : 'text-zinc-500'}>{now}</span>
+                  {done && <StatusLabel status="safe">{was === now ? 'Unchanged' : 'Applied'}</StatusLabel>}
+                </span>
+              </Td>
+            </tr>
+          ))}
+        </DataTable>
+      </Panel>
+
+      {phase !== 'idle' && (
+        <div className="mt-4">
+          <Terminal title={`migrate ${domain} · simulated, not executed`}>
+            {steps.map((cmd, i) => (
+              <motion.div
+                key={cmd}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: (i * MIGRATE_MS) / steps.length / 1000, duration: 0.15 }}
+              >
+                <span className="text-zinc-600">$ </span>
+                {cmd}
+                {done && <span className="ml-2 text-safe">✓</span>}
+              </motion.div>
+            ))}
+          </Terminal>
         </div>
       )}
 
-      {phase !== 'idle' && (
-        <Card title="Migration runbook · OpenSSL 3.5 (simulated, not executed)" icon={<Wrench size={14} />} className="mt-4">
-          <ol className="space-y-2.5">
-            {plan.map((s, i) => {
-              const delay = (i * MIGRATE_MS) / plan.length / 1000
-              return (
-                <motion.li key={s.label} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay }} className="flex gap-3">
-                  <motion.span initial={{ opacity: 1 }} animate={{ opacity: 1 }} className="mt-0.5 shrink-0">
-                    {phase === 'done' ? (
-                      <CheckCircle2 size={18} className="text-emerald-300" />
-                    ) : (
-                      <Loader2 size={18} className="animate-spin text-sky-300" style={{ animationDelay: `${delay}s` }} />
-                    )}
-                  </motion.span>
-                  <div className="min-w-0">
-                    <div className="text-sm text-zinc-100">{s.label}</div>
-                    <code className="block overflow-x-auto font-mono text-xs whitespace-nowrap text-zinc-500">{s.cmd}</code>
-                  </div>
-                </motion.li>
-              )
-            })}
-          </ol>
-        </Card>
+      {done && (
+        <div className="mt-6">
+          <Callout status="safe" title="Endpoint protected (simulated)">
+            Re-scored against Mosca: safe. PQC score <span className="font-mono text-zinc-200">{scoreBefore} → 100</span>.
+          </Callout>
+        </div>
       )}
-
-      {phase === 'done' && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-emerald-400/10 p-4 ring-1 ring-emerald-400/40"
-        >
-          <ShieldCheck className="text-emerald-300" size={26} />
-          <div className="text-sm text-emerald-100">
-            <span className="font-bold text-emerald-300">Endpoint protected (simulated).</span> Re-scored: Mosca verdict <b>SAFE</b>, PQC score{' '}
-            <span className="font-mono">{scoreBefore} → 100</span>.
-          </div>
-        </motion.div>
-      )}
-      {children}
-    </Stage>
+    </motion.div>
   )
-})
+}
