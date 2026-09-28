@@ -52,6 +52,7 @@ app/shield.py        DEFEND: Python stand-in for shield.js (ML-DSA-65 + X25519ML
 app/ledger.py        PROVE: MerkleTree (RFC 6962-style) + hash-chained ledger, verify / tamper / restore
 app/db.py            SQLite schema and access
 app/static/          dashboard (plain HTML/CSS/JS, system fonts, no CDNs)
+app/static/bg.js     3D particle-network backdrop in raw WebGL (local, ~30 fps, pauses when hidden)
 tests/               pytest suite
 ```
 
