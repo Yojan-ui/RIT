@@ -1,18 +1,15 @@
 @import "tailwindcss";
-@import "@fontsource/jetbrains-mono/400.css";
-@import "@fontsource/jetbrains-mono/600.css";
-@import "@fontsource/jetbrains-mono/800.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @theme {
-  --color-void: #05060d;
-  --color-q-cyan: #22d3ee;
-  --color-q-violet: #a78bfa;
-  --color-q-red: #f43f5e;
+  --color-q-cyan: #5ee7f7;
+  --color-q-violet: #b39dff;
+  --color-q-red: #ff4d6a;
   --color-q-amber: #fbbf24;
-  --color-q-green: #34d399;
-  --color-ink: #dbe4ff;
-  --color-ink-dim: #7d89b0;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-q-green: #4ade80;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 html,
@@ -20,82 +17,102 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: var(--color-void);
-  color: var(--color-ink);
-  font-family: var(--font-mono);
-  font-variant-ligatures: none;
+  overflow: hidden;
+  background: #030304;
+  color: var(--color-zinc-100);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
 }
 
-/* Glass HUD panel with a faint cyan/violet rim glow. */
-@utility glass {
-  background: linear-gradient(160deg, rgb(20 26 52 / 0.55), rgb(8 10 24 / 0.45));
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
-  border: 1px solid rgb(34 211 238 / 0.16);
-  border-radius: 14px;
+/* Floating frosted HUD surface. */
+@utility hud {
+  background: rgb(9 9 11 / 0.7);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgb(255 255 255 / 0.1);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.05),
-    0 0 0 1px rgb(167 139 250 / 0.05),
-    0 10px 40px -12px rgb(0 0 0 / 0.7),
-    0 0 28px -10px rgb(34 211 238 / 0.35);
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 20px 50px -20px rgb(0 0 0 / 0.8);
 }
 
-@utility glass-danger {
-  border-color: rgb(244 63 94 / 0.45);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.05),
-    0 10px 40px -12px rgb(0 0 0 / 0.7),
-    0 0 36px -8px rgb(244 63 94 / 0.55);
-}
-
-@utility label {
-  font-size: 10px;
-  letter-spacing: 0.18em;
+@utility eyebrow {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-ink-dim);
+  color: var(--color-zinc-500);
 }
 
-/* Full-screen red glitch that plays once per Eve interception. */
+/* One-shot red glitch across the viewport when Eve's interception lands. */
 .collapse-overlay {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 40;
   background:
-    repeating-linear-gradient(0deg, rgb(244 63 94 / 0.12) 0 2px, transparent 2px 5px),
-    radial-gradient(ellipse at center, transparent 35%, rgb(244 63 94 / 0.35) 100%);
+    repeating-linear-gradient(0deg, rgb(255 77 106 / 0.1) 0 1px, transparent 1px 4px),
+    radial-gradient(ellipse at center, transparent 40%, rgb(255 77 106 / 0.28) 100%);
   mix-blend-mode: screen;
-  animation: collapse-glitch 1.4s steps(1, end) forwards;
+  animation: collapse-glitch 1.3s steps(1, end) forwards;
 }
 
 @keyframes collapse-glitch {
   0% { opacity: 1; transform: translate(0, 0); clip-path: inset(0 0 0 0); }
-  8% { transform: translate(-8px, 2px); clip-path: inset(12% 0 55% 0); }
-  16% { transform: translate(6px, -3px); clip-path: inset(48% 0 20% 0); }
-  24% { transform: translate(-3px, 1px); clip-path: inset(0 0 0 0); }
-  34% { opacity: 0.8; transform: translate(4px, 0); clip-path: inset(70% 0 5% 0); }
-  44% { opacity: 0.7; transform: translate(0, 0); clip-path: inset(0 0 0 0); }
-  70% { opacity: 0.35; }
+  8% { transform: translate(-6px, 1px); clip-path: inset(14% 0 52% 0); }
+  16% { transform: translate(5px, -2px); clip-path: inset(46% 0 22% 0); }
+  26% { transform: translate(0, 0); clip-path: inset(0 0 0 0); }
+  36% { opacity: 0.7; clip-path: inset(68% 0 6% 0); }
+  46% { opacity: 0.55; clip-path: inset(0 0 0 0); }
   100% { opacity: 0; }
 }
 
-.danger-pulse {
-  animation: danger-pulse 1.2s ease-in-out infinite;
+.pulse-red {
+  animation: pulse-red 1.4s ease-in-out infinite;
+}
+@keyframes pulse-red {
+  50% { box-shadow: 0 0 0 1px rgb(255 77 106 / 0.5), 0 0 24px rgb(255 77 106 / 0.35); }
 }
 
-@keyframes danger-pulse {
-  50% { box-shadow: 0 0 0 1px rgb(244 63 94 / 0.6), 0 0 28px rgb(244 63 94 / 0.55); }
-}
-
+/* Hairline range input. */
 input[type="range"] {
-  accent-color: var(--color-q-cyan);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.14);
+}
+input[type="range"]::-moz-range-track {
+  height: 2px;
+  background: rgb(255 255 255 / 0.14);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 999px;
+  background: #fafafa;
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.08);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #fafafa;
 }
 
-::-webkit-scrollbar { height: 6px; width: 6px; }
-::-webkit-scrollbar-thumb { background: rgb(34 211 238 / 0.25); border-radius: 3px; }
+::-webkit-scrollbar { height: 4px; width: 4px; }
+::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.15); border-radius: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
   .collapse-overlay { animation-duration: 0.01s; }
-  .danger-pulse { animation: none; }
+  .pulse-red { animation: none; }
 }

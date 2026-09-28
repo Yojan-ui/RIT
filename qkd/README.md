@@ -25,17 +25,27 @@ and `error`. That is what the 3D scene animates. CORS allows the Vite dev server
 
 ## Frontend (`frontend/`)
 
-Vite + React 19 + TypeScript, React Three Fiber / drei, Tailwind v4, Framer Motion, lucide-react.
+Vite + React 19 + TypeScript, React Three Fiber / drei / postprocessing, Tailwind v4, Framer Motion, lucide-react.
 
 ```bash
 cd frontend && npm install
 npm run dev        # http://localhost:5173 (strict port); /api is proxied to :8100
 ```
 
-Start the backend first. `http://localhost:5173/?attack` opens straight into the Eve scenario.
-Set `VITE_API_URL` to call a backend somewhere other than the proxy.
+Start the backend first. Set `VITE_API_URL` to call a backend somewhere other than the proxy.
 
-- `src/scene/QuantumScene.tsx`: Alice/Bob stations, glitch-shader fibre, photons as mini Bloch
-  spheres showing each qubit's real state, Eve's tap, and the red particle burst on interception
-- `src/hud/`: QBER gauge (spring overshoot = spike), metrics, sifted keys with mismatches, photon trace
-- `src/api.ts`: typed client for the backend payload
+What's on screen:
+
+- **Optical bench** (`src/scene/QuantumScene.tsx`): Alice's laser source and polariser, Bob's waveplate,
+  polarising beam splitter and two SPAD detectors (D0/D1 flash with the outcome). Photons are light
+  packets whose bar shows their real polarisation (H/V/D/A). In attack mode Eve's beam-splitter tap
+  lowers into the beam and sprays red decoherence when it collapses a photon.
+- **Playback** (`src/playback.ts`, `src/hud/PlaybackBar.tsx`): play/pause (space), step one photon (→),
+  timeline scrubbing, speed, and a photon trace table. Each detection is described in the readout chip.
+- **Bloch sphere drawer** (`src/hud/BlochDrawer.tsx`): click any photon in the beam, trace table or
+  readout. Shows Alice's, Eve's and Bob's states and Bob's measurement probabilities. `[` / `]` step photons.
+- **One-time pad test** (`src/hud/OtpCard.tsx`): XORs a message with the sifted key; Bob decrypts with his
+  copy. Clean mode decrypts perfectly; with Eve the key is discarded and Bob's output is corrupted.
+
+URL options: `?attack` opens in Eve mode · `?photon=N` jumps to photon N (add `&inspect` to open its
+Bloch sphere) · `?lite` turns off bloom and floor reflections for weak GPUs.
