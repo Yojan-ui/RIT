@@ -27,6 +27,9 @@ class Target:
     hostname: str  # normalised ASCII (punycode) hostname, used for SNI
     ip: str  # the vetted public address we will connect to
     family: int
+    # Every vetted address for the hostname, in preference order (IPv4 first, then DNS order).
+    # Probes fall back through these when an address doesn't answer; all passed the public-IP check.
+    addresses: tuple[tuple[int, str], ...] = ()
 
 
 def normalise_hostname(raw: str) -> str:
@@ -93,9 +96,10 @@ def resolve_public(hostname: str) -> Target:
         addrs.append((family, ip))
     if not addrs:
         raise TargetError(f"Could not resolve {hostname}.")
-    # Prefer IPv4 for reachability from typical PaaS hosts.
-    family, ip = sorted(addrs, key=lambda a: a[0] != socket.AF_INET)[0]
-    return Target(hostname=hostname, ip=ip, family=family)
+    # Prefer IPv4 for reachability from typical PaaS hosts; keep DNS order within a family.
+    ordered = tuple(dict.fromkeys(sorted(addrs, key=lambda a: a[0] != socket.AF_INET)))
+    family, ip = ordered[0]
+    return Target(hostname=hostname, ip=ip, family=family, addresses=ordered)
 
 
 def validate(raw: str) -> Target:

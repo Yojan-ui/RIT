@@ -19,7 +19,8 @@ import os
 import socket
 import ssl
 import struct
-from dataclasses import dataclass, field
+from collections.abc import Iterator
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 import certifi
@@ -32,6 +33,8 @@ from cryptography.x509.oid import ExtensionOID, NameOID
 from .netguard import Target
 
 TIMEOUT = 6.0
+CONNECT_TIMEOUT = 3.0  # per address; a silent (dropping) address shouldn't eat the whole scan budget
+MAX_ADDRESSES = 4
 MAX_READ = 96 * 1024
 
 # ── Registries ──────────────────────────────────────────────────────────────
@@ -84,6 +87,49 @@ SIG_SCHEMES = [0x0905, 0x0904, 0x0906, 0x0403, 0x0503, 0x0603, 0x0807, 0x0808, 0
 ALERTS = {40: "handshake_failure", 47: "illegal_parameter", 50: "decode_error", 70: "protocol_version", 71: "insufficient_security", 80: "internal_error", 112: "unrecognized_name"}
 
 HRR_RANDOM = bytes.fromhex("CF21AD74E59A6111BE1D8C021E65B891C2A211167ABB8C5E079E09E2C8A8339C")
+
+# ── Address fallback ────────────────────────────────────────────────────────
+
+
+@dataclass
+class AddressFailure:
+    ip: str
+    reason: str
+    timed_out: bool
+
+    def __str__(self) -> str:
+        return f"{self.ip} ({self.reason})"
+
+
+def _describe(e: BaseException) -> str:
+    if isinstance(e, TimeoutError | socket.timeout):
+        return "no response"
+    if isinstance(e, ConnectionRefusedError):
+        return "connection refused"
+    if isinstance(e, ConnectionResetError):
+        return "connection reset"
+    return str(e) or type(e).__name__
+
+
+def reachable_targets(target: Target, failures: list[AddressFailure], *, port: int = 443, timeout: float = CONNECT_TIMEOUT) -> Iterator[Target]:
+    """Yield `target` pinned to each vetted address that accepts a TCP connection, in preference order.
+
+    Some hosts publish several A records where one silently drops traffic (a dead
+    origin or a strict firewall edge): connecting only to the first address makes
+    the whole scan time out. Addresses that don't connect within `timeout` are
+    recorded in `failures` and skipped. Only addresses already vetted as public by
+    netguard are tried, so the SSRF guarantees are unchanged.
+    """
+    candidates = target.addresses or ((target.family, target.ip),)
+    for family, ip in candidates[:MAX_ADDRESSES]:
+        try:
+            with socket.create_connection((ip, port), timeout=timeout):
+                pass
+        except OSError as e:
+            failures.append(AddressFailure(ip, _describe(e), isinstance(e, TimeoutError | socket.timeout)))
+            continue
+        yield replace(target, ip=ip, family=family)
+
 
 # ── ClientHello ─────────────────────────────────────────────────────────────
 

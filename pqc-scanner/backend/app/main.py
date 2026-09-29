@@ -97,22 +97,44 @@ def cache_put(host: str, value: dict) -> None:
         _cache.popitem(last=False)
 
 
+def _short(e: BaseException) -> str:
+    return "timed out" if isinstance(e, TimeoutError) else (str(e) or type(e).__name__)[:120]
+
+
 # ── Scan ─────────────────────────────────────────────────────────────────────
+
+
+def _probe(target: netguard.Target) -> tuple[tlsprobe.KeyExchangeResult, tlsprobe.CertificateResult]:
+    try:
+        kx = tlsprobe.probe_key_exchange(target)
+    except (ConnectionError, OSError):
+        kx = tlsprobe.probe_key_exchange(target)  # one retry: some edges drop the first unusual hello
+    return kx, tlsprobe.probe_certificate(target)
 
 
 def run_scan(raw_domain: str) -> dict:
     started = time.perf_counter()
     target = netguard.validate(raw_domain)
-    try:
+
+    # Fall back through the host's vetted addresses: skip ones that don't accept TCP,
+    # and ones that accept TCP but fail the TLS handshake (e.g. a strict WAF edge).
+    failures: list[tlsprobe.AddressFailure] = []
+    for candidate in tlsprobe.reachable_targets(target, failures):
         try:
-            kx = tlsprobe.probe_key_exchange(target)
-        except (ConnectionError, OSError):
-            kx = tlsprobe.probe_key_exchange(target)  # one retry: some edges drop the first unusual hello
-        cert = tlsprobe.probe_certificate(target)
-    except TimeoutError as e:
-        raise HTTPException(504, f"{target.hostname}:443 did not respond in time.") from e
-    except (ConnectionError, OSError) as e:
-        raise HTTPException(502, f"Could not complete a TLS handshake with {target.hostname}:443 ({e}).") from e
+            kx, cert = _probe(candidate)
+        except (ConnectionError, OSError) as e:
+            failures.append(tlsprobe.AddressFailure(candidate.ip, f"TLS handshake failed: {_short(e)}", isinstance(e, TimeoutError)))
+            continue
+        target = candidate
+        break
+    else:
+        tried = ", ".join(str(f) for f in failures) or target.ip
+        if failures and all(f.timed_out for f in failures):
+            raise HTTPException(504, f"{target.hostname}:443 did not respond on any address ({tried}).")
+        raise HTTPException(502, f"Could not complete a TLS handshake with {target.hostname}:443 ({tried}).")
+
+    if failures:
+        kx.notes.append(f"Skipped unreachable address(es): {', '.join(str(f) for f in failures)}. Scanned {target.ip}.")
     if kx.alert and not kx.tls_version:
         kx.notes.append(f"Server rejected the PQ-capable ClientHello with alert '{kx.alert}'; details below come from a standard handshake.")
         kx.tls_version = cert.tls_version
@@ -122,6 +144,8 @@ def run_scan(raw_domain: str) -> dict:
     return {
         "domain": target.hostname,
         "resolved_ip": target.ip,
+        "addresses": [ip for _, ip in target.addresses] or [target.ip],
+        "skipped_addresses": [{"ip": f.ip, "reason": f.reason} for f in failures],
         "scanned_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "duration_ms": round((time.perf_counter() - started) * 1000),
         "tls": {

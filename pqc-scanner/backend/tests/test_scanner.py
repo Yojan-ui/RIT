@@ -49,6 +49,8 @@ def test_resolution_to_public_pins_ipv4(monkeypatch):
     _fake_resolve(monkeypatch, "2606:4700::6810:84e5", "104.16.132.229")
     t = netguard.resolve_public("cloudflare.com")
     assert t.ip == "104.16.132.229" and t.family == socket.AF_INET
+    # every vetted address is kept for fallback: IPv4 first, then IPv6
+    assert [ip for _, ip in t.addresses] == ["104.16.132.229", "2606:4700::6810:84e5"]
 
 
 # ── ServerHello parsing ──────────────────────────────────────────────────────
@@ -168,8 +170,17 @@ def test_api_rejects_ssrf_targets(client):
         assert r.status_code == 400, bad
 
 
+class _FakeConn:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
 def test_api_scan_with_stubbed_network(client, monkeypatch):
     monkeypatch.setattr(netguard, "resolve_public", lambda h: netguard.Target(h, "93.184.215.14", socket.AF_INET))
+    monkeypatch.setattr(tlsprobe.socket, "create_connection", lambda addr, timeout=None: _FakeConn())
     monkeypatch.setattr(tlsprobe, "probe_key_exchange", lambda t: KeyExchangeResult(tls_version="TLS 1.3", group="X25519MLKEM768", group_code=0x11EC, pq_hybrid=True, cipher_suite="TLS_AES_128_GCM_SHA256"))
     monkeypatch.setattr(tlsprobe, "probe_certificate", lambda t: _cert())
     r = client.get("/api/scan", params={"domain": "https://Example.org/x"}).json()
@@ -205,3 +216,69 @@ def test_serves_frontend_and_keeps_api(client):
     assert client.get("/docs").status_code == 200
     asset = next((main.FRONTEND_DIST / "assets").glob("*.js")).name
     assert client.get(f"/assets/{asset}").status_code == 200
+
+
+# ── Address fallback (e.g. nta.ac.in: one of two A records drops port 443) ────────
+
+
+def _two_address_target():
+    return netguard.Target("nta.ac.in", "45.127.74.142", socket.AF_INET, addresses=((socket.AF_INET, "45.127.74.142"), (socket.AF_INET, "20.219.187.119")))
+
+
+def test_reachable_targets_skips_silent_address(monkeypatch):
+    def connect(addr, timeout=None):
+        if addr[0] == "45.127.74.142":
+            raise TimeoutError("timed out")
+        return _FakeConn()
+
+    monkeypatch.setattr(tlsprobe.socket, "create_connection", connect)
+    failures: list = []
+    first = next(tlsprobe.reachable_targets(_two_address_target(), failures))
+    assert first.ip == "20.219.187.119" and first.hostname == "nta.ac.in"
+    assert [(f.ip, f.reason, f.timed_out) for f in failures] == [("45.127.74.142", "no response", True)]
+
+
+def test_scan_falls_back_to_next_address(client, monkeypatch):
+    monkeypatch.setattr(netguard, "resolve_public", lambda h: _two_address_target())
+    monkeypatch.setattr(tlsprobe.socket, "create_connection", lambda addr, timeout=None: _FakeConn())
+
+    def kx(t):
+        if t.ip == "45.127.74.142":
+            raise ConnectionResetError("reset by WAF")  # accepts TCP, drops the hello
+        return KeyExchangeResult(tls_version="TLS 1.2", group="secp384r1", group_code=0x18, cipher_suite="ECDHE-RSA-AES256-GCM-SHA384")
+
+    monkeypatch.setattr(tlsprobe, "probe_key_exchange", kx)
+    monkeypatch.setattr(tlsprobe, "probe_certificate", lambda t: _cert("RSA", "RSA-2048", 2048, "sha256WithRSAEncryption", "RSA"))
+    r = client.get("/api/scan", params={"domain": "nta.ac.in"}).json()
+    assert r["resolved_ip"] == "20.219.187.119"
+    assert r["skipped_addresses"][0]["ip"] == "45.127.74.142" and "TLS handshake failed" in r["skipped_addresses"][0]["reason"]
+    assert any("Skipped unreachable address" in n for n in r["tls"]["key_exchange"]["notes"])
+
+
+def test_all_addresses_silent_is_504(client, monkeypatch):
+    monkeypatch.setattr(netguard, "resolve_public", lambda h: _two_address_target())
+
+    def silent(addr, timeout=None):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(tlsprobe.socket, "create_connection", silent)
+    r = client.get("/api/scan", params={"domain": "nta.ac.in"})
+    assert r.status_code == 504 and "45.127.74.142" in r.json()["detail"] and "20.219.187.119" in r.json()["detail"]
+
+
+@pytest.mark.skipif(os.environ.get("LIVE") != "1", reason="set LIVE=1 to hit the network")
+def test_live_nta_certificate_even_when_dead_address_is_first(client, monkeypatch):
+    """nta.ac.in publishes 45.127.74.142 (drops :443) and 20.219.187.119. Force the dead one first."""
+    real = netguard.resolve_public
+
+    def dead_first(h):
+        t = real(h)
+        ordered = tuple(sorted(t.addresses, key=lambda a: a[1] != "45.127.74.142"))
+        return netguard.Target(t.hostname, ordered[0][1], ordered[0][0], addresses=ordered)
+
+    monkeypatch.setattr(netguard, "resolve_public", dead_first)
+    r = client.get("/api/scan", params={"domain": "nta.ac.in"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["certificate"]["subject_cn"] and body["certificate"]["public_key"]["name"]
+    assert body["resolved_ip"] != "45.127.74.142"

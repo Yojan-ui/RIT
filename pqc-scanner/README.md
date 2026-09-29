@@ -28,6 +28,9 @@ is already taken.
 1. **Validate & vet** (`app/netguard.py`): accept a hostname only, IDN → punycode, port 443 only. Resolve it and
    refuse if *any* address is loopback, RFC 1918, link-local (incl. `169.254.169.254`), CGNAT, multicast or reserved.
    The connection goes to that vetted IP, so a second DNS answer can't redirect it inward (DNS rebinding).
+   If a host publishes several addresses and one drops traffic (e.g. `nta.ac.in`, where one of two A records
+   never answers on 443), the scanner falls back through the vetted addresses with a 3 s connect timeout, also
+   skipping any that accept TCP but fail the TLS handshake, and reports the skipped ones in `skipped_addresses`.
 2. **Key-exchange probe** (`app/tlsprobe.py`): a hand-built TLS 1.3 ClientHello offers **X25519MLKEM768**
    (FIPS 203 ML-KEM-768 + X25519, codepoint `0x11EC`) plus classical groups, and the plaintext ServerHello reveals
    which group the server picked. Python's `ssl` can't do this itself (its OpenSSL has no ML-KEM, and it doesn't
