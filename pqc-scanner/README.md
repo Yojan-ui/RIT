@@ -8,6 +8,21 @@ backend/    FastAPI API: live TLS probe, SSRF guard, scoring, CycloneDX 1.6 CBOM
 frontend/   React + React Three Fiber single page: search, 3D cipher globe, results HUD
 ```
 
+## Run the demo (one command)
+
+Needs Python 3.10+ and Node.js 20+ (Node only for the first build).
+
+```bash
+./run_demo.sh            # macOS / Linux
+run_demo.bat             # Windows
+```
+
+The script creates `backend/.venv`, installs requirements, builds the frontend into `frontend/dist` when it's
+missing or out of date, and starts one FastAPI/Uvicorn process that serves the React app at `/` and the API at
+`/api`. When it prints **SYSTEM LIVE: Open http://localhost:8000 in your browser**, it's ready. Options:
+`PORT=8080` (another port), `REBUILD=1` (force a fresh frontend build). It stops with a clear message if the port
+is already taken.
+
 ## How the scan works
 
 1. **Validate & vet** (`app/netguard.py`): accept a hostname only, IDN → punycode, port 443 only. Resolve it and
@@ -80,7 +95,7 @@ assessment (score, status, headline, urgency, breakdown, recommendations) and th
 | `CACHE_TTL` | `300` | seconds to cache a domain's result |
 | `MAX_CONCURRENT_SCANS` | `8` | parallel handshakes |
 
-## Run locally
+## Run for development
 
 ```bash
 cd backend

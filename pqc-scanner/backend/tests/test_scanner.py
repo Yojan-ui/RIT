@@ -195,3 +195,13 @@ def test_live(client, domain):
     r = client.get("/api/scan", params={"domain": domain})
     assert r.status_code == 200
     assert r.json()["tls"]["version"] in ("TLS 1.2", "TLS 1.3")
+
+
+@pytest.mark.skipif(not (main.FRONTEND_DIST / "index.html").is_file(), reason="frontend not built")
+def test_serves_frontend_and_keeps_api(client):
+    root = client.get("/")
+    assert root.status_code == 200 and "text/html" in root.headers["content-type"] and '<div id="root">' in root.text
+    assert client.get("/api/health").json() == {"status": "ok"}
+    assert client.get("/docs").status_code == 200
+    asset = next((main.FRONTEND_DIST / "assets").glob("*.js")).name
+    assert client.get(f"/assets/{asset}").status_code == 200

@@ -8,6 +8,10 @@ Environment:
     RATE_LIMIT        scans per minute per client IP (default 12)
     TRUST_PROXY       "1" to take the client IP from the last X-Forwarded-For hop (set behind Render/Railway/Fly proxies)
     CACHE_TTL         seconds to cache a domain's result (default 300)
+    FRONTEND_DIST     built frontend to serve at / (default: ../frontend/dist next to this backend)
+
+When the frontend has been built (`npm run build` in frontend/), this app also serves it at `/`,
+so one Uvicorn process runs the whole demo. API routes under /api keep priority.
 """
 
 from __future__ import annotations
@@ -16,9 +20,11 @@ import asyncio
 import os
 import time
 from collections import OrderedDict, defaultdict, deque
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import analysis, netguard, tlsprobe
 
@@ -27,6 +33,7 @@ RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "12"))
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 CACHE_TTL = int(os.environ.get("CACHE_TTL", "300"))
 SCAN_TIMEOUT = 20.0
+FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST", Path(__file__).resolve().parents[2] / "frontend" / "dist"))
 
 app = FastAPI(
     title="PQC Domain Scanner",
@@ -163,6 +170,16 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/", include_in_schema=False)
-async def root():
-    return {"service": "pqc-scanner", "scan": "/api/scan?domain=cloudflare.com", "docs": "/docs"}
+# Serve the built React app at / (registered last, so /api and /docs keep priority).
+if (FRONTEND_DIST / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+else:
+
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return {
+            "service": "pqc-scanner",
+            "scan": "/api/scan?domain=cloudflare.com",
+            "docs": "/docs",
+            "frontend": f"not built: run `npm run build` in frontend/ (looked in {FRONTEND_DIST})",
+        }
