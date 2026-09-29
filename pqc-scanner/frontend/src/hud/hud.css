@@ -1,223 +1,190 @@
-/* Stark-HUD variant: digital blueprint palette, bracketed frames, CRT layer. */
+/* Stark-HUD variant: tungsten / slate / ice. Thin lines, tiny type, colour only where data demands it. */
 
 .hud-root {
-  --hud-cyan: #22e6ff;
-  --hud-blue: #2f7bff;
-  --hud-deep: #02060f;
-  --hud-amber: #ffb020;
-  --hud-green: #34f5c5;
-  --hud-line: rgb(34 230 255 / 0.28);
-  --hud-dim: rgb(160 220 255 / 0.55);
-  --hud-font: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --carbon: #080a0f;
+  --titanium: #4b5563;
+  --steel: #577c95;
+  --ice: #67e8f9;
+  --white: #ffffff;
+  --warn: #f97316;
+  --crit: #ef4444;
+  --ok: #10b981;
+  --ok-cyan: #06b6d4;
+  --line: rgb(255 255 255 / 0.05);
+  --line-2: rgb(255 255 255 / 0.09);
+  --text: #c9d4de;
+  --dim: #6b7785;
+  --mono: "JetBrains Mono Variable", "Share Tech Mono", ui-monospace, Consolas, "Courier New", monospace;
   position: relative;
   height: 100dvh;
   overflow: hidden;
-  background:
-    radial-gradient(ellipse at 70% 45%, rgb(20 60 120 / 0.35), transparent 60%),
-    var(--hud-deep);
-  color: #d6f6ff;
-  font-family: var(--hud-font);
+  background: var(--carbon);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
 
-/* Blueprint grid that breathes */
-.hud-grid {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgb(34 230 255 / 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(34 230 255 / 0.07) 1px, transparent 1px),
-    linear-gradient(rgb(34 230 255 / 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(34 230 255 / 0.03) 1px, transparent 1px);
-  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
-  mask-image: radial-gradient(ellipse at 60% 50%, black 30%, transparent 85%);
-  animation: hud-grid-pulse 6s ease-in-out infinite;
-}
-@keyframes hud-grid-pulse {
-  50% { opacity: 0.55; }
-}
-
-/* CRT: scanlines, vignette, faint flicker and a slow roll bar */
-.hud-crt {
+/* Static, very faint scanlines: texture without flicker */
+.hud-scan {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 60;
-  background:
-    repeating-linear-gradient(0deg, rgb(0 0 0 / 0.22) 0 1px, transparent 1px 3px),
-    radial-gradient(ellipse at center, transparent 55%, rgb(0 0 0 / 0.55) 100%);
-  mix-blend-mode: multiply;
-  animation: hud-flicker 7s steps(1) infinite;
+  background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.16) 0 1px, transparent 1px 3px);
+  opacity: 0.5;
 }
-.hud-crt::after {
-  content: "";
-  position: absolute;
-  inset: -10% 0 auto 0;
-  height: 18%;
-  background: linear-gradient(180deg, transparent, rgb(34 230 255 / 0.05), transparent);
-  animation: hud-roll 9s linear infinite;
-}
-@keyframes hud-flicker {
-  0%, 100% { opacity: 1; }
-  41% { opacity: 0.86; }
-  42% { opacity: 1; }
-  77% { opacity: 0.92; }
-  78% { opacity: 1; }
-}
-@keyframes hud-roll {
-  to { transform: translateY(700%); }
-}
-
-/* Bracketed frame: thin border with bright corner notches */
-.hud-frame {
-  position: relative;
-  border: 1px solid var(--hud-line);
-  background: linear-gradient(180deg, rgb(4 18 40 / 0.72), rgb(2 8 20 / 0.62));
-  backdrop-filter: blur(6px);
-  box-shadow: inset 0 0 40px -20px rgb(34 230 255 / 0.5), 0 0 30px -18px rgb(34 230 255 / 0.6);
-}
-.hud-frame::before,
-.hud-frame::after {
-  content: "";
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-color: var(--hud-cyan);
-  border-style: solid;
+.hud-vignette {
+  position: fixed;
+  inset: 0;
   pointer-events: none;
-}
-.hud-frame::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
-.hud-frame::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
-.hud-frame.alert { --hud-line: rgb(255 176 32 / 0.45); }
-.hud-frame.alert::before,
-.hud-frame.alert::after { border-color: var(--hud-amber); }
-.hud-frame.secure::before,
-.hud-frame.secure::after { border-color: var(--hud-green); }
-
-.hud-label {
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--hud-dim);
-}
-.hud-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--hud-cyan);
-  text-shadow: 0 0 12px rgb(34 230 255 / 0.7);
-}
-.hud-glow { text-shadow: 0 0 10px currentColor; }
-.hud-cyan { color: var(--hud-cyan); }
-.hud-amber { color: var(--hud-amber); }
-.hud-green { color: var(--hud-green); }
-.hud-dim { color: var(--hud-dim); }
-
-.hud-blink { animation: hud-blink 1.05s steps(1) infinite; }
-@keyframes hud-blink {
-  50% { opacity: 0.15; }
+  z-index: 3;
+  background: radial-gradient(ellipse at 62% 50%, transparent 45%, rgb(8 10 15 / 0.85) 100%);
 }
 
-/* Subtle chromatic glitch for alert text */
-.hud-glitch { position: relative; animation: hud-glitch 3.2s infinite; }
-@keyframes hud-glitch {
-  0%, 92%, 100% { text-shadow: 0 0 10px currentColor; transform: none; }
-  93% { text-shadow: -2px 0 rgb(255 0 80 / 0.8), 2px 0 rgb(0 240 255 / 0.8); transform: translateX(1px); }
-  95% { text-shadow: 2px 0 rgb(255 0 80 / 0.8), -2px 0 rgb(0 240 255 / 0.8); transform: translateX(-1px); }
-}
-
-/* Buttons */
-.hud-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 44px;
-  padding: 0 18px;
-  border: 1px solid var(--hud-cyan);
-  background: rgb(34 230 255 / 0.1);
-  color: var(--hud-cyan);
-  font: 700 12px var(--hud-font);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
-  transition: background 0.15s, box-shadow 0.15s, color 0.15s;
-  cursor: pointer;
-}
-.hud-btn:hover:not(:disabled) { background: rgb(34 230 255 / 0.22); box-shadow: 0 0 24px rgb(34 230 255 / 0.45); color: #fff; }
-.hud-btn:disabled { opacity: 0.45; cursor: progress; }
-.hud-btn:focus-visible { outline: 1px solid #fff; outline-offset: 3px; }
-.hud-btn.amber { border-color: var(--hud-amber); color: var(--hud-amber); background: rgb(255 176 32 / 0.1); }
-.hud-btn.amber:hover:not(:disabled) { background: rgb(255 176 32 / 0.22); box-shadow: 0 0 24px rgb(255 176 32 / 0.45); }
-.hud-btn.ghost { border-color: var(--hud-line); color: var(--hud-dim); background: transparent; height: 34px; font-size: 11px; }
-
-.hud-input {
-  height: 44px;
-  min-width: 0;
-  flex: 1;
-  border: 1px solid var(--hud-line);
-  background: rgb(2 10 24 / 0.8);
-  color: #fff;
-  padding: 0 14px;
-  font: 14px var(--hud-font);
-  outline: none;
-}
-.hud-input:focus { border-color: var(--hud-cyan); box-shadow: 0 0 18px -6px var(--hud-cyan); }
-.hud-input::placeholder { color: rgb(160 220 255 / 0.35); }
-
-.hud-select {
-  height: 30px;
-  width: 100%;
-  border: 1px solid var(--hud-line);
-  background: rgb(2 10 24 / 0.9);
-  color: #d6f6ff;
-  font: 12px var(--hud-font);
-  padding: 0 8px;
-}
-.hud-root input[type="range"] { accent-color: var(--hud-cyan); width: 100%; }
-
-/* Bracketed algorithm target: [ RSA-2048 ] */
-.hud-target {
+/* Panels: paper-thin border, 90° corner brackets drawn with gradients */
+.hud-panel {
+  --c: rgb(255 255 255 / 0.28);
   position: relative;
+  border: 1px solid var(--line);
+  background: rgb(10 13 19 / 0.62);
+  backdrop-filter: blur(2px);
+}
+.hud-panel::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--c), var(--c)) top left / 8px 1px no-repeat,
+    linear-gradient(var(--c), var(--c)) top left / 1px 8px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 8px 1px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 1px 8px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 8px 1px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 1px 8px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 8px 1px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 1px 8px no-repeat;
+}
+.hud-panel.warn { --c: rgb(249 115 22 / 0.7); }
+.hud-panel.ok { --c: rgb(16 185 129 / 0.7); }
+.hud-panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  border: 1px solid var(--hud-line);
-  background: rgb(2 12 28 / 0.7);
+  height: 24px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
 }
-.hud-target.vuln { border-color: rgb(255 176 32 / 0.55); background: rgb(40 22 0 / 0.45); }
-.hud-target.safe { border-color: rgb(52 245 197 / 0.5); background: rgb(0 36 30 / 0.4); }
+.hud-panel-body { padding: 10px; }
 
-/* Tracking lines */
-.hud-track-line {
-  stroke-dasharray: 1400;
-  stroke-dashoffset: 1400;
-  animation: hud-draw 0.9s cubic-bezier(0.2, 0, 0, 1) forwards;
+.hud-k { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+.hud-h { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--white); font-weight: 600; }
+.hud-ice { color: var(--ice); }
+.hud-white { color: var(--white); }
+.hud-steel { color: var(--steel); }
+.hud-dim { color: var(--dim); }
+.hud-warn { color: var(--warn); }
+.hud-crit { color: var(--crit); }
+.hud-ok { color: var(--ok); }
+.hud-okc { color: var(--ok-cyan); }
+/* the only glow: 1-2 px, on critical data values */
+.hud-sharp { text-shadow: 0 0 2px currentColor; }
+
+/* Key/value rows on a strict grid */
+.hud-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: baseline; height: 18px; border-bottom: 1px solid rgb(255 255 255 / 0.03); }
+.hud-row:last-child { border-bottom: 0; }
+
+/* Controls */
+.hud-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgb(103 232 249 / 0.45);
+  background: rgb(103 232 249 / 0.06);
+  color: var(--ice);
+  font: 500 10.5px var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
+.hud-btn:hover:not(:disabled) { background: rgb(103 232 249 / 0.14); border-color: var(--ice); color: var(--white); }
+.hud-btn:disabled { opacity: 0.4; cursor: default; }
+.hud-btn:focus-visible { outline: 1px solid var(--white); outline-offset: 2px; }
+.hud-btn.warn { border-color: rgb(249 115 22 / 0.55); background: rgb(249 115 22 / 0.07); color: var(--warn); }
+.hud-btn.warn:hover:not(:disabled) { background: rgb(249 115 22 / 0.15); border-color: var(--warn); color: #fff; }
+.hud-btn.quiet { border-color: var(--line-2); background: transparent; color: var(--dim); height: 22px; padding: 0 8px; font-size: 10px; }
+.hud-btn.quiet:hover:not(:disabled) { color: var(--white); border-color: rgb(255 255 255 / 0.25); background: transparent; }
+
+.hud-input {
+  height: 28px;
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--line-2);
+  background: rgb(0 0 0 / 0.4);
+  color: var(--white);
+  padding: 0 8px;
+  font: 12px var(--mono);
+  outline: none;
+}
+.hud-input:focus { border-color: rgb(103 232 249 / 0.6); }
+.hud-input::placeholder { color: #3d4652; }
+.hud-select {
+  height: 22px;
+  width: 100%;
+  border: 1px solid var(--line-2);
+  background: #0b0e14;
+  color: var(--text);
+  font: 11px var(--mono);
+  padding: 0 4px;
+}
+.hud-root input[type="range"] { accent-color: var(--ice); width: 100%; height: 12px; }
+
+/* Algorithm node row */
+.hud-node {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: rgb(0 0 0 / 0.25);
+}
+.hud-node + .hud-node { margin-top: 4px; }
+.hud-node .dot { width: 5px; height: 5px; background: var(--steel); }
+.hud-node.warn .dot { background: var(--warn); box-shadow: 0 0 2px var(--warn); }
+.hud-node.ok .dot { background: var(--ok); }
+
+/* Tracking lines draw in once */
+.hud-track { stroke-dasharray: 1600; stroke-dashoffset: 1600; animation: hud-draw 0.7s cubic-bezier(0.2, 0, 0, 1) forwards; }
 @keyframes hud-draw { to { stroke-dashoffset: 0; } }
-.hud-track-bracket { animation: hud-lock 1s ease-out 0.7s both; }
-@keyframes hud-lock {
-  0% { opacity: 0; transform: scale(1.35); }
-  60% { opacity: 1; }
-  100% { opacity: 1; transform: scale(1); }
-}
+.hud-fade { animation: hud-fade 0.4s ease-out 0.5s both; }
+@keyframes hud-fade { from { opacity: 0; } to { opacity: 1; } }
 
-/* Rotating HUD rings */
-.hud-spin { animation: hud-spin var(--dur, 40s) linear infinite; transform-origin: center; }
+.hud-spin { animation: hud-spin var(--dur, 60s) linear infinite; transform-origin: center; transform-box: fill-box; }
 .hud-spin.rev { animation-direction: reverse; }
 @keyframes hud-spin { to { transform: rotate(360deg); } }
 
-/* Terminal inherits HUD colours */
-.hud-term > div { border-color: var(--hud-line) !important; background: rgb(0 6 16 / 0.85) !important; border-radius: 0 !important; }
-.hud-term pre { color: #9ff3ff !important; }
+/* Live indicator: a single slow pulse, the only repeating motion in the chrome */
+.hud-live { width: 5px; height: 5px; background: var(--ice); animation: hud-live 2.4s ease-in-out infinite; }
+@keyframes hud-live { 50% { opacity: 0.25; } }
 
-.hud-scroll::-webkit-scrollbar { width: 4px; }
-.hud-scroll::-webkit-scrollbar-thumb { background: var(--hud-line); }
+/* Story captions: placed by rAF at 3D anchors, fade in once positioned */
+.hud-at { opacity: 0; transition: opacity 0.4s ease-out; will-change: transform; }
+
+/* Terminal inherits the palette */
+.hud-term > div { border-color: var(--line-2) !important; background: rgb(0 0 0 / 0.45) !important; border-radius: 0 !important; }
+.hud-term pre { color: var(--text) !important; font-size: 10.5px !important; line-height: 16px !important; }
+
+.hud-scroll::-webkit-scrollbar { width: 3px; }
+.hud-scroll::-webkit-scrollbar-thumb { background: var(--line-2); }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud-grid, .hud-crt, .hud-crt::after, .hud-blink, .hud-glitch, .hud-spin, .hud-track-line, .hud-track-bracket { animation: none !important; }
-  .hud-track-line { stroke-dashoffset: 0; }
+  .hud-spin, .hud-live, .hud-track, .hud-fade { animation: none !important; }
+  .hud-track { stroke-dashoffset: 0; }
 }

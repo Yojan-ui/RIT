@@ -1,174 +1,178 @@
-import { useEffect, useRef, useState } from 'react'
-import { useReducedMotion } from 'framer-motion'
-import { hudAnchor, type HudMode } from './anchor'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { motion } from 'framer-motion'
+import { hudAnchor, type HoloNode } from './anchor'
 
-const MODE_COLOR: Record<HudMode, string> = {
-  idle: 'var(--hud-cyan)',
-  scanning: 'var(--hud-cyan)',
-  alert: 'var(--hud-amber)',
-  critical: 'var(--hud-amber)',
-  upgrading: 'var(--hud-cyan)',
-  secure: 'var(--hud-green)',
-}
+const NODE_HEX = { warn: '#f97316', crit: '#ef4444', ok: '#10b981' } as const
 
-/** Keep an element centred on the globe's projected screen position. */
-function useAnchorFollow<T extends HTMLElement>() {
-  const ref = useRef<T>(null)
+/** rAF loop that only runs while mounted. */
+function useFrameLoop(fn: () => void) {
+  const ref = useRef(fn)
+  useLayoutEffect(() => {
+    ref.current = fn
+  })
   useEffect(() => {
     let raf = 0
     const loop = () => {
-      const el = ref.current
-      if (el && hudAnchor.ready) {
-        const d = hudAnchor.r * 1.5 // ring overlay extends to ~1.4× the globe radius
-        el.style.transform = `translate(${hudAnchor.x - d}px, ${hudAnchor.y - d}px)`
-        el.style.width = `${d * 2}px`
-        el.style.height = `${d * 2}px`
-        el.style.opacity = '1'
-      }
+      ref.current()
       raf = requestAnimationFrame(loop)
     }
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
   }, [])
-  return ref
 }
 
-// ── Concentric HUD rings, ticks, degree ticker, target label ──────────────────
+// ── Hairline ring chrome registered to the hologram ──────────────────────────
 
-export function HudRings({ mode, target, subline }: { mode: HudMode; target: string | null; subline: string | null }) {
-  const ref = useAnchorFollow<HTMLDivElement>()
-  const [deg, setDeg] = useState(0)
-  const reduced = useReducedMotion()
-  useEffect(() => {
-    if (reduced) return
-    const id = setInterval(() => setDeg((d) => (d + (mode === 'scanning' || mode === 'upgrading' ? 7.3 : 1.7)) % 360), 60)
-    return () => clearInterval(id)
-  }, [mode, reduced])
-  const color = MODE_COLOR[mode]
-  const ticks = Array.from({ length: 72 }, (_, i) => i)
+export function HudRings({ target, index, total, dim = false }: { target: string | null; index: number; total: number; dim?: boolean }) {
+  const box = useRef<HTMLDivElement>(null)
+  const brg = useRef<HTMLSpanElement>(null)
+  const marker = useRef<SVGGElement>(null)
+  useFrameLoop(() => {
+    const el = box.current
+    if (!el || !hudAnchor.ready) return
+    const d = hudAnchor.r * 1.75
+    el.style.transform = `translate(${hudAnchor.x - d}px, ${hudAnchor.y - d}px)`
+    el.style.width = el.style.height = `${d * 2}px`
+    el.style.opacity = dim ? '0.3' : '1'
+    const deg = hudAnchor.rotationDeg
+    if (brg.current) brg.current.textContent = deg.toFixed(1).padStart(5, '0')
+    marker.current?.setAttribute('transform', `rotate(${deg})`)
+  })
+  const ticks = Array.from({ length: 180 }, (_, i) => i * 2)
   return (
-    <div ref={ref} className="pointer-events-none fixed top-0 left-0 z-[5]" style={{ opacity: 0, color }} aria-hidden>
+    <div ref={box} className="pointer-events-none fixed top-0 left-0 z-[5] transition-opacity duration-700" style={{ opacity: 0 }} aria-hidden>
       <svg viewBox="-100 -100 200 200" className="absolute inset-0 h-full w-full overflow-visible">
-        {/* outer tick ring */}
-        <g className="hud-spin" style={{ ['--dur' as string]: '90s' }}>
-          {ticks.map((i) => {
-            const a = (i / 72) * Math.PI * 2
-            const long = i % 6 === 0
-            const r1 = long ? 88 : 91
-            return <line key={i} x1={Math.cos(a) * r1} y1={Math.sin(a) * r1} x2={Math.cos(a) * 95} y2={Math.sin(a) * 95} stroke="currentColor" strokeWidth={long ? 0.6 : 0.3} opacity={long ? 0.8 : 0.45} />
+        <g stroke="#577c95" strokeWidth="0.18">
+          {ticks.map((d) => {
+            const a = ((d - 90) * Math.PI) / 180
+            const r0 = d % 30 === 0 ? 90.5 : d % 10 === 0 ? 92 : 93
+            return <line key={d} x1={Math.cos(a) * r0} y1={Math.sin(a) * r0} x2={Math.cos(a) * 94.5} y2={Math.sin(a) * 94.5} opacity={d % 30 === 0 ? 0.9 : 0.45} />
           })}
         </g>
-        {/* dashed data rings */}
-        <circle r="82" fill="none" stroke="currentColor" strokeWidth="0.35" strokeDasharray="2 3" opacity="0.5" className="hud-spin rev" style={{ ['--dur' as string]: '60s' }} />
-        <g className="hud-spin" style={{ ['--dur' as string]: '24s' }}>
-          <circle r="76" fill="none" stroke="currentColor" strokeWidth="1.1" strokeDasharray="36 12 6 12 70 40" opacity="0.7" />
+        {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((d) => {
+          const a = ((d - 90) * Math.PI) / 180
+          return (
+            <text key={d} x={Math.cos(a) * 98} y={Math.sin(a) * 98 + 1} textAnchor="middle" fontSize="2.4" fill="#6b7785" fontFamily="JetBrains Mono Variable, monospace">
+              {String(d).padStart(3, '0')}
+            </text>
+          )
+        })}
+        <circle r="86" fill="none" stroke="#4b5563" strokeWidth="0.15" strokeDasharray="0.6 1.4" />
+        <g ref={marker}>
+          <path d="M 0 -89.5 L 1.1 -87.6 L -1.1 -87.6 Z" fill="#67e8f9" />
         </g>
-        <g className="hud-spin rev" style={{ ['--dur' as string]: '14s' }}>
-          <circle r="70" fill="none" stroke="currentColor" strokeWidth="0.4" strokeDasharray="1 4" opacity="0.6" />
-        </g>
-        {/* targeting brackets */}
+        {/* 90° corner brackets */}
         {[0, 90, 180, 270].map((r) => (
-          <g key={r} transform={`rotate(${r})`}>
-            <path d="M -60 -66 L -66 -66 L -66 -60" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.9" />
-          </g>
+          <path key={r} transform={`rotate(${r})`} d="M -70 -64 V -70 H -64" fill="none" stroke="#ffffff" strokeWidth="0.25" opacity="0.55" />
         ))}
-        {/* crosshair */}
-        <line x1="-100" y1="0" x2="-74" y2="0" stroke="currentColor" strokeWidth="0.35" opacity="0.6" />
-        <line x1="74" y1="0" x2="100" y2="0" stroke="currentColor" strokeWidth="0.35" opacity="0.6" />
-        <line x1="0" y1="-100" x2="0" y2="-74" stroke="currentColor" strokeWidth="0.35" opacity="0.6" />
-        <line x1="0" y1="74" x2="0" y2="100" stroke="currentColor" strokeWidth="0.35" opacity="0.6" />
-        {/* rotating bearing marker */}
-        <g transform={`rotate(${deg})`}>
-          <path d="M 0 -97 L 2.4 -101 L -2.4 -101 Z" fill="currentColor" />
-        </g>
+        <line x1="-100" y1="0" x2="-95" y2="0" stroke="#ffffff" strokeWidth="0.2" opacity="0.5" />
+        <line x1="95" y1="0" x2="100" y2="0" stroke="#ffffff" strokeWidth="0.2" opacity="0.5" />
       </svg>
-      <div className="absolute top-[3%] left-1/2 -translate-x-1/2 text-[11px] tracking-[0.3em] hud-glow">
-        BRG {deg.toFixed(1).padStart(5, '0')}°
+      <div className={`hud-k absolute top-[8.5%] left-1/2 -translate-x-1/2 whitespace-nowrap ${dim ? 'hidden' : 'hidden lg:block'}`}>
+        ROT <span ref={brg} className="hud-ice">000.0</span>°
       </div>
       {target && (
-        <div className="absolute bottom-[2%] left-1/2 -translate-x-1/2 text-center whitespace-nowrap">
-          <div className={`text-[12px] font-bold tracking-[0.3em] hud-glow ${mode === 'critical' || mode === 'alert' ? 'hud-glitch' : ''}`}>[ TARGET ACQUIRED ]</div>
-          <div className="mt-1 text-[11px] tracking-[0.18em] opacity-80">{target}</div>
-          {subline && <div className="mt-0.5 text-[10px] tracking-[0.18em] opacity-60">{subline}</div>}
+        <div className="hidden lg:block absolute bottom-[-7%] left-1/2 -translate-x-1/2 text-center whitespace-nowrap">
+          <div className="hud-k">
+            target {String(index).padStart(2, '0')}/{String(total).padStart(2, '0')}
+          </div>
+          <div className="hud-white text-[11px]">{target}</div>
         </div>
       )}
     </div>
   )
 }
 
-// ── Tracking lines that lock onto [data-lock] elements ────────────────────────
+// ── Node crosshairs + coordinates, following the hologram nodes ──────────────
 
-interface Lock {
-  key: string
-  label: string
+export function NodeMarkers({ nodes }: { nodes: HoloNode[] }) {
+  const refs = useRef<Record<string, HTMLDivElement | null>>({})
+  const coords = useRef<Record<string, HTMLSpanElement | null>>({})
+  useFrameLoop(() => {
+    for (const n of hudAnchor.nodes) {
+      const el = refs.current[n.id]
+      if (!el) continue
+      el.style.transform = `translate(${n.x}px, ${n.y}px)`
+      el.style.opacity = n.visible ? '1' : '0.15'
+      const c = coords.current[n.id]
+      if (c) c.textContent = `AZ ${n.az.toFixed(1).padStart(5, '0')}  EL ${n.el >= 0 ? '+' : '-'}${Math.abs(n.el).toFixed(1).padStart(4, '0')}`
+    }
+  })
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[6]" aria-hidden>
+      {nodes.map((n, i) => (
+        <div key={n.id} ref={(el) => { refs.current[n.id] = el }} className="absolute top-0 left-0" style={{ opacity: 0, color: NODE_HEX[n.state] }}>
+          <svg width="15" height="15" viewBox="-7.5 -7.5 15 15" className="absolute -top-[7.5px] -left-[7.5px] overflow-visible">
+            <path d="M -7 -3 V -7 H -3 M 3 -7 H 7 V -3 M 7 3 V 7 H 3 M -3 7 H -7 V 3" fill="none" stroke="currentColor" strokeWidth="1" />
+            <path d="M -1.5 0 H 1.5 M 0 -1.5 V 1.5" stroke="currentColor" strokeWidth="1" />
+          </svg>
+          <div className="absolute top-[-6px] left-[12px] whitespace-nowrap text-[10px] leading-[12px]">
+            <span className="hud-white">N{String(i + 1).padStart(2, '0')}</span> <span>{n.label}</span>
+            <br />
+            <span ref={(el) => { coords.current[n.id] = el }} className="hud-dim" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── 1px tracking lines from hologram node → page element [data-lock=id] ──────
+
+interface Seg {
+  id: string
+  sx: number
+  sy: number
   x: number
   y: number
   w: number
   h: number
+  color: string
 }
 
-export function TrackingLayer({ active, color = 'var(--hud-amber)' }: { active: boolean; color?: string }) {
-  const [locks, setLocks] = useState<Lock[]>([])
-  const [anchor, setAnchor] = useState({ x: 0, y: 0, r: 0 })
-  useEffect(() => {
+export function TrackingLayer({ nodes, active }: { nodes: HoloNode[]; active: boolean }) {
+  const [segs, setSegs] = useState<Seg[]>([])
+  const last = useRef('')
+  useFrameLoop(() => {
     if (!active) {
-      setLocks([])
+      if (last.current) {
+        last.current = ''
+        setSegs([])
+      }
       return
     }
-    let raf = 0
-    let last = 0
-    const loop = (now: number) => {
-      if (now - last > 50) {
-        last = now
-        const els = Array.from(document.querySelectorAll<HTMLElement>('[data-lock]'))
-        const next = els.map((el) => {
-          const r = el.getBoundingClientRect()
-          return { key: el.dataset.lock!, label: el.dataset.lockLabel ?? el.dataset.lock!, x: r.left, y: r.top, w: r.width, h: r.height }
-        })
-        setLocks((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-        setAnchor((a) => (Math.abs(a.x - hudAnchor.x) + Math.abs(a.y - hudAnchor.y) + Math.abs(a.r - hudAnchor.r) < 1 ? a : { x: hudAnchor.x, y: hudAnchor.y, r: hudAnchor.r }))
-      }
-      raf = requestAnimationFrame(loop)
+    const next: Seg[] = []
+    for (const n of nodes) {
+      const el = document.querySelector<HTMLElement>(`[data-lock="${CSS.escape(n.id)}"]`)
+      const s = hudAnchor.nodes.find((h) => h.id === n.id)
+      if (!el || !s) continue
+      const r = el.getBoundingClientRect()
+      next.push({ id: n.id, sx: Math.round(s.x), sy: Math.round(s.y), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), color: NODE_HEX[n.state] })
     }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [active])
-  if (!active || !locks.length || !anchor.r) return null
+    const key = JSON.stringify(next)
+    if (key !== last.current) {
+      last.current = key
+      setSegs(next)
+    }
+  })
+  if (!active || !segs.length) return null
   return (
-    <svg className="pointer-events-none fixed inset-0 z-[25] h-full w-full" style={{ color }} aria-hidden>
-      {locks.map((l, i) => {
-        // start on the globe's rim, facing the target
-        const tx = l.x + l.w
-        const ty = l.y + l.h / 2
-        const ang = Math.atan2(ty - anchor.y, tx - anchor.x)
-        const sx = anchor.x + Math.cos(ang) * anchor.r * 1.05
-        const sy = anchor.y + Math.sin(ang) * anchor.r * 1.05
-        const ex = tx + 10
-        const labelW = 16 + l.label.length * 7.4 + 60
-        const mx = ex + Math.max(24, (sx - ex) * 0.35)
-        const pad = 6
-        const c = 12
-        const bx = l.x - pad
-        const by = l.y - pad
-        const bw = l.w + pad * 2
-        const bh = l.h + pad * 2
+    <svg className="pointer-events-none fixed inset-0 z-[25] h-full w-full" aria-hidden>
+      {segs.map((s, i) => {
+        const tx = s.x + s.w + 4
+        const ty = s.y + s.h / 2
+        const elbow = tx + 28 + i * 10
+        const c = 6
+        const bx = s.x - 3
+        const by = s.y - 3
+        const bw = s.w + 6
+        const bh = s.h + 6
         return (
-          <g key={l.key}>
-            <polyline
-              className="hud-track-line"
-              style={{ animationDelay: `${i * 0.18}s` }}
-              points={`${sx},${sy} ${Math.max(mx, ex + labelW)},${ty + 18} ${ex + labelW},${ty + 18} ${ex},${ty + 18}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              opacity="0.85"
-            />
-            <circle cx={sx} cy={sy} r="3" fill="currentColor" />
-            <g className="hud-track-bracket" style={{ transformOrigin: `${bx + bw / 2}px ${by + bh / 2}px`, animationDelay: `${0.7 + i * 0.18}s` }}>
-              <path d={`M ${bx} ${by + c} V ${by} H ${bx + c} M ${bx + bw - c} ${by} H ${bx + bw} V ${by + c} M ${bx + bw} ${by + bh - c} V ${by + bh} H ${bx + bw - c} M ${bx + c} ${by + bh} H ${bx} V ${by + bh - c}`} fill="none" stroke="currentColor" strokeWidth="2" />
-              <text x={bx + bw + 10} y={by + 12} textAnchor="start" fill="currentColor" fontSize="10" letterSpacing="2" fontFamily="JetBrains Mono Variable, monospace">
-                LOCK · {l.label}
-              </text>
+          <g key={s.id} style={{ color: s.color }}>
+            <polyline className="hud-track" points={`${s.sx},${s.sy} ${elbow},${ty} ${tx},${ty}`} fill="none" stroke="currentColor" strokeWidth="1" opacity="0.8" />
+            <g className="hud-fade">
+              <path d={`M ${bx} ${by + c} V ${by} H ${bx + c} M ${bx + bw - c} ${by} H ${bx + bw} V ${by + c} M ${bx + bw} ${by + bh - c} V ${by + bh} H ${bx + bw - c} M ${bx + c} ${by + bh} H ${bx} V ${by + bh - c}`} fill="none" stroke="currentColor" strokeWidth="1" />
+              <rect x={tx - 2} y={ty - 2} width="4" height="4" fill="currentColor" />
             </g>
           </g>
         )
@@ -177,147 +181,82 @@ export function TrackingLayer({ active, color = 'var(--hud-amber)' }: { active: 
   )
 }
 
-// ── Matrix scanner: falling code fragments ───────────────────────────────────
+// ── Event log: one line per real state change ────────────────────────────────
 
-export function MatrixRain({ words, color = '#22e6ff' }: { words: string[]; color?: string }) {
-  const ref = useRef<HTMLCanvasElement>(null)
-  const wordsRef = useRef(words)
-  const colorRef = useRef(color)
-  wordsRef.current = words
-  colorRef.current = color
-  const reduced = useReducedMotion()
-  useEffect(() => {
-    const canvas = ref.current
-    const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx || reduced) return
-    let raf = 0
-    let last = 0
-    const col = 120
-    let drops: { x: number; y: number; v: number; w: string }[] = []
-    const resize = () => {
-      const dpr = Math.min(2, devicePixelRatio || 1)
-      canvas.width = innerWidth * dpr
-      canvas.height = innerHeight * dpr
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      drops = Array.from({ length: Math.ceil(innerWidth / col) }, (_, i) => ({ x: i * col + Math.random() * 40, y: Math.random() * innerHeight, v: 18 + Math.random() * 40, w: '' }))
-    }
-    resize()
-    addEventListener('resize', resize)
-    const pick = () => {
-      const w = wordsRef.current
-      return w[(Math.random() * w.length) | 0] ?? '0x00'
-    }
-    const loop = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000)
-      if (now - last > 33) {
-        last = now
-        ctx.clearRect(0, 0, innerWidth, innerHeight)
-        ctx.font = '11px "JetBrains Mono Variable", monospace'
-        for (const d of drops) {
-          d.y += d.v * dt * 3
-          if (d.y > innerHeight + 200) {
-            d.y = -40
-            d.w = ''
-          }
-          if (!d.w) d.w = Array.from({ length: 6 }, pick).join(' ')
-          const parts = d.w.split(' ')
-          parts.forEach((p, k) => {
-            ctx.globalAlpha = Math.max(0, 0.35 - k * 0.055)
-            ctx.fillStyle = k === 0 ? '#ffffff' : colorRef.current
-            ctx.fillText(p, d.x, d.y - k * 16)
-          })
-        }
-        ctx.globalAlpha = 1
-      }
-      raf = requestAnimationFrame(loop)
-    }
-    raf = requestAnimationFrame(loop)
-    return () => {
-      cancelAnimationFrame(raf)
-      removeEventListener('resize', resize)
-    }
-  }, [reduced])
-  return <canvas ref={ref} className="pointer-events-none fixed inset-0 z-[1] opacity-40" aria-hidden />
-}
-
-// ── Telemetry cascade ────────────────────────────────────────────────────────
-
-export interface TeleLine {
+export interface HudEvent {
+  id: number
+  t: string // HH:MM:SS.mmm
+  tag: string
   text: string
-  tone?: 'cyan' | 'amber' | 'green' | 'dim'
+  tone?: 'ice' | 'warn' | 'crit' | 'ok' | 'dim'
 }
 
-/** Cycles through `source` lines, appending one at a time like a live feed. */
-export function TelemetryCascade({ source, rate = 520 }: { source: TeleLine[]; rate?: number }) {
-  const [lines, setLines] = useState<(TeleLine & { id: number })[]>([])
-  const idx = useRef(0)
-  const id = useRef(0)
-  const srcRef = useRef(source)
-  srcRef.current = source
+export function EventLog({ events }: { events: HudEvent[] }) {
+  const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    idx.current = 0
-    setLines([])
-  }, [source.length, source[0]?.text])
-  useEffect(() => {
-    const t = setInterval(() => {
-      const src = srcRef.current
-      if (!src.length) return
-      const next = src[idx.current % src.length]
-      idx.current++
-      setLines((l) => [...l.slice(-13), { ...next, id: id.current++ }])
-    }, rate)
-    return () => clearInterval(t)
-  }, [rate])
-  const tone = { cyan: 'hud-cyan', amber: 'hud-amber', green: 'hud-green', dim: 'hud-dim' }
+    box.current?.scrollTo({ top: box.current.scrollHeight })
+  }, [events.length])
+  const tone = { ice: 'hud-ice', warn: 'hud-warn', crit: 'hud-crit', ok: 'hud-ok', dim: 'hud-dim' }
   return (
-    <div className="h-[220px] overflow-hidden text-[11px] leading-[16px]">
-      {lines.map((l, i) => (
-        <div key={l.id} className={`truncate ${tone[l.tone ?? 'cyan']}`} style={{ opacity: 0.35 + (i / Math.max(1, lines.length - 1)) * 0.65 }}>
-          <span className="hud-dim">{String(l.id % 1000).padStart(3, '0')}</span> {l.text}
-        </div>
+    <div ref={box} className="hud-scroll h-[252px] overflow-y-auto pr-1 text-[10px] leading-[14px]">
+      {events.length === 0 && <div className="hud-dim">no events · designate a target</div>}
+      {events.map((e) => (
+        <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className="grid grid-cols-[76px_40px_1fr] gap-x-1.5">
+          <span className="hud-dim">{e.t}</span>
+          <span className="hud-steel">{e.tag}</span>
+          <span className={`truncate ${tone[e.tone ?? 'ice']}`} title={e.text}>
+            {e.text}
+          </span>
+        </motion.div>
       ))}
     </div>
   )
 }
 
-// ── Network ping sweep ───────────────────────────────────────────────────────
+// ── Fine gauges ──────────────────────────────────────────────────────────────
 
-export function PingSweep({ blips, color }: { blips: { label: string; ok: boolean }[]; color: string }) {
+/** 0-100 CWM arc: 1px track, tick every 5, bands at 40 / 70, thin needle. */
+export function CwmGauge({ score, severity }: { score: number; severity: 'Low' | 'High' | 'CRITICAL' }) {
+  const r = 70
+  const pt = (v: number, rad = r) => {
+    const a = Math.PI * (1 - v / 100)
+    return [Math.cos(a) * rad, -Math.sin(a) * rad] as const
+  }
+  const arc = (a: number, b: number, rad = r) => {
+    const [x1, y1] = pt(a, rad)
+    const [x2, y2] = pt(b, rad)
+    return `M ${x1} ${y1} A ${rad} ${rad} 0 0 1 ${x2} ${y2}`
+  }
+  const color = severity === 'CRITICAL' ? '#ef4444' : severity === 'High' ? '#f97316' : '#10b981'
+  const [nx, ny] = pt(Math.min(100, score), r - 6)
   return (
-    <svg viewBox="-50 -50 100 100" className="h-[120px] w-[120px]" style={{ color }} aria-hidden>
-      {[46, 32, 18].map((r) => (
-        <circle key={r} r={r} fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.4" />
-      ))}
-      <line x1="-46" y1="0" x2="46" y2="0" stroke="currentColor" strokeWidth="0.3" opacity="0.3" />
-      <line x1="0" y1="-46" x2="0" y2="46" stroke="currentColor" strokeWidth="0.3" opacity="0.3" />
-      <g className="hud-spin" style={{ ['--dur' as string]: '3s' }}>
-        <path d="M 0 0 L 46 0 A 46 46 0 0 0 32.5 -32.5 Z" fill="currentColor" opacity="0.18" />
-        <line x1="0" y1="0" x2="46" y2="0" stroke="currentColor" strokeWidth="1" />
-      </g>
-      {blips.map((b, i) => {
-        const a = (i / Math.max(1, blips.length)) * Math.PI * 2 + 0.6
-        const r = 24 + (i % 2) * 12
-        return <circle key={b.label} cx={Math.cos(a) * r} cy={Math.sin(a) * r} r="2.6" fill={b.ok ? 'var(--hud-green)' : 'var(--hud-amber)'} className="hud-blink" style={{ animationDelay: `${i * 0.3}s` }} />
+    <svg viewBox="-86 -82 172 96" className="w-full max-w-[260px]" role="img" aria-label={`CWM ${score} of 100, ${severity}`}>
+      <path d={arc(0, 100)} fill="none" stroke="#4b5563" strokeWidth="0.75" />
+      <path d={arc(40, 70, r + 3)} fill="none" stroke="#f97316" strokeWidth="0.75" opacity="0.6" />
+      <path d={arc(70, 100, r + 3)} fill="none" stroke="#ef4444" strokeWidth="0.75" opacity="0.7" />
+      {Array.from({ length: 21 }, (_, i) => i * 5).map((v) => {
+        const [x1, y1] = pt(v, r)
+        const [x2, y2] = pt(v, v % 25 === 0 ? r - 6 : r - 3)
+        return <line key={v} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#577c95" strokeWidth={v % 25 === 0 ? 0.8 : 0.5} />
       })}
+      {[0, 25, 50, 75, 100].map((v) => {
+        const [x, y] = pt(v, r + 10)
+        return <text key={v} x={x} y={y + 2} textAnchor="middle" fontSize="6" fill="#6b7785" fontFamily="JetBrains Mono Variable, monospace">{v}</text>
+      })}
+      <motion.path d={arc(0, 99.99)} fill="none" stroke={color} strokeWidth="1.5" initial={{ pathLength: 0 }} animate={{ pathLength: Math.min(1, score / 100) }} transition={{ duration: 0.9, ease: [0.2, 0, 0, 1] }} />
+      <line x1="0" y1="0" x2={nx} y2={ny} stroke="#ffffff" strokeWidth="0.8" />
+      <circle r="1.8" fill="#ffffff" />
+      <text x="0" y="-18" textAnchor="middle" fontSize="15" fill="#ffffff" fontFamily="JetBrains Mono Variable, monospace">{score.toFixed(1)}</text>
+      <text x="0" y="-8" textAnchor="middle" fontSize="6" letterSpacing="1.2" fill={color} fontFamily="JetBrains Mono Variable, monospace">{severity.toUpperCase()}</text>
     </svg>
   )
 }
 
-// ── Bit pattern readout ──────────────────────────────────────────────────────
-
-export function BitPattern({ bytes, color }: { bytes: string[]; color: string }) {
-  const [hot, setHot] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => setHot((h) => (h + 1) % Math.max(1, bytes.length)), 140)
-    return () => clearInterval(t)
-  }, [bytes.length])
+/** Tiny horizontal bar gauge. */
+export function Bar({ value, max, color = '#67e8f9' }: { value: number; max: number; color?: string }) {
   return (
-    <div className="grid grid-cols-8 gap-x-2 gap-y-1 text-[11px]" style={{ color }}>
-      {bytes.slice(0, 32).map((b, i) => (
-        <span key={i} className={i === hot ? 'text-white hud-glow' : 'opacity-60'}>
-          {b}
-        </span>
-      ))}
+    <div className="relative h-[3px] w-full bg-[rgb(255_255_255/0.06)]">
+      <div className="absolute inset-y-0 left-0" style={{ width: `${Math.min(100, (value / max) * 100)}%`, background: color }} />
     </div>
   )
 }
