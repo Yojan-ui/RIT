@@ -47,19 +47,23 @@ A stepper over the WebGL core walks through **Detect → Score → Defend → Pr
 
 1. **Detect**: live scan; the signature and key-exchange algorithms as chips marked vulnerable or quantum-safe, plus a
    plain-English explanation. Full CBOM behind a disclosure.
-2. **Score**: Mosca's inequality (X, Y sliders; Z fixed at 7) with an animated semicircle gauge that fills past the Z
-   marker into the red CRITICAL zone.
-3. **Defend**: *Apply Quantum-Safe Patch* morphs the chips to **ML-DSA-65** and **ML-KEM-768** and shifts the core from
-   red to cyan/green. Simulated and labelled as such; the OpenSSL runbook is behind a disclosure.
+2. **Score**: Context-Weighted Mosca, `((X_ML + Y) / Z) × Exp × Fragility × 100` capped at 100 (same model as
+   QuantumLedger's backend; `frontend/src/lib/cwm.ts`). X_ML is predicted from the asset type you pick (a public domain is
+   internet-facing, Exp 1.2); fragility is 1.0 for RSA/ECDSA and 0.1 for ML-DSA. The gauge fills through Low (0–39),
+   High (40–69) and CRITICAL (70–100); **Validate Math** shows the formula with this endpoint's values.
+3. **Defend**: *Deploy ML-DSA/ML-KEM Patch* morphs the chips to **ML-DSA-65** (FIPS 204) and **X25519MLKEM768**
+   (FIPS 203) and shifts the core from red/amber to cyan/green. Simulated and labelled as such; the OpenSSL runbook is behind a disclosure.
 4. **Prove**: anchors a real Web Crypto SHA-256 Merkle block and types it out as terminal output; tamper test behind a
    disclosure.
 5. **Rescan**: a verification pass against the patched configuration; the score ring goes to 100 (PQC-ready). It states
    that the live server is unchanged.
 
-After step 5 a **Quantum safety impact** card compares before (the detected classical algorithms, Shor-vulnerable) with
-after (ML-DSA and ML-KEM: lattice-based, no known efficient quantum attack, NIST FIPS 204/203).
+After step 5 a **Quantum safety impact** card compares before and after: algorithms, CWM risk (e.g. 100 CRITICAL → 21.4
+Low), PQC score (→ 100) and the count of quantum-vulnerable algorithms (→ 0).
 
-**Export CBOM Report (PDF/JSON)** stays pinned top right. If the scanner API is unreachable, Detect falls back to a
+**Export CBOM Report (PDF/JSON)** stays pinned top right. The JSON is built from the current UI state
+(`frontend/src/lib/cyclonedx.ts`): the scanned algorithms before the patch, ML-DSA-65 + X25519MLKEM768 after it, with
+the CWM score and ledger block as metadata properties. It validates against the CycloneDX 1.6 schema. If the scanner API is unreachable, Detect falls back to a
 labelled demo dataset (`frontend/src/lib/demo.ts`) so the pipeline still runs offline.
 
 ## API

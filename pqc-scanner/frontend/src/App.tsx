@@ -5,11 +5,13 @@ import { scanDomain, type ScanResult } from './api'
 import { CryptoCore, type CoreState } from './scene/CryptoCore'
 import { DefendDetails, DetectDetails, ProveDetails } from './components/advanced'
 import { ExportMenu } from './components/ExportMenu'
-import { AlgoChip, Glass, ImpactPanel, RiskGauge, Stepper, TypeTerminal, ease, item, stagger, type Algo, type TermLine } from './components/pipeline'
+import { AlgoChip, Glass, ImpactPanel, RiskGauge, Stepper, TypeTerminal, ValidateMath, ease, item, stagger, type Algo, type TermLine } from './components/pipeline'
 import { cryptoFromScan, mosca, MIGRATED, BASE_YEAR, Z_YEARS } from './lib/mosca'
 import { anchor, verify, type LedgerBlock, type Verification } from './lib/ledger'
 import { actionPlan, diagnose } from './lib/diagnosis'
-import { exportCbomJson, exportPdfReport } from './lib/report'
+import { exportPdfReport } from './lib/report'
+import { downloadCbom } from './lib/cyclonedx'
+import { ASSET_TYPES, CWM_CONFIG, cwmScore, formulaLine, type AssetType } from './lib/cwm'
 import { demoScan } from './lib/demo'
 
 const EXAMPLES = ['github.com', 'microsoft.com', 'cloudflare.com']
@@ -78,7 +80,7 @@ export default function App() {
 
   const [step, setStep] = useState(1)
   const [reached, setReached] = useState(1)
-  const [x, setX] = useState(4)
+  const [assetType, setAssetType] = useState<AssetType>('web-server')
   const [y, setY] = useState(10)
   const [patching, setPatching] = useState(false)
   const [patched, setPatched] = useState(false)
@@ -93,7 +95,13 @@ export default function App() {
   const abort = useRef<AbortController | null>(null)
 
   const before = useMemo(() => (result ? cryptoFromScan(result) : null), [result])
-  const m = useMemo(() => (before ? mosca(x, y, before) : null), [before, x, y])
+  // CWM: X_ML is predicted from the asset profile; a public domain is internet-facing.
+  const cwmBefore = useMemo(
+    () => (before && result ? cwmScore({ assetType, zone: 'internet', signature: before.leafKey, family: result.certificate.public_key.family, y, z: Z_YEARS }) : null),
+    [before, result, assetType, y],
+  )
+  const cwmAfter = useMemo(() => (before ? cwmScore({ assetType, zone: 'internet', signature: 'ML-DSA-65', family: 'ML-DSA', y, z: Z_YEARS }) : null), [before, assetType, y])
+  const m = useMemo(() => (before && cwmBefore ? mosca(cwmBefore.xml, y, before) : null), [before, cwmBefore, y])
   const diag = result && before ? diagnose(result, before, false) : null
 
   const resetPipeline = () => {
@@ -185,7 +193,15 @@ export default function App() {
           cbom: result.cbom_summary.map((r) => ({ name: r.name, quantum_safe: r.quantum_safe })),
         },
       },
-      { label: 'Score', data: { method: 'Mosca X + Y > Z', x: m.x, y: m.y, z: m.z, verdict: m.verdict } },
+      {
+        label: 'Score',
+        data: {
+          method: 'Context-Weighted Mosca: ((X_ML + Y) / Z) x Exp x Fragility x 100',
+          asset_type: assetType,
+          x_ml: cwmBefore?.xml, y: m.y, z: m.z, exposure: cwmBefore?.exposure, fragility: cwmBefore?.fragility,
+          cwm_score: cwmBefore?.score, severity: cwmBefore?.severity, mosca_verdict: m.verdict,
+        },
+      },
       { label: 'Defend', data: { simulated: true, before, after: { ...MIGRATED, kex_standard: 'ML-KEM-768 (X25519MLKEM768)' } } },
     ])
     setBlock(b)
@@ -228,7 +244,7 @@ export default function App() {
   }
 
   const exportPdf = () => result && before && exportPdfReport(result, { fixed: patched, plan: actionPlan(result, before), block, verification })
-  const exportJson = () => result && exportCbomJson(result)
+  const exportJson = () => result && downloadCbom({ result, patched, cwmBefore, cwmAfter, block, verification, demo })
 
   // Chips: detected vs patched
   const detected: Algo[] = before
@@ -239,7 +255,7 @@ export default function App() {
     : []
   const upgraded: Algo[] = [
     { role: 'Signature', name: 'ML-DSA-65', safe: true, note: 'FIPS 204 · NIST category 3' },
-    { role: 'Key exchange', name: 'ML-KEM-768', safe: true, note: 'FIPS 203 · as X25519MLKEM768 hybrid' },
+    { role: 'Key exchange', name: 'X25519MLKEM768', safe: true, note: 'FIPS 203 · ML-KEM-768 hybrid with X25519' },
   ]
   const vulnerable = detected.filter((a) => !a.safe).length
   const otherFailing = result ? result.cbom_summary.filter((a) => !a.quantum_safe && a.name !== before?.leafKey && a.name !== before?.kex) : []
@@ -252,8 +268,8 @@ export default function App() {
         ? 'upgrading'
         : patched
           ? 'secured'
-          : step >= 2 && m
-            ? m.verdict === 'critical' ? 'critical' : m.verdict === 'safe' ? 'secured' : 'vulnerable'
+          : step >= 2 && cwmBefore
+            ? cwmBefore.severity === 'CRITICAL' ? 'critical' : cwmBefore.severity === 'Low' ? 'secured' : 'vulnerable'
             : diag?.tone === 'safe' ? 'secured' : diag?.tone === 'risk' ? 'critical' : 'vulnerable'
 
   const complete = rescan === 'done'
@@ -372,37 +388,72 @@ export default function App() {
                 )}
 
                 {/* ── 2 · Score ──────────────────────────────────────── */}
-                {step === 2 && m && (
+                {step === 2 && m && cwmBefore && (
                   <motion.div key="score" variants={stagger} initial="hidden" animate="show">
                     <Heading
-                      eyebrow="Step 2 · Score · Mosca's inequality"
-                      title={m.verdict === 'critical' ? 'Critical: forgeable while it still matters' : m.verdict === 'safe' ? 'Safe: already post-quantum' : 'Within the window, but only just'}
+                      eyebrow="Step 2 · Score · Context-Weighted Mosca"
+                      title={
+                        cwmBefore.severity === 'CRITICAL'
+                          ? 'Critical: forgeable while it still matters'
+                          : cwmBefore.severity === 'High'
+                            ? 'High risk: plan the migration now'
+                            : 'Low risk'
+                      }
                       body={
-                        m.verdict === 'critical'
-                          ? `Data must stay protected until ${BASE_YEAR + m.sum}. A quantum computer could break it from ${BASE_YEAR + m.z}: ${m.exposedYears} years exposed.`
-                          : m.verdict === 'safe'
-                            ? 'Nothing detected is breakable by a quantum computer.'
-                            : `Protection is needed until ${BASE_YEAR + m.sum}, before a ${BASE_YEAR + m.z} quantum computer. Start migrating now.`
+                        m.holds
+                          ? `Data must stay protected until ${Math.ceil(BASE_YEAR + m.sum)}. A quantum computer could break ${cwmBefore.signature} from ${BASE_YEAR + m.z}: ${m.exposedYears.toFixed(1).replace('.0', '')} years exposed.`
+                          : `Protection is needed until ${Math.ceil(BASE_YEAR + m.sum)}, before a ${BASE_YEAR + m.z} quantum computer. Start migrating now.`
                       }
                     />
                     <motion.div variants={item} className="mt-6 grid items-center gap-6 sm:grid-cols-[1.1fr_1fr]">
-                      <RiskGauge value={m.sum} threshold={m.z} verdict={m.verdict} />
+                      <div>
+                        <RiskGauge score={cwmBefore.score} severity={cwmBefore.severity} />
+                        <div className="mt-2 text-center">
+                          <ValidateMath
+                            lines={[
+                              { label: 'Formula', value: 'Risk = ((X_ML + Y) / Z) × Exp × Fragility × 100, capped at 100' },
+                              { label: `This endpoint · ${cwmBefore.severity}`, value: formulaLine(cwmBefore) },
+                              {
+                                label: 'Inputs',
+                                value: `X_ML ${cwmBefore.xml} yrs predicted for ${ASSET_TYPES.find((t) => t.id === assetType)?.label.toLowerCase()} (internet) · Exp ${cwmBefore.exposure} internet-facing · Fragility ${cwmBefore.fragility} for ${cwmBefore.signature}`,
+                              },
+                              { label: 'Severity bands', value: `0–${CWM_CONFIG.thresholds[0] - 1} Low · ${CWM_CONFIG.thresholds[0]}–${CWM_CONFIG.thresholds[1] - 1} High · ${CWM_CONFIG.thresholds[1]}–100 CRITICAL` },
+                            ]}
+                          />
+                        </div>
+                      </div>
                       <div>
                         <div className="font-mono text-2xl tracking-tight text-white tabular-nums">
                           {m.x} <span className="text-zinc-600">+</span> {m.y} <span className="text-zinc-600">=</span> {m.sum}{' '}
                           <span className={m.holds ? 'text-risk' : 'text-safe'}>{m.holds ? '>' : '≤'}</span> {m.z}
                         </div>
-                        <div className="mt-1 font-mono text-[12px] text-zinc-500">X + Y {m.holds ? '>' : '≤'} Z</div>
+                        <div className="mt-1 font-mono text-[12px] text-zinc-500">X_ML + Y {m.holds ? '>' : '≤'} Z</div>
                         <div className="mt-5 space-y-4">
-                          {([['X · migration time', x, setX, 15], ['Y · data shelf life', y, setY, 30]] as const).map(([label, v, set, max]) => (
-                            <label key={label} className="block">
-                              <div className="flex justify-between text-[12px]">
-                                <span className="text-zinc-400">{label}</span>
-                                <span className="font-mono text-white">{v} yrs</span>
-                              </div>
-                              <input type="range" min={0} max={max} value={v} onChange={(e) => set(Number(e.target.value))} className="mt-1" />
-                            </label>
-                          ))}
+                          <label className="block">
+                            <div className="flex justify-between text-[12px]">
+                              <span className="text-zinc-400">X_ML · predicted migration</span>
+                              <span className="font-mono text-white">{cwmBefore.xml} yrs</span>
+                            </div>
+                            <select
+                              value={assetType}
+                              onChange={(e) => setAssetType(e.target.value as AssetType)}
+                              aria-label="Asset type (drives the migration-time prediction)"
+                              className="mt-1.5 h-8 w-full rounded-md border border-white/10 bg-black/40 px-2 text-[12px] text-zinc-200 outline-none focus:border-white/25"
+                            >
+                              {ASSET_TYPES.map((t) => (
+                                <option key={t.id} value={t.id} className="bg-zinc-950">
+                                  {t.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block">
+                            <div className="flex justify-between text-[12px]">
+                              <span className="text-zinc-400">Y · data shelf life</span>
+                              <span className="font-mono text-white">{y} yrs</span>
+                            </div>
+                            <input type="range" min={0} max={30} value={y} onChange={(e) => setY(Number(e.target.value))} className="mt-1" />
+                          </label>
                           <div className="flex justify-between text-[12px]">
                             <span className="text-zinc-400">Z · years to a quantum computer</span>
                             <span className="font-mono text-white">{Z_YEARS} yrs (fixed)</span>
@@ -421,10 +472,10 @@ export default function App() {
                   <motion.div key="defend" variants={stagger} initial="hidden" animate="show">
                     <Heading
                       eyebrow="Step 3 · Defend"
-                      title={patched ? 'Patched: ML-DSA-65 + ML-KEM-768' : 'Apply the quantum-safe patch'}
+                      title={patched ? 'Patched: ML-DSA-65 + X25519MLKEM768' : 'Deploy the quantum-safe patch'}
                       body={
                         patched
-                          ? 'Signatures now use ML-DSA-65 and key exchange uses ML-KEM-768 (as the X25519MLKEM768 hybrid).'
+                          ? 'Signatures now use ML-DSA-65 (NIST FIPS 204) and key exchange uses X25519MLKEM768 (NIST FIPS 203).'
                           : 'Swap the classical signature and key exchange for NIST post-quantum standards.'
                       }
                     />
@@ -437,7 +488,7 @@ export default function App() {
                       ) : (
                         <>
                           <Primary onClick={applyPatch} busy={patching} icon={<ShieldCheck size={16} />}>
-                            {patching ? 'Applying patch…' : 'Apply Quantum-Safe Patch'}
+                            {patching ? 'Deploying patch…' : 'Deploy ML-DSA/ML-KEM Patch'}
                           </Primary>
                           <span className="text-[12px] text-zinc-500">Simulated: the real server is not modified.</span>
                         </>
@@ -506,7 +557,7 @@ export default function App() {
                     ) : (
                       <motion.div variants={item} className="mt-6 grid items-center gap-6 sm:grid-cols-[1fr_auto]">
                         <ol className="space-y-2.5">
-                          <CheckLine state={rescanStep >= 1 ? 'done' : 'run'}>Key exchange negotiated: ML-KEM-768 (X25519MLKEM768)</CheckLine>
+                          <CheckLine state={rescanStep >= 1 ? 'done' : 'run'}>Key exchange negotiated: X25519MLKEM768 (FIPS 203)</CheckLine>
                           <CheckLine state={rescanStep >= 2 ? 'done' : rescanStep === 1 ? 'run' : 'todo'}>Certificate: ML-DSA-65 key and signature</CheckLine>
                           <CheckLine state={rescanStep >= 3 ? 'done' : rescanStep === 2 ? 'run' : 'todo'}>CBOM: 0 quantum-vulnerable algorithms</CheckLine>
                         </ol>
@@ -531,7 +582,17 @@ export default function App() {
               </Glass>
             </LayoutGroup>
 
-            {complete && <ImpactPanel beforeAlgo={before!.leafKey} beforeKex={before!.kex} domain={result!.domain} />}
+            {complete && result && before && cwmBefore && cwmAfter && (
+              <ImpactPanel
+                domain={result.domain}
+                before={{
+                  signature: before.leafKey, kex: before.kex, kexPq: before.kexPq,
+                  cwm: cwmBefore.score, severity: cwmBefore.severity, pqcScore: result.assessment.score,
+                  vulnerable: result.cbom_summary.filter((a) => !a.quantum_safe).length,
+                }}
+                after={{ signature: 'ML-DSA-65', kex: 'X25519MLKEM768', kexPq: true, cwm: cwmAfter.score, severity: cwmAfter.severity, pqcScore: 100, vulnerable: 0 }}
+              />
+            )}
           </div>
         </div>
       </main>

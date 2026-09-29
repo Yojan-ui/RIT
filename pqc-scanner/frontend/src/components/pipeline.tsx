@@ -113,66 +113,106 @@ export function AlgoChip({ algo, delay = 0 }: { algo: Algo; delay?: number }) {
   )
 }
 
-// ── Mosca risk gauge ─────────────────────────────────────────────────────────
+// ── CWM risk gauge ───────────────────────────────────────────────────────────
 
-const MAX_YEARS = 20
-
-/** Semicircle 0..20 years. Green up to Z, red beyond. The arc fills to X + Y. */
-export function RiskGauge({ value, threshold, verdict }: { value: number; threshold: number; verdict: 'critical' | 'window' | 'safe' }) {
+/** Semicircle 0..100 with Low / High / CRITICAL bands (40, 70). The arc fills to the CWM score. */
+export function RiskGauge({ score, severity }: { score: number; severity: 'Low' | 'High' | 'CRITICAL' }) {
   const r = 86
   const cx = 110
   const cy = 104
+  const pt = (f: number, rad = r) => [cx + rad * Math.cos(Math.PI * (1 - f)), cy - rad * Math.sin(Math.PI * (1 - f))]
   const arc = (from: number, to: number) => {
-    const p = (f: number) => {
-      const a = Math.PI * (1 - f)
-      return [cx + r * Math.cos(a), cy - r * Math.sin(a)]
-    }
-    const [x1, y1] = p(from)
-    const [x2, y2] = p(to)
+    const [x1, y1] = pt(from)
+    const [x2, y2] = pt(to)
     return `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`
   }
-  const zf = Math.min(1, threshold / MAX_YEARS)
-  const vf = Math.min(1, value / MAX_YEARS)
-  const label = verdict === 'critical' ? 'CRITICAL' : verdict === 'safe' ? 'SAFE' : 'IN WINDOW'
-  const color = verdict === 'critical' ? '#ef4444' : verdict === 'safe' ? '#10b981' : '#f59e0b'
-  const [tx, ty] = [cx + (r + 14) * Math.cos(Math.PI * (1 - zf)), cy - (r + 14) * Math.sin(Math.PI * (1 - zf))]
+  const color = severity === 'CRITICAL' ? '#ef4444' : severity === 'High' ? '#f59e0b' : '#10b981'
   return (
     <div className="relative mx-auto w-full max-w-[320px]">
-      <svg viewBox="0 0 220 124" className="w-full" role="img" aria-label={`${value} years against a ${threshold}-year threshold: ${label}`}>
+      <svg viewBox="0 0 220 124" className="w-full" role="img" aria-label={`CWM risk score ${score} of 100: ${severity}`}>
         <defs>
           <linearGradient id="riskfill" x1="0" x2="1">
             <stop offset="0%" stopColor="#10b981" />
-            <stop offset={`${zf * 100 - 4}%`} stopColor="#10b981" />
-            <stop offset={`${zf * 100 + 4}%`} stopColor="#ef4444" />
+            <stop offset="36%" stopColor="#10b981" />
+            <stop offset="44%" stopColor="#f59e0b" />
+            <stop offset="66%" stopColor="#f59e0b" />
+            <stop offset="74%" stopColor="#ef4444" />
             <stop offset="100%" stopColor="#ef4444" />
           </linearGradient>
         </defs>
-        <path d={arc(0, zf)} stroke="rgb(16 185 129 / 0.18)" strokeWidth="12" fill="none" />
-        <path d={arc(zf, 1)} stroke="rgb(239 68 68 / 0.18)" strokeWidth="12" fill="none" />
+        <path d={arc(0, 0.4)} stroke="rgb(16 185 129 / 0.18)" strokeWidth="12" fill="none" />
+        <path d={arc(0.4, 0.7)} stroke="rgb(245 158 11 / 0.18)" strokeWidth="12" fill="none" />
+        <path d={arc(0.7, 1)} stroke="rgb(239 68 68 / 0.18)" strokeWidth="12" fill="none" />
         <motion.path
           d={arc(0, 0.9999)}
           stroke="url(#riskfill)"
           strokeWidth="12"
           fill="none"
           initial={{ pathLength: 0 }}
-          animate={{ pathLength: vf }}
+          animate={{ pathLength: Math.min(1, score / 100) }}
           transition={{ duration: 1.2, ease }}
         />
-        <line x1={cx + (r - 10) * Math.cos(Math.PI * (1 - zf))} y1={cy - (r - 10) * Math.sin(Math.PI * (1 - zf))} x2={tx} y2={ty} stroke="#fafafa" strokeWidth="1.5" />
-        <text x={tx} y={ty - 4} textAnchor="middle" fontSize="8" fill="#a1a1aa" fontFamily="JetBrains Mono Variable, monospace">
-          Z={threshold}
-        </text>
+        {[0.4, 0.7].map((f) => {
+          const [x1, y1] = pt(f, r - 10)
+          const [x2, y2] = pt(f, r + 10)
+          const [tx, ty] = pt(f, r + 18)
+          return (
+            <g key={f}>
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#fafafa" strokeWidth="1" opacity="0.6" />
+              <text x={tx} y={ty} textAnchor="middle" fontSize="7.5" fill="#71717a" fontFamily="JetBrains Mono Variable, monospace">
+                {f * 100}
+              </text>
+            </g>
+          )
+        })}
       </svg>
       <div className="absolute inset-x-0 bottom-0 text-center">
-        <motion.div key={label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9, duration: 0.3 }} className="font-mono text-[13px] font-semibold tracking-[0.2em]" style={{ color }}>
-          {label}
+        <motion.div key={severity} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9, duration: 0.3 }} className="font-mono text-[13px] font-semibold tracking-[0.2em]" style={{ color }}>
+          {severity.toUpperCase()}
         </motion.div>
         <div className="font-mono text-2xl text-white tabular-nums">
-          {value}
-          <span className="text-sm text-zinc-500"> yrs</span>
+          {score}
+          <span className="text-sm text-zinc-500"> / 100</span>
         </div>
       </div>
     </div>
+  )
+}
+
+/** "Validate Math": hover or focus reveals the formula with this asset's values. */
+export function ValidateMath({ lines }: { lines: { label: string; value: string }[]; }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative inline-block" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-describedby="validate-math"
+        className="font-mono text-[12px] text-zinc-400 underline decoration-white/20 underline-offset-4 transition-colors hover:text-white hover:decoration-white/60"
+      >
+        Validate Math
+      </button>
+      {open && (
+        <motion.span
+          id="validate-math"
+          role="tooltip"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.15 }}
+          className="absolute top-full left-1/2 z-40 mt-2 block w-[min(460px,85vw)] -translate-x-1/2 rounded-xl border border-white/15 bg-black p-4 text-left shadow-2xl"
+        >
+          {lines.map((l) => (
+            <span key={l.label} className="mt-2 block first:mt-0">
+              <span className="block text-[10.5px] font-medium tracking-wide text-zinc-500 uppercase">{l.label}</span>
+              <span className="mt-0.5 block font-mono text-[12.5px] leading-relaxed break-words text-white">{l.value}</span>
+            </span>
+          ))}
+        </motion.span>
+      )}
+    </span>
   )
 }
 
@@ -237,7 +277,31 @@ export function TypeTerminal({ lines, title, cps = 520, onDone }: { lines: TermL
 
 // ── Before / after impact ────────────────────────────────────────────────────
 
-export function ImpactPanel({ beforeAlgo, beforeKex, domain }: { beforeAlgo: string; beforeKex: string; domain: string }) {
+export interface ImpactSide {
+  signature: string
+  kex: string
+  kexPq: boolean
+  cwm: number
+  severity: 'Low' | 'High' | 'CRITICAL'
+  pqcScore: number
+  vulnerable: number
+}
+
+function Metric({ label, value, tone }: { label: string; value: ReactNode; tone: 'risk' | 'safe' | 'warn' }) {
+  return (
+    <div className="flex items-baseline justify-between border-t border-white/5 py-2 text-[13px]">
+      <span className="text-zinc-500">{label}</span>
+      <span className="flex items-center gap-2 font-mono text-white">
+        <span className={`size-1.5 rounded-full ${tone === 'risk' ? 'bg-risk' : tone === 'warn' ? 'bg-warn' : 'bg-safe'}`} />
+        {value}
+      </span>
+    </div>
+  )
+}
+
+const sevTone = (s: ImpactSide['severity']) => (s === 'CRITICAL' ? 'risk' : s === 'High' ? 'warn' : 'safe')
+
+export function ImpactPanel({ before, after, domain }: { before: ImpactSide; after: ImpactSide; domain: string }) {
   return (
     <motion.section variants={stagger} initial="hidden" animate="show" className="mt-6">
       <motion.h3 variants={item} className="text-[13px] font-medium tracking-wide text-zinc-400 uppercase">
@@ -250,12 +314,17 @@ export function ImpactPanel({ beforeAlgo, beforeKex, domain }: { beforeAlgo: str
               <span className="size-1.5 rounded-full bg-risk" /> Before · classical
             </div>
             <div className="mt-3 font-mono text-[15px] text-white">
-              {beforeAlgo} <span className="text-zinc-600">+</span> {beforeKex}
+              {before.signature} <span className="text-zinc-600">+</span> {before.kex}
             </div>
             <p className="mt-3 text-[14px] leading-relaxed text-zinc-300">
-              <span className="font-mono text-[13px] text-zinc-100">{beforeAlgo}</span>: vulnerable to Shor's algorithm. A cryptographically relevant quantum computer (CRQC)
-              could forge signatures to impersonate your servers, and decrypt traffic recorded today.
+              <span className="font-mono text-[13px] text-zinc-100">{before.signature}</span>: vulnerable to Shor's algorithm. A cryptographically relevant quantum computer (CRQC)
+              could forge signatures to impersonate your servers{before.kexPq ? '.' : ', and decrypt traffic recorded today.'}
             </p>
+            <div className="mt-4">
+              <Metric label="CWM risk" value={`${before.cwm} · ${before.severity}`} tone={sevTone(before.severity)} />
+              <Metric label="PQC score" value={`${before.pqcScore} / 100`} tone="risk" />
+              <Metric label="Quantum-vulnerable algorithms" value={before.vulnerable} tone={before.vulnerable ? 'risk' : 'safe'} />
+            </div>
           </Glass>
         </motion.div>
         <motion.div variants={item}>
@@ -264,13 +333,18 @@ export function ImpactPanel({ beforeAlgo, beforeKex, domain }: { beforeAlgo: str
               <span className="size-1.5 rounded-full bg-safe" /> After · post-quantum
             </div>
             <div className="mt-3 font-mono text-[15px] text-white">
-              ML-DSA-65 <span className="text-zinc-600">+</span> ML-KEM-768
+              {after.signature} <span className="text-zinc-600">+</span> {after.kex}
             </div>
             <p className="mt-3 text-[14px] leading-relaxed text-zinc-300">
               <span className="font-mono text-[13px] text-zinc-100">ML-DSA</span> &amp; <span className="font-mono text-[13px] text-zinc-100">ML-KEM</span>: built on lattice
               problems (Module-LWE) with no known efficient quantum attack, standardized by NIST in FIPS 204 and FIPS 203. They keep signatures and key exchange secure
               against future CRQCs.
             </p>
+            <div className="mt-4">
+              <Metric label="CWM risk" value={`${after.cwm} · ${after.severity}`} tone={sevTone(after.severity)} />
+              <Metric label="PQC score" value={`${after.pqcScore} / 100 · PQC-ready`} tone="safe" />
+              <Metric label="Quantum-vulnerable algorithms" value={after.vulnerable} tone={after.vulnerable ? 'risk' : 'safe'} />
+            </div>
           </Glass>
         </motion.div>
       </div>
