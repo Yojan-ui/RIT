@@ -55,7 +55,7 @@ if "%NEEDS_BUILD%"=="1" (
 )
 
 rem -- Port check -------------------------------------------------------------
-"%VPY%" -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', %PORT%))" 2>nul
+"%VPY%" -c "import socket; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1); s.bind(('127.0.0.1', %PORT%)); s.listen()" 2>nul
 if errorlevel 1 (
   echo error: Port %PORT% is already in use. Stop the other process or run: set PORT=8080 ^& run_demo.bat
   exit /b 1

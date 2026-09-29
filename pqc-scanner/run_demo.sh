@@ -50,7 +50,8 @@ else
 fi
 
 # ── Port check ──────────────────────────────────────────────────────────────
-if ! "$BACKEND/.venv/bin/python" -c "import socket,sys; s=socket.socket(); s.bind(('127.0.0.1', $PORT))" 2>/dev/null; then
+# SO_REUSEADDR (as uvicorn uses) so lingering TIME_WAIT sockets from a previous run don't count as busy.
+if ! "$BACKEND/.venv/bin/python" -c "import socket; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(('127.0.0.1', $PORT)); s.listen()" 2>/dev/null; then
   die "Port $PORT is already in use. Stop the other process or run: PORT=8080 ./run_demo.sh"
 fi
 
