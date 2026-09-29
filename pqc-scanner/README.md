@@ -23,6 +23,25 @@ missing or out of date, and starts one FastAPI/Uvicorn process that serves the R
 `PORT=8080` (another port), `REBUILD=1` (force a fresh frontend build). It stops with a clear message if the port
 is already taken.
 
+## Stark-HUD variant (port 8002)
+
+```bash
+./run_cyber_demo.sh      # macOS / Linux → STARK-HUD SCANNER ONLINE: http://localhost:8002
+run_cyber_demo.bat       # Windows
+```
+
+Same API and the same five-stage logic (both UIs use `frontend/src/pipeline/usePipeline.ts`), with an "Iron Man /
+Jarvis diagnostics" presentation: holographic wireframe globe with orbit rings, sonar sweep and pulsating grid
+(`src/hud/HudGlobe.tsx`); rotating HUD rings, bearing ticker and `[ TARGET ACQUIRED ]`; tracking lines that lock onto the
+detected legacy algorithms; falling code fragments; a CRT scanline layer; and a telemetry cascade, network ping sweep and
+bit-pattern readout (`src/hud/overlays.tsx`). Status readouts use real scan data: `SHOR_EXPOSURE` is the share of
+detected algorithms that Shor's algorithm breaks, `DECAY_RATE` follows the CWM severity, the hex bytes are the
+certificate's serial number and scan speed is the measured handshake time. The header coordinates are the console's
+(Bengaluru), not the target's.
+
+It builds to `frontend/dist-hud` (`npm run build:hud`, dev server `npm run dev:hud` on :5182) and runs alongside the
+standard demo on :8000. `run_cyber_demo.sh` is a thin wrapper around `run_demo.sh` (`UI=hud`, `PORT=8002`).
+
 ## How the scan works
 
 1. **Validate & vet** (`app/netguard.py`): accept a hostname only, IDN → punycode, port 443 only. Resolve it and

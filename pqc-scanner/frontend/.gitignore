@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-hud/
 .env
 .env.local
 *.log

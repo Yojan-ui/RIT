@@ -6,6 +6,7 @@
 #   ./run_demo.sh              http://localhost:8000
 #   PORT=8080 ./run_demo.sh    another port
 #   REBUILD=1 ./run_demo.sh    force a fresh frontend build
+#   UI=hud ./run_demo.sh       Stark-HUD variant (see run_cyber_demo.sh)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,6 +14,13 @@ BACKEND="$ROOT/backend"
 FRONTEND="$ROOT/frontend"
 PORT="${PORT:-8000}"
 PYTHON="${PYTHON:-python3}"
+UI="${UI:-default}"                      # default | hud
+BANNER="${BANNER:-SYSTEM LIVE}"
+if [ "$UI" = "hud" ]; then
+  DIST="$FRONTEND/dist-hud"; BUILD_SCRIPT="build:hud"
+else
+  DIST="$FRONTEND/dist"; BUILD_SCRIPT="build"
+fi
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -31,9 +39,9 @@ say "Installing backend requirements"
 
 # ── Frontend ────────────────────────────────────────────────────────────────
 needs_build=0
-if [ "${REBUILD:-0}" = "1" ] || [ ! -f "$FRONTEND/dist/index.html" ]; then
+if [ "${REBUILD:-0}" = "1" ] || [ ! -f "$DIST/index.html" ]; then
   needs_build=1
-elif [ -n "$(find "$FRONTEND/src" "$FRONTEND/index.html" "$FRONTEND/package.json" -newer "$FRONTEND/dist/index.html" -print -quit 2>/dev/null)" ]; then
+elif [ -n "$(find "$FRONTEND/src" "$FRONTEND/index.html" "$FRONTEND/package.json" "$FRONTEND/vite.config.ts" -newer "$DIST/index.html" -print -quit 2>/dev/null)" ]; then
   needs_build=1
 fi
 
@@ -43,8 +51,8 @@ if [ "$needs_build" = "1" ]; then
     say "Installing frontend dependencies"
     (cd "$FRONTEND" && npm ci --no-audit --no-fund --loglevel=error)
   fi
-  say "Building frontend"
-  (cd "$FRONTEND" && npm run build --silent) || die "Frontend build failed."
+  say "Building frontend ($UI)"
+  (cd "$FRONTEND" && npm run "$BUILD_SCRIPT" --silent) || die "Frontend build failed."
 else
   say "Frontend build is up to date"
 fi
@@ -52,7 +60,7 @@ fi
 # ── Port check ──────────────────────────────────────────────────────────────
 # SO_REUSEADDR (as uvicorn uses) so lingering TIME_WAIT sockets from a previous run don't count as busy.
 if ! "$BACKEND/.venv/bin/python" -c "import socket; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(('127.0.0.1', $PORT)); s.listen()" 2>/dev/null; then
-  die "Port $PORT is already in use. Stop the other process or run: PORT=8080 ./run_demo.sh"
+  die "Port $PORT is already in use. Stop the other process or run with PORT=<free port>."
 fi
 
 # ── Start ───────────────────────────────────────────────────────────────────
@@ -63,7 +71,7 @@ say "Starting server on $URL (Ctrl+C to stop)"
 (
   for _ in $(seq 1 120); do
     if curl -sf "$URL/api/health" >/dev/null 2>&1; then
-      printf '\n\033[1;32m  SYSTEM LIVE: Open %s in your browser\033[0m\n\n' "$URL"
+      printf '\n\033[1;32m  %s: Open %s in your browser\033[0m\n\n' "$BANNER" "$URL"
       exit 0
     fi
     sleep 0.25
@@ -72,4 +80,5 @@ say "Starting server on $URL (Ctrl+C to stop)"
 ) &
 
 cd "$BACKEND"
+export FRONTEND_DIST="$DIST"
 exec "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning

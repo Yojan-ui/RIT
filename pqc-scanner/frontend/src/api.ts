@@ -49,6 +49,9 @@ export interface CbomRow {
 export interface ScanResult {
   domain: string
   resolved_ip: string
+  /** Every vetted address for the host, and any the scanner had to skip (address fallback). */
+  addresses?: string[]
+  skipped_addresses?: { ip: string; reason: string }[]
   scanned_at: string
   duration_ms: number
   cached: boolean
@@ -72,6 +75,7 @@ export interface ScanResult {
     not_before: string
     not_after: string
     days_remaining: number
+    serial?: string
     sans: string[]
     san_count: number
     public_key: KeyInfo
