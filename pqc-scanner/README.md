@@ -113,11 +113,11 @@ npm run dev                                      # http://localhost:5180 (proxie
 ## Deploy
 
 **Backend** (Render / Railway / Fly.io): all three build the included `Dockerfile` and inject `$PORT`.
-- Render or Railway: new web service from `pqc-scanner/backend`; Docker is detected. The `Procfile` also works with
+- Render or Railway: new web service with root directory `backend` (inside this project); Docker is detected. The `Procfile` also works with
   their Python buildpacks. Health check path: `/api/health`.
 - Fly.io: `cd backend && fly launch --no-deploy`, keep the generated app name in `fly.toml`, then `fly deploy`.
 - Set `ALLOWED_ORIGINS=https://<your-app>.vercel.app`.
 - Outbound TCP 443 must be allowed (it is by default on all three).
 
-**Frontend** (Vercel): import the repo with root directory `pqc-scanner/frontend` (framework: Vite). Set
+**Frontend** (Vercel): import the repo with root directory `frontend` (inside this project) (framework: Vite). Set
 `VITE_API_URL=https://<your-backend-host>` and deploy. `vercel.json` adds SPA rewrites and security headers.
