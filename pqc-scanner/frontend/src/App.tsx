@@ -1,53 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { motion } from 'framer-motion'
-import { ArrowRight, Check, ChevronDown, Circle, Download, FileJson, FileText, Loader2, RotateCcw, ShieldCheck } from 'lucide-react'
+import { LayoutGroup, motion } from 'framer-motion'
+import { ArrowRight, Check, ChevronDown, Circle, FileText, Loader2, RotateCcw, ShieldCheck } from 'lucide-react'
 import { scanDomain, type ScanResult } from './api'
 import { CryptoCore, type CoreState } from './scene/CryptoCore'
 import { DefendDetails, DetectDetails, ProveDetails } from './components/advanced'
-import { cryptoFromScan, mosca, MIGRATED } from './lib/mosca'
+import { ExportMenu } from './components/ExportMenu'
+import { AlgoChip, Glass, ImpactPanel, RiskGauge, Stepper, TypeTerminal, ease, item, stagger, type Algo, type TermLine } from './components/pipeline'
+import { cryptoFromScan, mosca, MIGRATED, BASE_YEAR, Z_YEARS } from './lib/mosca'
 import { anchor, verify, type LedgerBlock, type Verification } from './lib/ledger'
-import { actionPlan, diagnose, failures } from './lib/diagnosis'
+import { actionPlan, diagnose } from './lib/diagnosis'
 import { exportCbomJson, exportPdfReport } from './lib/report'
+import { demoScan } from './lib/demo'
 
 const EXAMPLES = ['github.com', 'microsoft.com', 'cloudflare.com']
-const SCAN_STEPS = ['Resolving and vetting the address', 'Live TLS handshake offering X25519MLKEM768', 'Reading the certificate chain', 'Building the CBOM']
-const ROLE: Record<string, string> = { signature: 'Identity signature', 'key-agree': 'Connection key exchange', kem: 'Connection key exchange' }
-const TONE_DOT = { risk: 'bg-risk', warn: 'bg-warn', safe: 'bg-safe' } as const
-const TONE_LABEL = { risk: 'Critical', warn: 'At risk', safe: 'Secure' } as const
+const SCAN_STEPS = ['Resolving and vetting the address', 'TLS handshake offering X25519MLKEM768', 'Reading the certificate chain', 'Building the CBOM']
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-type Deploy = 'idle' | 'running' | 'done'
-
-// ── Small building blocks ────────────────────────────────────────────────────
-
-function Section({ n, title, state, children }: { n: number; title: string; state: 'upcoming' | 'active' | 'done'; children?: ReactNode }) {
-  return (
-    <section className={`border-b border-zinc-800 py-8 transition-opacity duration-300 last:border-0 ${state === 'upcoming' ? 'opacity-40' : ''}`}>
-      <header className="flex items-center gap-3">
-        <span
-          className={`grid size-6 place-items-center rounded-full border font-mono text-[11px] ${
-            state === 'done' ? 'border-safe/60 text-safe' : state === 'active' ? 'border-white text-white' : 'border-zinc-700 text-zinc-500'
-          }`}
-        >
-          {state === 'done' ? <Check size={12} strokeWidth={2.5} /> : n}
-        </span>
-        <h2 className="text-[15px] font-medium text-white">{title}</h2>
-      </header>
-      {children && <div className="mt-5 pl-9">{children}</div>}
-    </section>
-  )
-}
 
 function Disclosure({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="mt-5">
-      <button onClick={() => setOpen(!open)} className="inline-flex items-center gap-1.5 text-[13px] text-zinc-400 transition-colors hover:text-white" aria-expanded={open}>
+    <div className="mt-6">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="inline-flex items-center gap-1.5 text-[13px] text-zinc-500 transition-colors hover:text-white">
         <ChevronDown size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
         {label}
       </button>
       {open && (
-        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="mt-4 rounded-lg border border-zinc-800 bg-black/40 p-5">
+        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="mt-4 rounded-xl border border-white/5 bg-black/40 p-5">
           {children}
         </motion.div>
       )}
@@ -55,83 +33,82 @@ function Disclosure({ label, children }: { label: string; children: ReactNode })
   )
 }
 
-function ExportMenu({ enabled, highlight, onPdf, onJson }: { enabled: boolean; highlight: boolean; onPdf: () => void; onJson: () => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [])
+function Primary({ children, onClick, disabled, busy, icon }: { children: ReactNode; onClick: () => void; disabled?: boolean; busy?: boolean; icon?: ReactNode }) {
   return (
-    <div ref={ref} className="relative">
-      <button
-        disabled={!enabled}
-        onClick={() => setOpen(!open)}
-        title={enabled ? 'Download the Cryptographic Bill of Materials' : 'Scan an endpoint first'}
-        className={`inline-flex h-9 items-center gap-2 rounded-md border px-3.5 text-[13px] font-medium backdrop-blur-xl transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-          highlight ? 'border-white bg-white text-black hover:bg-zinc-200' : 'border-zinc-800 bg-black/50 text-zinc-200 hover:border-zinc-600'
-        }`}
-      >
-        <Download size={14} /> Export CBOM Report (PDF/JSON) <ChevronDown size={13} />
-      </button>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.15 }}
-          className="absolute right-0 mt-2 w-64 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/95 p-1 shadow-2xl backdrop-blur-xl"
-        >
-          {[
-            { icon: <FileText size={15} />, label: 'PDF report', hint: 'For compliance and audit', run: onPdf },
-            { icon: <FileJson size={15} />, label: 'CycloneDX 1.6 JSON', hint: 'Machine-readable CBOM', run: onJson },
-          ].map((o) => (
-            <button
-              key={o.label}
-              onClick={() => {
-                o.run()
-                setOpen(false)
-              }}
-              className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-white/[0.06]"
-            >
-              <span className="mt-0.5 text-zinc-400">{o.icon}</span>
-              <span>
-                <span className="block text-[13px] text-white">{o.label}</span>
-                <span className="block text-[12px] text-zinc-500">{o.hint}</span>
-              </span>
-            </button>
-          ))}
-        </motion.div>
-      )}
-    </div>
+    <motion.button
+      layout
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      disabled={disabled || busy}
+      className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-5 text-[14px] font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50"
+    >
+      {busy ? <Loader2 size={16} className="animate-spin" /> : icon}
+      {children}
+      {!busy && !icon && <ArrowRight size={16} />}
+    </motion.button>
   )
 }
 
-// ── App ──────────────────────────────────────────────────────────────────────
+function Heading({ eyebrow, title, body }: { eyebrow: string; title: ReactNode; body?: ReactNode }) {
+  return (
+    <motion.div variants={item}>
+      <div className="font-mono text-[11px] tracking-wide text-zinc-500 uppercase">{eyebrow}</div>
+      <h2 className="mt-2 text-2xl leading-tight font-semibold tracking-[-0.025em] text-white sm:text-3xl">{title}</h2>
+      {body && <p className="mt-2 text-[15px] leading-relaxed text-zinc-400">{body}</p>}
+    </motion.div>
+  )
+}
+
+function CheckLine({ state, children }: { state: 'todo' | 'run' | 'done'; children: ReactNode }) {
+  return (
+    <li className={`flex items-center gap-2.5 font-mono text-[12.5px] ${state === 'done' ? 'text-zinc-300' : state === 'run' ? 'text-white' : 'text-zinc-600'}`}>
+      {state === 'done' ? <Check size={13} className="text-safe" /> : state === 'run' ? <Loader2 size={13} className="animate-spin" /> : <Circle size={13} />}
+      {children}
+    </li>
+  )
+}
 
 export default function App() {
   const [query, setQuery] = useState(() => new URLSearchParams(location.search).get('domain') ?? '')
+  const [result, setResult] = useState<ScanResult | null>(null)
+  const [demo, setDemo] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [scanStep, setScanStep] = useState(0)
-  const [result, setResult] = useState<ScanResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [deploy, setDeploy] = useState<Deploy>('idle')
-  const [ticked, setTicked] = useState(0)
+
+  const [step, setStep] = useState(1)
+  const [reached, setReached] = useState(1)
+  const [x, setX] = useState(4)
+  const [y, setY] = useState(10)
+  const [patching, setPatching] = useState(false)
+  const [patched, setPatched] = useState(false)
   const [block, setBlock] = useState<LedgerBlock | null>(null)
   const [verification, setVerification] = useState<Verification | null>(null)
+  const [anchoring, setAnchoring] = useState(false)
+  const [typed, setTyped] = useState(false)
   const [tampered, setTampered] = useState(false)
+  const [rescan, setRescan] = useState<'idle' | 'running' | 'done'>('idle')
+  const [rescanStep, setRescanStep] = useState(0)
   const [shock, setShock] = useState(0)
   const abort = useRef<AbortController | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const planRef = useRef<HTMLDivElement>(null)
-  const proofRef = useRef<HTMLDivElement>(null)
 
   const before = useMemo(() => (result ? cryptoFromScan(result) : null), [result])
-  const plan = useMemo(() => (result && before ? actionPlan(result, before) : []), [result, before])
-  const fixed = deploy === 'done'
-  const diag = result && before ? diagnose(result, before, fixed) : null
-  const failed = result ? failures(result) : []
-  const nothingToFix = plan.length > 0 && plan.filter((p) => p.id !== 'ledger').every((p) => p.preexisting)
+  const m = useMemo(() => (before ? mosca(x, y, before) : null), [before, x, y])
+  const diag = result && before ? diagnose(result, before, false) : null
+
+  const resetPipeline = () => {
+    setStep(1)
+    setReached(1)
+    setPatching(false)
+    setPatched(false)
+    setBlock(null)
+    setVerification(null)
+    setAnchoring(false)
+    setTyped(false)
+    setTampered(false)
+    setRescan('idle')
+    setRescanStep(0)
+  }
 
   const scan = useCallback(async (raw: string) => {
     const domain = raw.trim()
@@ -139,24 +116,28 @@ export default function App() {
     abort.current?.abort()
     const ctrl = new AbortController()
     abort.current = ctrl
-    setError(null)
+    resetPipeline()
     setResult(null)
-    setDeploy('idle')
-    setTicked(0)
-    setBlock(null)
-    setVerification(null)
-    setTampered(false)
+    setError(null)
+    setDemo(false)
     setScanning(true)
     setScanStep(0)
     const url = new URL(location.href)
     url.searchParams.set('domain', domain)
     history.replaceState(null, '', url)
     try {
-      const [res] = await Promise.all([scanDomain(domain, ctrl.signal), sleep(1500)])
+      const [res] = await Promise.all([scanDomain(domain, ctrl.signal), sleep(1600)])
       if (ctrl.signal.aborted) return
       setResult(res)
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') setError((e as Error).message)
+      if (ctrl.signal.aborted || (e as Error).name === 'AbortError') return
+      const msg = (e as Error).message
+      if (msg.startsWith('Scanner API unreachable')) {
+        setResult(demoScan(domain)) // keep the demo alive without the backend
+        setDemo(true)
+      } else {
+        setError(msg)
+      }
     } finally {
       if (!ctrl.signal.aborted) setScanning(false)
     }
@@ -164,7 +145,7 @@ export default function App() {
 
   useEffect(() => {
     if (!scanning) return
-    const id = setInterval(() => setScanStep((s) => Math.min(SCAN_STEPS.length - 1, s + 1)), 360)
+    const id = setInterval(() => setScanStep((s) => Math.min(SCAN_STEPS.length - 1, s + 1)), 380)
     return () => clearInterval(id)
   }, [scanning])
 
@@ -176,36 +157,51 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const deployPatch = async () => {
-    if (!result || !before) return
-    setDeploy('running')
-    for (let i = 1; i <= plan.length - 1; i++) {
-      await sleep(650)
-      setTicked(i)
-    }
-    const m = mosca(4, 10, before)
-    const records = [
+  const goto = (n: number) => {
+    setReached((r) => Math.max(r, n))
+    setStep(n)
+  }
+
+  const applyPatch = async () => {
+    setPatching(true)
+    await sleep(1800)
+    setPatching(false)
+    setPatched(true)
+    setShock((s) => s + 1)
+  }
+
+  const anchorProof = async () => {
+    if (!result || !before || !m) return
+    setAnchoring(true)
+    const b = await anchor(result.domain, [
       {
         label: 'Detect',
         data: {
           domain: result.domain,
           scanned_at: result.scanned_at,
+          demo,
           tls: { version: result.tls.version, cipher: result.tls.cipher_suite, group: result.tls.key_exchange.group },
-          certificate: { cn: result.certificate.subject_cn, issuer: result.certificate.issuer_cn, not_after: result.certificate.not_after, public_key: result.certificate.public_key.name, signature: result.certificate.signature.name },
-          cbom_serial: result.cbom.serialNumber,
+          certificate: { cn: result.certificate.subject_cn, public_key: result.certificate.public_key.name, signature: result.certificate.signature.name, not_after: result.certificate.not_after },
           cbom: result.cbom_summary.map((r) => ({ name: r.name, quantum_safe: r.quantum_safe })),
         },
       },
-      { label: 'Assess', data: { urgency: result.assessment.urgency.level, failing: failed.map((f) => f.name), mosca: { x: m.x, y: m.y, z: m.z, verdict: m.verdict } } },
-      { label: 'Remediate', data: { simulated: true, before, after: MIGRATED, plan: plan.map((p) => p.title) } },
-    ]
-    const [b] = await Promise.all([anchor(result.domain, records), sleep(600)])
+      { label: 'Score', data: { method: 'Mosca X + Y > Z', x: m.x, y: m.y, z: m.z, verdict: m.verdict } },
+      { label: 'Defend', data: { simulated: true, before, after: { ...MIGRATED, kex_standard: 'ML-KEM-768 (X25519MLKEM768)' } } },
+    ])
     setBlock(b)
     setVerification(await verify(b))
-    setTicked(plan.length)
-    setDeploy('done')
+    setAnchoring(false)
+  }
+
+  const runRescan = async () => {
+    setRescan('running')
+    for (let i = 1; i <= 3; i++) {
+      await sleep(700)
+      setRescanStep(i)
+    }
+    await sleep(400)
+    setRescan('done')
     setShock((s) => s + 1)
-    setTimeout(() => proofRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200)
   }
 
   const toggleTamper = async () => {
@@ -223,283 +219,356 @@ export default function App() {
 
   const reset = () => {
     abort.current?.abort()
+    resetPipeline()
     setResult(null)
     setScanning(false)
-    setDeploy('idle')
     setError(null)
     setQuery('')
     history.replaceState(null, '', location.pathname)
-    setTimeout(() => inputRef.current?.focus(), 50)
   }
 
-  const exportPdf = () => result && exportPdfReport(result, { fixed, plan, block, verification })
+  const exportPdf = () => result && before && exportPdfReport(result, { fixed: patched, plan: actionPlan(result, before), block, verification })
   const exportJson = () => result && exportCbomJson(result)
 
-  const core: CoreState = scanning
-    ? 'scanning'
-    : !result || !diag
-      ? 'idle'
-      : deploy === 'running'
-        ? 'upgrading'
-        : diag.tone === 'safe'
-          ? 'secured'
-          : diag.tone === 'risk'
-            ? 'critical'
-            : 'vulnerable'
+  // Chips: detected vs patched
+  const detected: Algo[] = before
+    ? [
+        { role: 'Signature', name: before.leafKey, safe: before.leafPq, note: before.leafPq ? 'Post-quantum signature' : 'Certificate key · signs every handshake' },
+        { role: 'Key exchange', name: before.kex, safe: before.kexPq, note: before.kexPq ? 'Hybrid ML-KEM already negotiated' : 'Protects session keys' },
+      ]
+    : []
+  const upgraded: Algo[] = [
+    { role: 'Signature', name: 'ML-DSA-65', safe: true, note: 'FIPS 204 · NIST category 3' },
+    { role: 'Key exchange', name: 'ML-KEM-768', safe: true, note: 'FIPS 203 · as X25519MLKEM768 hybrid' },
+  ]
+  const vulnerable = detected.filter((a) => !a.safe).length
+  const otherFailing = result ? result.cbom_summary.filter((a) => !a.quantum_safe && a.name !== before?.leafKey && a.name !== before?.kex) : []
 
-  // Left-panel copy
-  const headline = scanning
-    ? `Checking ${query.trim()}…`
-    : diag
-      ? diag.headline
-      : 'Find the locks quantum computers will break.'
-  const meaning = scanning
-    ? 'Opening a live, encrypted connection and reading which locks this server uses to prove its identity and protect traffic.'
-    : diag
-      ? diag.meaning
-      : 'Every website proves who it is with a digital lock. Quantum computers are being built to pick today’s locks. Scan an endpoint to see if yours is at risk, then fix it in one click.'
+  const core: CoreState = scanning || rescan === 'running'
+    ? 'scanning'
+    : !result
+      ? 'idle'
+      : patching
+        ? 'upgrading'
+        : patched
+          ? 'secured'
+          : step >= 2 && m
+            ? m.verdict === 'critical' ? 'critical' : m.verdict === 'safe' ? 'secured' : 'vulnerable'
+            : diag?.tone === 'safe' ? 'secured' : diag?.tone === 'risk' ? 'critical' : 'vulnerable'
+
+  const complete = rescan === 'done'
 
   return (
-    <div className="relative min-h-dvh bg-black text-white lg:h-dvh lg:overflow-hidden">
-      <div className="fixed inset-0" aria-hidden>
-        <CryptoCore state={core} shockKey={shock} side="left" />
+    <div className="relative h-dvh overflow-hidden bg-black text-white">
+      <div className="fixed inset-0 opacity-90" aria-hidden>
+        <CryptoCore state={core} shockKey={shock} side="right" />
       </div>
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-t from-black via-black/10 to-transparent lg:bg-gradient-to-tr lg:from-black/90 lg:via-transparent" aria-hidden />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-r from-black/85 via-black/40 to-transparent max-lg:bg-gradient-to-t max-lg:from-black max-lg:via-black/70" aria-hidden />
 
-      {/* Top bar with the sticky export */}
-      <header className="fixed inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b border-zinc-800/70 bg-black/40 px-6 backdrop-blur-xl lg:px-10">
-        <button onClick={reset} className="flex items-center gap-2.5" aria-label="New scan">
+      <header className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between bg-gradient-to-b from-black via-black/80 to-transparent px-6 lg:px-10">
+        <button onClick={reset} className="flex items-center gap-2.5" aria-label="Start over">
           <svg viewBox="0 0 20 20" className="size-5" aria-hidden>
             <circle cx="10" cy="10" r="8" fill="none" stroke="white" strokeWidth="1.3" />
             <path d="M2 10h16M10 2c3 2.5 3 13.5 0 16M10 2c-3 2.5-3 13.5 0 16" stroke="white" strokeWidth="1" fill="none" opacity="0.6" />
           </svg>
           <span className="text-[14px] font-medium">PQC Scanner</span>
-          <span className="hidden text-[13px] text-zinc-500 sm:inline">· Quantum readiness for TLS endpoints</span>
+          {result && <span className="hidden font-mono text-[12px] text-zinc-500 sm:inline">/ {result.domain}</span>}
         </button>
-        <ExportMenu enabled={!!result} highlight={fixed} onPdf={exportPdf} onJson={exportJson} />
+        <ExportMenu enabled={!!result} highlight={complete} onPdf={exportPdf} onJson={exportJson} />
       </header>
 
-      <div className="relative z-10 grid lg:h-full lg:grid-cols-2">
-        {/* Left: diagnosis over the 3D core */}
-        <section className="flex min-h-[80vh] flex-col justify-end px-6 pt-[42vh] pb-12 lg:min-h-0 lg:px-12 lg:pb-16">
-          <motion.div key={headline} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }} className="max-w-xl">
-              {diag && !scanning && (
-                <span className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-black/50 px-3 py-1 text-[12px] text-zinc-300 backdrop-blur-xl">
-                  <span className={`size-1.5 rounded-full ${TONE_DOT[diag.tone]}`} /> {TONE_LABEL[diag.tone]}
-                </span>
-              )}
-              <h1 className="mt-4 text-4xl leading-[1.08] font-semibold tracking-[-0.035em] text-balance sm:text-5xl">{headline}</h1>
-              <div className="mt-6 border-l border-zinc-700 pl-4">
-                <div className="text-[12px] font-medium tracking-wide text-zinc-500 uppercase">What this means</div>
-                <p className="mt-1.5 text-[17px] leading-relaxed text-zinc-300">{meaning}</p>
-              </div>
-          </motion.div>
-        </section>
+      <main className="relative z-10 h-full overflow-y-auto">
+        <div className="mx-auto max-w-6xl px-6 pt-24 pb-24 lg:px-10">
+          <div className="max-w-[680px] max-lg:pt-[30vh]">
+            <Stepper current={step} reached={reached} onSelect={setStep} />
 
-        {/* Right: the engineer's action plan */}
-        <aside className="border-zinc-800 bg-black/50 backdrop-blur-xl lg:flex lg:min-h-0 lg:flex-col lg:border-l lg:pt-16">
-          <div ref={planRef} className="px-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-10">
-          <div className="mx-auto max-w-xl py-4">
-            <div className="pt-6 pb-2">
-              <div className="text-[12px] font-medium tracking-wide text-zinc-500 uppercase">Action plan</div>
-              <form
-                className="mt-4 flex gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  scan(query)
-                }}
-              >
-                <input
-                  ref={inputRef}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Endpoint to check, e.g. github.com"
-                  aria-label="Endpoint to scan"
-                  autoFocus={!query}
-                  spellCheck={false}
-                  autoCapitalize="none"
-                  className="h-11 min-w-0 flex-1 rounded-md border border-zinc-800 bg-black/50 px-4 font-mono text-[13px] text-white transition-colors outline-none placeholder:font-sans placeholder:text-zinc-600 focus:border-zinc-500"
-                />
-                <button
-                  type="submit"
-                  disabled={scanning || !query.trim()}
-                  className={`inline-flex h-11 items-center gap-2 rounded-md px-5 text-[13px] font-medium transition-colors disabled:opacity-40 ${
-                    result ? 'border border-zinc-800 text-zinc-200 hover:border-zinc-600' : 'bg-white text-black hover:bg-zinc-200'
-                  }`}
-                >
-                  {scanning ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
-                  {scanning ? 'Scanning' : result ? 'Rescan' : 'Scan'}
-                </button>
-              </form>
-              {!result && !scanning && (
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-zinc-600">
-                  Try
-                  {EXAMPLES.map((d) => (
-                    <button key={d} onClick={() => { setQuery(d); scan(d) }} className="font-mono text-zinc-400 hover:text-white">
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {scanning && (
-                <ol className="mt-5 space-y-2 font-mono text-[12px]">
-                  {SCAN_STEPS.map((s, i) => (
-                    <li key={s} className={`flex items-center gap-2 ${i < scanStep ? 'text-zinc-400' : i === scanStep ? 'text-white' : 'text-zinc-700'}`}>
-                      {i < scanStep ? <Check size={12} className="text-safe" /> : i === scanStep ? <Loader2 size={12} className="animate-spin" /> : <Circle size={12} />}
-                      {s}
-                    </li>
-                  ))}
-                </ol>
-              )}
-              {error && (
-                <p className="mt-4 flex items-center gap-2 text-[13px] text-zinc-200" role="alert">
-                  <span className="size-1.5 rounded-full bg-risk" /> {error}
-                </p>
-              )}
-            </div>
+            {demo && (
+              <p className="mt-6 flex items-center gap-2 text-[13px] text-zinc-400">
+                <span className="size-1.5 rounded-full bg-warn" /> Scanner API unreachable: showing demo data for {result?.domain}.
+              </p>
+            )}
 
-            {/* 1 · Vulnerability */}
-            <Section n={1} title="The vulnerability" state={!result ? 'upcoming' : fixed ? 'done' : 'active'}>
-              {result && before ? (
-                <>
-                  <div className="font-mono text-[15px] text-white">{result.domain}:443</div>
-                  <div className="mt-1 font-mono text-[12px] text-zinc-500">
-                    {result.resolved_ip} · {result.tls.version} · issued by {result.certificate.issuer_cn}
-                  </div>
-                  {failed.length ? (
-                    <ul className="mt-5 divide-y divide-zinc-800 rounded-lg border border-zinc-800">
-                      {failed.map((f) => (
-                        <li key={f.name} className="flex items-center justify-between gap-4 px-4 py-3">
-                          <span className="flex items-center gap-3">
-                            <span className={`size-1.5 rounded-full ${fixed ? 'bg-zinc-600' : 'bg-risk'}`} />
-                            <span className={`font-mono text-[13px] ${fixed ? 'text-zinc-500 line-through' : 'text-white'}`}>{f.name}</span>
-                          </span>
-                          <span className="text-[12px] text-zinc-500">{ROLE[f.primitive] ?? f.primitive} · {fixed ? 'replaced (simulated)' : 'breakable by quantum'}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-4 flex items-center gap-2 text-[13px] text-zinc-300"><span className="size-1.5 rounded-full bg-safe" /> No quantum-vulnerable algorithms found.</p>
-                  )}
-                  {!fixed && failed.length > 0 && (
-                    <p className="mt-4 text-[13px] text-zinc-400">
-                      <span className="text-zinc-200">Priority {result.assessment.urgency.level.toLowerCase()}.</span> {result.assessment.urgency.deadline}.
-                    </p>
-                  )}
-                  <Disclosure label={`View full CBOM (${result.cbom_summary.length} algorithms)`}>
-                    <DetectDetails result={result} migrated={false} />
-                  </Disclosure>
-                </>
-              ) : (
-                <p className="text-[13px] text-zinc-500">The failing asset and algorithms appear here after a scan.</p>
-              )}
-            </Section>
+            <LayoutGroup>
+              <Glass className="mt-8 p-6 sm:p-8">
+                {/* ── 1 · Detect ─────────────────────────────────────── */}
+                {step === 1 && (
+                  <motion.div key="detect" variants={stagger} initial="hidden" animate="show">
+                    {!result && !scanning && (
+                      <>
+                        <Heading eyebrow="Step 1 · Detect" title="Scan an endpoint" body="We open a live TLS connection, offer post-quantum key exchange, and read the certificate the server signs with." />
+                        <motion.form
+                          variants={item}
+                          className="mt-6 flex gap-2"
+                          onSubmit={(e) => {
+                            e.preventDefault()
+                            scan(query)
+                          }}
+                        >
+                          <input
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="e.g. github.com"
+                            aria-label="Endpoint to scan"
+                            autoFocus
+                            spellCheck={false}
+                            autoCapitalize="none"
+                            className="h-11 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-4 font-mono text-[14px] text-white outline-none placeholder:font-sans placeholder:text-zinc-600 focus:border-white/25"
+                          />
+                          <button type="submit" disabled={!query.trim()} className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-5 text-[14px] font-semibold text-black hover:bg-zinc-200 disabled:opacity-40">
+                            Scan <ArrowRight size={16} />
+                          </button>
+                        </motion.form>
+                        <motion.div variants={item} className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-zinc-600">
+                          Try
+                          {EXAMPLES.map((d) => (
+                            <button key={d} onClick={() => { setQuery(d); scan(d) }} className="font-mono text-zinc-400 hover:text-white">
+                              {d}
+                            </button>
+                          ))}
+                        </motion.div>
+                        {error && (
+                          <motion.p variants={item} className="mt-5 flex items-center gap-2 text-[14px] text-zinc-200" role="alert">
+                            <span className="size-1.5 rounded-full bg-risk" /> {error}
+                          </motion.p>
+                        )}
+                      </>
+                    )}
 
-            {/* 2 · Fix */}
-            <Section n={2} title="The 1-click fix" state={!result ? 'upcoming' : fixed ? 'done' : 'active'}>
-              {result && before ? (
-                <>
-                  <ul className="space-y-3">
-                    {plan.map((p, i) => {
-                      const done = p.preexisting || i < ticked || fixed
-                      const running = deploy === 'running' && i === ticked && !p.preexisting
-                      return (
-                        <li key={p.id} className="flex gap-3">
-                          <span className="mt-0.5 shrink-0">
-                            {done ? <Check size={15} className="text-safe" /> : running ? <Loader2 size={15} className="animate-spin text-zinc-300" /> : <Circle size={15} className="text-zinc-600" />}
-                          </span>
-                          <span>
-                            <span className={`block text-[14px] ${done ? 'text-zinc-300' : 'text-white'}`}>{p.title}</span>
-                            <span className="mt-0.5 block text-[12px] text-zinc-500">
-                              {p.standard} · {p.preexisting ? 'already compliant' : p.detail}
-                            </span>
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                  <Disclosure label="What the patch does">
-                    <DefendDetails domain={result.domain} before={before} done={fixed} />
-                  </Disclosure>
-                </>
-              ) : (
-                <p className="text-[13px] text-zinc-500">A step-by-step fix and a one-click patch appear here.</p>
-              )}
-            </Section>
+                    {scanning && (
+                      <>
+                        <Heading eyebrow="Step 1 · Detect" title={<>Scanning <span className="font-mono">{query.trim()}</span></>} />
+                        <motion.ol variants={item} className="mt-6 space-y-2.5">
+                          {SCAN_STEPS.map((s, i) => (
+                            <CheckLine key={s} state={i < scanStep ? 'done' : i === scanStep ? 'run' : 'todo'}>{s}</CheckLine>
+                          ))}
+                        </motion.ol>
+                      </>
+                    )}
 
-            {/* 3 · Proof */}
-            <div ref={proofRef} className="scroll-mt-4" />
-            <Section n={3} title="The proof" state={fixed ? (verification?.valid ? 'done' : 'active') : 'upcoming'}>
-              {fixed && block && verification ? (
-                <>
-                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="rounded-lg border border-zinc-800 bg-black/40 p-5">
-                    <div className="flex items-center gap-3">
-                      <span className={`grid size-8 place-items-center rounded-full ${verification.valid ? 'bg-safe/15 text-safe' : 'bg-risk/15 text-risk'}`}>
-                        {verification.valid ? <Check size={17} strokeWidth={2.5} /> : '!'}
-                      </span>
-                      <div className="text-[16px] font-medium text-white">
-                        {verification.valid ? 'Endpoint Secured. Hash anchored to Ledger.' : 'Record altered: the ledger no longer verifies.'}
-                      </div>
-                    </div>
-                    <dl className="mt-4 grid grid-cols-[110px_1fr] gap-y-1.5 font-mono text-[12px]">
-                      <dt className="text-zinc-500">block</dt>
-                      <dd className="text-zinc-200">#{block.index}</dd>
-                      <dt className="text-zinc-500">block hash</dt>
-                      <dd className="truncate text-zinc-200" title={block.block_hash}>{block.block_hash}</dd>
-                      <dt className="text-zinc-500">verified</dt>
-                      <dd className={verification.valid ? 'text-safe' : 'text-risk'}>{String(verification.valid)}</dd>
-                    </dl>
+                    {result && before && !scanning && (
+                      <>
+                        <Heading
+                          eyebrow="Step 1 · Detect"
+                          title={vulnerable ? `${vulnerable} vulnerable algorithm${vulnerable > 1 ? 's' : ''} found` : 'No vulnerable algorithms found'}
+                          body={diag?.meaning}
+                        />
+                        <motion.div variants={item} className="mt-6 space-y-2.5">
+                          {detected.map((a) => <AlgoChip key={a.role} algo={a} />)}
+                        </motion.div>
+                        {otherFailing.length > 0 && (
+                          <motion.p variants={item} className="mt-3 text-[12px] text-zinc-500">
+                            Also classical in the chain: <span className="font-mono text-zinc-400">{otherFailing.map((a) => a.name).join(' · ')}</span>
+                          </motion.p>
+                        )}
+                        <motion.div variants={item} className="mt-7">
+                          <Primary onClick={() => goto(2)}>Next: score the risk</Primary>
+                        </motion.div>
+                        <Disclosure label={`Full CBOM (${result.cbom_summary.length} algorithms)`}>
+                          <DetectDetails result={result} migrated={false} />
+                        </Disclosure>
+                      </>
+                    )}
                   </motion.div>
-
-                  <p className="mt-4 text-[13px] text-zinc-400">
-                    Next: send the CBOM report to your compliance team. It includes this proof, the certificate details and the action plan.
-                  </p>
-                  <Disclosure label="View ledger proof">
-                    <ProveDetails block={block} verification={verification} tampered={tampered} onTamperToggle={toggleTamper} />
-                  </Disclosure>
-                </>
-              ) : (
-                <p className="text-[13px] text-zinc-500">After the fix, a SHA-256 proof is anchored to the ledger and shown here.</p>
-              )}
-            </Section>
-          </div>
-          </div>
-
-          {/* Sticky next action: the admin never has to hunt for the button */}
-          {result && (
-            <div className="sticky bottom-0 z-10 border-t border-zinc-800 bg-black/80 px-6 py-4 backdrop-blur-xl lg:px-10">
-              <div className="mx-auto max-w-xl">
-                {!fixed ? (
-                  <>
-                    <button
-                      onClick={deployPatch}
-                      disabled={deploy === 'running'}
-                      className="inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-md bg-white text-[15px] font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-60"
-                    >
-                      {deploy === 'running' ? <Loader2 size={17} className="animate-spin" /> : <ShieldCheck size={17} />}
-                      {deploy === 'running' ? 'Deploying patch…' : nothingToFix ? 'Anchor scan to ledger' : 'Deploy ML-DSA-65 Quantum Patch'}
-                    </button>
-                    <p className="mt-2 text-center text-[12px] text-zinc-500">Simulation: builds and verifies the patch; your server is not modified.</p>
-                  </>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="flex w-full items-center gap-2 text-[13px] text-zinc-300">
-                      <span className={`size-1.5 rounded-full ${verification?.valid ? 'bg-safe' : 'bg-risk'}`} />
-                      {verification?.valid ? `Endpoint secured · block #${block?.index} verified` : 'Ledger check failed'}
-                    </span>
-                    <button onClick={exportPdf} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-md bg-white px-4 text-[14px] font-semibold text-black hover:bg-zinc-200">
-                      <FileText size={15} /> Download PDF report
-                    </button>
-                    <button onClick={reset} className="inline-flex h-11 items-center gap-2 rounded-md border border-zinc-800 px-4 text-[13px] text-zinc-200 hover:border-zinc-600">
-                      <RotateCcw size={14} /> Next endpoint
-                    </button>
-                  </div>
                 )}
-              </div>
-            </div>
-          )}
-        </aside>
+
+                {/* ── 2 · Score ──────────────────────────────────────── */}
+                {step === 2 && m && (
+                  <motion.div key="score" variants={stagger} initial="hidden" animate="show">
+                    <Heading
+                      eyebrow="Step 2 · Score · Mosca's inequality"
+                      title={m.verdict === 'critical' ? 'Critical: forgeable while it still matters' : m.verdict === 'safe' ? 'Safe: already post-quantum' : 'Within the window, but only just'}
+                      body={
+                        m.verdict === 'critical'
+                          ? `Data must stay protected until ${BASE_YEAR + m.sum}. A quantum computer could break it from ${BASE_YEAR + m.z}: ${m.exposedYears} years exposed.`
+                          : m.verdict === 'safe'
+                            ? 'Nothing detected is breakable by a quantum computer.'
+                            : `Protection is needed until ${BASE_YEAR + m.sum}, before a ${BASE_YEAR + m.z} quantum computer. Start migrating now.`
+                      }
+                    />
+                    <motion.div variants={item} className="mt-6 grid items-center gap-6 sm:grid-cols-[1.1fr_1fr]">
+                      <RiskGauge value={m.sum} threshold={m.z} verdict={m.verdict} />
+                      <div>
+                        <div className="font-mono text-2xl tracking-tight text-white tabular-nums">
+                          {m.x} <span className="text-zinc-600">+</span> {m.y} <span className="text-zinc-600">=</span> {m.sum}{' '}
+                          <span className={m.holds ? 'text-risk' : 'text-safe'}>{m.holds ? '>' : '≤'}</span> {m.z}
+                        </div>
+                        <div className="mt-1 font-mono text-[12px] text-zinc-500">X + Y {m.holds ? '>' : '≤'} Z</div>
+                        <div className="mt-5 space-y-4">
+                          {([['X · migration time', x, setX, 15], ['Y · data shelf life', y, setY, 30]] as const).map(([label, v, set, max]) => (
+                            <label key={label} className="block">
+                              <div className="flex justify-between text-[12px]">
+                                <span className="text-zinc-400">{label}</span>
+                                <span className="font-mono text-white">{v} yrs</span>
+                              </div>
+                              <input type="range" min={0} max={max} value={v} onChange={(e) => set(Number(e.target.value))} className="mt-1" />
+                            </label>
+                          ))}
+                          <div className="flex justify-between text-[12px]">
+                            <span className="text-zinc-400">Z · years to a quantum computer</span>
+                            <span className="font-mono text-white">{Z_YEARS} yrs (fixed)</span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                    <motion.div variants={item} className="mt-7">
+                      <Primary onClick={() => goto(3)}>Next: defend</Primary>
+                    </motion.div>
+                  </motion.div>
+                )}
+
+                {/* ── 3 · Defend ─────────────────────────────────────── */}
+                {step === 3 && before && (
+                  <motion.div key="defend" variants={stagger} initial="hidden" animate="show">
+                    <Heading
+                      eyebrow="Step 3 · Defend"
+                      title={patched ? 'Patched: ML-DSA-65 + ML-KEM-768' : 'Apply the quantum-safe patch'}
+                      body={
+                        patched
+                          ? 'Signatures now use ML-DSA-65 and key exchange uses ML-KEM-768 (as the X25519MLKEM768 hybrid).'
+                          : 'Swap the classical signature and key exchange for NIST post-quantum standards.'
+                      }
+                    />
+                    <motion.div variants={item} className="mt-6 space-y-2.5">
+                      {(patched ? upgraded : detected).map((a, i) => <AlgoChip key={a.role} algo={a} delay={patched ? i * 0.18 : 0} />)}
+                    </motion.div>
+                    <motion.div variants={item} className="mt-7 flex flex-wrap items-center gap-3">
+                      {patched ? (
+                        <Primary onClick={() => goto(4)}>Next: prove it</Primary>
+                      ) : (
+                        <>
+                          <Primary onClick={applyPatch} busy={patching} icon={<ShieldCheck size={16} />}>
+                            {patching ? 'Applying patch…' : 'Apply Quantum-Safe Patch'}
+                          </Primary>
+                          <span className="text-[12px] text-zinc-500">Simulated: the real server is not modified.</span>
+                        </>
+                      )}
+                    </motion.div>
+                    <Disclosure label="What the patch does">
+                      <DefendDetails domain={result!.domain} before={before} done={patched} />
+                    </Disclosure>
+                  </motion.div>
+                )}
+
+                {/* ── 4 · Prove ──────────────────────────────────────── */}
+                {step === 4 && result && (
+                  <motion.div key="prove" variants={stagger} initial="hidden" animate="show">
+                    <Heading
+                      eyebrow="Step 4 · Prove"
+                      title={typed && verification?.valid ? 'Proof anchored to the Merkle ledger' : 'Anchor the proof'}
+                      body="Each step is fingerprinted with SHA-256, combined into a Merkle root and chained to the previous block. Any later edit breaks it."
+                    />
+                    {!block ? (
+                      <motion.div variants={item} className="mt-7">
+                        <Primary onClick={anchorProof} busy={anchoring}>Anchor to Merkle ledger</Primary>
+                      </motion.div>
+                    ) : (
+                      <motion.div variants={item} className="mt-6">
+                        <TypeTerminal
+                          title={`ledger · block #${block.index}`}
+                          onDone={() => setTyped(true)}
+                          lines={[
+                            { text: `$ ledger anchor --domain ${block.domain}`, tone: 'dim' },
+                            ...block.leaves.map((l, i): TermLine => ({ text: `sha256 leaf[${i}] ${l.label.toLowerCase().padEnd(7)} ${l.hash}` })),
+                            { text: `merkle_root          ${block.merkle_root}`, tone: 'strong' },
+                            { text: `prev_hash            ${block.prev_hash}`, tone: 'dim' },
+                            { text: `block_hash           ${block.block_hash}`, tone: 'strong' },
+                            { text: `$ ledger verify #${block.index}`, tone: 'dim' },
+                            { text: verification?.valid ? '✓ leaves, root, block hash and chain link match' : '✗ verification failed', tone: verification?.valid ? 'ok' : 'bad' },
+                          ]}
+                        />
+                        {typed && (
+                          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease }} className="mt-7">
+                            <Primary onClick={() => goto(5)}>Next: rescan</Primary>
+                          </motion.div>
+                        )}
+                        {typed && (
+                          <Disclosure label="Verification details and tamper test">
+                            <ProveDetails block={block} verification={verification} tampered={tampered} onTamperToggle={toggleTamper} />
+                          </Disclosure>
+                        )}
+                      </motion.div>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* ── 5 · Rescan ─────────────────────────────────────── */}
+                {step === 5 && result && before && (
+                  <motion.div key="rescan" variants={stagger} initial="hidden" animate="show">
+                    <Heading
+                      eyebrow="Step 5 · Rescan"
+                      title={complete ? <><span className="font-mono">100%</span> PQC-ready</> : 'Run the verification scan'}
+                      body={complete ? 'Every algorithm on the patched endpoint is post-quantum.' : 'Re-run the same checks against the patched configuration.'}
+                    />
+                    {rescan === 'idle' ? (
+                      <motion.div variants={item} className="mt-7">
+                        <Primary onClick={runRescan}>Run verification scan</Primary>
+                      </motion.div>
+                    ) : (
+                      <motion.div variants={item} className="mt-6 grid items-center gap-6 sm:grid-cols-[1fr_auto]">
+                        <ol className="space-y-2.5">
+                          <CheckLine state={rescanStep >= 1 ? 'done' : 'run'}>Key exchange negotiated: ML-KEM-768 (X25519MLKEM768)</CheckLine>
+                          <CheckLine state={rescanStep >= 2 ? 'done' : rescanStep === 1 ? 'run' : 'todo'}>Certificate: ML-DSA-65 key and signature</CheckLine>
+                          <CheckLine state={rescanStep >= 3 ? 'done' : rescanStep === 2 ? 'run' : 'todo'}>CBOM: 0 quantum-vulnerable algorithms</CheckLine>
+                        </ol>
+                        <ScoreRing from={result.assessment.score} to={complete ? 100 : result.assessment.score} />
+                      </motion.div>
+                    )}
+                    {complete && (
+                      <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4 text-[12px] text-zinc-500">
+                        Verification ran against the simulated patched endpoint. The live server at {result.domain} still reports {before.leafKey}.
+                      </motion.p>
+                    )}
+                    {complete && (
+                      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="mt-7 flex flex-wrap gap-2">
+                        <Primary onClick={exportPdf} icon={<FileText size={16} />}>Download CBOM report</Primary>
+                        <button onClick={reset} className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/10 px-4 text-[14px] text-zinc-200 hover:border-white/20">
+                          <RotateCcw size={15} /> Scan another endpoint
+                        </button>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                )}
+              </Glass>
+            </LayoutGroup>
+
+            {complete && <ImpactPanel beforeAlgo={before!.leafKey} beforeKex={before!.kex} domain={result!.domain} />}
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+/** Before → after PQC score ring. */
+function ScoreRing({ from, to }: { from: number; to: number }) {
+  const r = 38
+  const c = 2 * Math.PI * r
+  const done = to === 100
+  return (
+    <div className="relative size-28 shrink-0 justify-self-center">
+      <svg viewBox="0 0 100 100" className="size-full -rotate-90">
+        <circle cx="50" cy="50" r={r} fill="none" stroke="rgb(255 255 255 / 0.08)" strokeWidth="6" />
+        <motion.circle
+          cx="50"
+          cy="50"
+          r={r}
+          fill="none"
+          stroke={done ? '#10b981' : '#ef4444'}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          initial={{ strokeDashoffset: c * (1 - from / 100) }}
+          animate={{ strokeDashoffset: c * (1 - to / 100), stroke: done ? '#10b981' : '#ef4444' }}
+          transition={{ duration: 1.1, ease }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <motion.span key={to} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="font-mono text-2xl text-white">
+          {to}
+        </motion.span>
+        <span className="text-[10px] tracking-wide text-zinc-500 uppercase">{done ? 'PQC-ready' : 'PQC score'}</span>
       </div>
     </div>
   )
 }
+

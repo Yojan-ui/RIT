@@ -40,23 +40,27 @@ frontend/   React + React Three Fiber single page: search, 3D cipher globe, resu
 Results from live tests (Sept 2026): cloudflare.com, google.com, example.org and microsoft.com negotiate X25519MLKEM768
 (score 60); github.com uses classical x25519 (score 10).
 
-## The frontend: an actionable split screen
+## The frontend: a five-step pipeline
 
-Built for an IT administrator who needs to know what's wrong, what to press, and what to hand to compliance.
+A stepper over the WebGL core walks through **Detect → Score → Defend → Prove → Rescan**, one glass card at a time
+(Framer Motion stagger reveals; a shared `layoutId` moves the active step marker and morphs the algorithm chips).
 
-- **Left: diagnosis.** The WebGL crypto core (`frontend/src/scene/CryptoCore.tsx`) reacts to the result: amber/red and
-  unstable when vulnerable, calm emerald once secured. Over it sits one plain-English headline generated from the live
-  scan (e.g. "github.com is using an outdated ECDSA P-256 lock.") and a "What this means" line (`frontend/src/lib/diagnosis.ts`).
-- **Right: action plan.**
-  1. **The vulnerability**: the exact asset (`host:443`, IP, issuer) and each quantum-breakable algorithm, with the
-     backend's urgency. The full CBOM sits behind a disclosure.
-  2. **The 1-click fix**: a checklist (replace the certificate with ML-DSA-65, enable X25519MLKEM768, anchor proof) and
-     **Deploy ML-DSA-65 Quantum Patch**, pinned in a sticky action bar so the next button is always on screen. The
-     deployment is simulated and labelled as such; the OpenSSL 3.5 runbook is behind "What the patch does".
-  3. **The proof**: "Endpoint Secured. Hash anchored to Ledger." with the block number and SHA-256 block hash (real
-     Web Crypto Merkle block, chained in localStorage). Terminal output and a tamper test are behind a disclosure.
-- **Export CBOM Report (PDF/JSON)**, pinned top right: a jsPDF-generated report (endpoint, certificate, CBOM table,
-  action plan status, ledger proof) and the raw CycloneDX 1.6 JSON (`frontend/src/lib/report.ts`).
+1. **Detect**: live scan; the signature and key-exchange algorithms as chips marked vulnerable or quantum-safe, plus a
+   plain-English explanation. Full CBOM behind a disclosure.
+2. **Score**: Mosca's inequality (X, Y sliders; Z fixed at 7) with an animated semicircle gauge that fills past the Z
+   marker into the red CRITICAL zone.
+3. **Defend**: *Apply Quantum-Safe Patch* morphs the chips to **ML-DSA-65** and **ML-KEM-768** and shifts the core from
+   red to cyan/green. Simulated and labelled as such; the OpenSSL runbook is behind a disclosure.
+4. **Prove**: anchors a real Web Crypto SHA-256 Merkle block and types it out as terminal output; tamper test behind a
+   disclosure.
+5. **Rescan**: a verification pass against the patched configuration; the score ring goes to 100 (PQC-ready). It states
+   that the live server is unchanged.
+
+After step 5 a **Quantum safety impact** card compares before (the detected classical algorithms, Shor-vulnerable) with
+after (ML-DSA and ML-KEM: lattice-based, no known efficient quantum attack, NIST FIPS 204/203).
+
+**Export CBOM Report (PDF/JSON)** stays pinned top right. If the scanner API is unreachable, Detect falls back to a
+labelled demo dataset (`frontend/src/lib/demo.ts`) so the pipeline still runs offline.
 
 ## API
 
