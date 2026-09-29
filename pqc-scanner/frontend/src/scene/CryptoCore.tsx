@@ -123,7 +123,8 @@ void main(){
 
 const PARTICLES = 2000
 
-export function CryptoCore({ state, shockKey = 0 }: { state: CoreState; shockKey?: number }) {
+/** `side`: which half of a wide screen the core occupies ('left' leaves the right half for UI). */
+export function CryptoCore({ state, shockKey = 0, side = 'right' }: { state: CoreState; shockKey?: number; side?: 'left' | 'right' }) {
   const live = useMemo<Live>(() => {
     const s = STATES.idle
     return { color: new THREE.Color(s.color), accent: new THREE.Color(s.accent), instability: s.instability, order: s.order, pulse: s.pulse, spin: s.spin, shockAt: -10 }
@@ -133,7 +134,7 @@ export function CryptoCore({ state, shockKey = 0 }: { state: CoreState; shockKey
       <color attach="background" args={['#020306']} />
       <Driver live={live} state={state} shockKey={shockKey} />
       <Stars />
-      <Placement>
+      <Placement side={side}>
         <Core live={live} />
         <Shell live={live} />
         <Lattice live={live} />
@@ -174,16 +175,16 @@ function Driver({ live, state, shockKey }: { live: Live; state: CoreState; shock
   return null
 }
 
-/** Keep the core beside the text on wide screens and above it on narrow ones. */
-function Placement({ children }: { children: ReactNode }) {
+/** Keep the core clear of the UI: in one half on wide screens, above the content on narrow ones. */
+function Placement({ children, side }: { children: ReactNode; side: 'left' | 'right' }) {
   const group = useRef<THREE.Group>(null)
   const { viewport } = useThree()
   useFrame((_, dt) => {
     if (!group.current) return
     const wide = viewport.aspect > 1.15
-    const tx = wide ? Math.min(2.6, viewport.width * 0.22) : 0
-    const ty = wide ? 0 : viewport.height * 0.2
-    const s = wide ? 1 : Math.min(1, viewport.width / 6.2)
+    const tx = !wide ? 0 : side === 'right' ? Math.min(2.6, viewport.width * 0.22) : -viewport.width * 0.25
+    const ty = !wide ? viewport.height * 0.2 : side === 'left' ? viewport.height * 0.12 : 0
+    const s = !wide ? Math.min(1, viewport.width / 6.2) : side === 'left' ? Math.min(0.85, viewport.width / 16) : 1
     group.current.position.x = THREE.MathUtils.damp(group.current.position.x, tx, 4, dt)
     group.current.position.y = THREE.MathUtils.damp(group.current.position.y, ty, 4, dt)
     group.current.scale.setScalar(THREE.MathUtils.damp(group.current.scale.x, s, 4, dt))

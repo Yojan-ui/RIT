@@ -40,29 +40,23 @@ frontend/   React + React Three Fiber single page: search, 3D cipher globe, resu
 Results from live tests (Sept 2026): cloudflare.com, google.com, example.org and microsoft.com negotiate X25519MLKEM768
 (score 60); github.com uses classical x25519 (score 10).
 
-## The frontend: a four-step story
+## The frontend: an actionable split screen
 
-A full-screen WebGL core (`frontend/src/scene/CryptoCore.tsx`) sits behind a plain-English storybook. The core is a
-noise-displaced sphere with a wireframe shell, 2,000 GPU particles and bloom, and it acts out the state:
+Built for an IT administrator who needs to know what's wrong, what to press, and what to hand to compliance.
 
-| State | Core |
-|---|---|
-| Idle | calm blue |
-| Scanning | pulsing, particles streaming |
-| Weakness found | throbbing amber, erratic swarm |
-| Critical | violent red, jagged surface |
-| Upgraded / sealed | smooth emerald/cyan, particles settle into orbital rings, lattice appears |
-
-Four clicks tell the story, each with one giant headline generated from the real data (`frontend/src/lib/story.ts`):
-
-1. **Scan** → "Scanning…" → e.g. "⚠️ Weakness found: old ECDSA lock detected." (the lock type comes from the live certificate)
-2. **Calculate risk** → Mosca's inequality (X migration 4, Y shelf life 10, Z fixed 7) → "🚨 Critical: can be forged by a quantum computer."
-3. **Upgrade to Quantum-Safe** → simulated ML-DSA-65 + X25519MLKEM768 → "✅ Success: ML-DSA quantum lock activated."
-4. **Seal the Record** → real Web Crypto SHA-256 Merkle block, chained in localStorage → "🔒 Proof anchored to the ledger."
-
-The **Advanced technical view** toggle reveals the jargon for the current step: handshake details and the CycloneDX CBOM,
-Mosca sliders and per-algorithm verdicts, the change set and OpenSSL 3.5 runbook, and the ledger as terminal output with a
-tamper test. A playback bar lets you revisit completed steps.
+- **Left: diagnosis.** The WebGL crypto core (`frontend/src/scene/CryptoCore.tsx`) reacts to the result: amber/red and
+  unstable when vulnerable, calm emerald once secured. Over it sits one plain-English headline generated from the live
+  scan (e.g. "github.com is using an outdated ECDSA P-256 lock.") and a "What this means" line (`frontend/src/lib/diagnosis.ts`).
+- **Right: action plan.**
+  1. **The vulnerability**: the exact asset (`host:443`, IP, issuer) and each quantum-breakable algorithm, with the
+     backend's urgency. The full CBOM sits behind a disclosure.
+  2. **The 1-click fix**: a checklist (replace the certificate with ML-DSA-65, enable X25519MLKEM768, anchor proof) and
+     **Deploy ML-DSA-65 Quantum Patch**, pinned in a sticky action bar so the next button is always on screen. The
+     deployment is simulated and labelled as such; the OpenSSL 3.5 runbook is behind "What the patch does".
+  3. **The proof**: "Endpoint Secured. Hash anchored to Ledger." with the block number and SHA-256 block hash (real
+     Web Crypto Merkle block, chained in localStorage). Terminal output and a tamper test are behind a disclosure.
+- **Export CBOM Report (PDF/JSON)**, pinned top right: a jsPDF-generated report (endpoint, certificate, CBOM table,
+  action plan status, ledger proof) and the raw CycloneDX 1.6 JSON (`frontend/src/lib/report.ts`).
 
 ## API
 

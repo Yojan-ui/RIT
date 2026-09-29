@@ -1,11 +1,10 @@
-// "Advanced technical view": the jargon behind each plain-English step.
+// Technical detail sections (CBOM, runbook, ledger) shown behind disclosures in the action plan.
 import type { ReactNode } from 'react'
-import { motion } from 'framer-motion'
-import { Download, FlaskConical, Lock } from 'lucide-react'
+import { Download, FlaskConical } from 'lucide-react'
 import type { ScanResult } from '../api'
 import type { LedgerBlock, Verification } from '../lib/ledger'
-import { BASE_YEAR, MIGRATED, Z_YEARS, type AlgoVerdict, type CryptoState, type MoscaResult } from '../lib/mosca'
-import { Button, DataTable, KV, StatusLabel, Td, Terminal, Th, algoStatus, type Status } from './ui'
+import { MIGRATED, type CryptoState } from '../lib/mosca'
+import { Button, DataTable, KV, StatusLabel, Td, Terminal, Th, algoStatus } from './ui'
 
 function Section({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
@@ -64,72 +63,6 @@ export function DetectDetails({ result, migrated }: { result: ScanResult; migrat
               <Td mono className="text-zinc-500!">{r.oid ?? '—'}</Td>
               <Td mono>{r.nist_level || '—'}</Td>
               <Td><StatusLabel status={algoStatus(r.quantum_safe)}>{r.quantum_safe ? 'PQ-safe' : 'Shor-vulnerable'}</StatusLabel></Td>
-            </tr>
-          ))}
-        </DataTable>
-      </Section>
-    </>
-  )
-}
-
-// ── Step 2 ───────────────────────────────────────────────────────────────────
-
-const VERDICT: Record<AlgoVerdict, { status: Status; label: string }> = {
-  safe: { status: 'safe', label: 'Safe' },
-  window: { status: 'warn', label: 'Within window' },
-  forgeable: { status: 'risk', label: 'Forgeable' },
-  readable: { status: 'risk', label: 'Readable later' },
-}
-
-function Slider({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
-  return (
-    <label className="block">
-      <div className="flex items-baseline justify-between text-[13px]">
-        <span className="text-zinc-300">{label}</span>
-        <span className="font-mono text-white tabular-nums">{value} yrs</span>
-      </div>
-      <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))} className="mt-1.5" />
-    </label>
-  )
-}
-
-export function ScoreDetails({ m, x, y, setX, setY }: { m: MoscaResult; x: number; y: number; setX: (v: number) => void; setY: (v: number) => void }) {
-  const span = Math.max(m.sum, m.z) + 2
-  const pct = (v: number) => `${(v / span) * 100}%`
-  return (
-    <>
-      <Section title="Mosca's inequality · X + Y > Z">
-        <div className="space-y-4">
-          <Slider label="X · migration time" value={x} min={0} max={15} onChange={setX} />
-          <Slider label="Y · data shelf life" value={y} min={0} max={30} onChange={setY} />
-          <div className="flex items-baseline justify-between text-[13px]">
-            <span className="inline-flex items-center gap-1.5 text-zinc-300">Z · years to a quantum computer <Lock size={11} className="text-zinc-500" /></span>
-            <span className="font-mono text-white">{Z_YEARS} yrs · {BASE_YEAR + Z_YEARS}</span>
-          </div>
-        </div>
-        <div className="mt-5 font-mono text-xl text-white tabular-nums">
-          {m.x} + {m.y} = {m.sum} <span className={m.holds ? 'text-risk' : 'text-safe'}>{m.holds ? '>' : '≤'}</span> {m.z}
-        </div>
-        <div className="relative mt-4 h-5">
-          <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
-          <motion.div className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-zinc-300" animate={{ width: pct(m.x) }} transition={{ duration: 0.2 }} />
-          <motion.div className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-zinc-500" animate={{ left: pct(m.x), width: pct(m.y) }} transition={{ duration: 0.2 }} />
-          {m.exposedYears > 0 && <motion.div className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-risk" animate={{ left: pct(m.z), width: pct(m.exposedYears) }} transition={{ duration: 0.2 }} />}
-          <div className="absolute inset-y-0 w-px bg-risk" style={{ left: pct(m.z) }} />
-        </div>
-        <div className="relative mt-1 h-4 font-mono text-[11px] text-zinc-500">
-          <span className="absolute left-0">{BASE_YEAR}</span>
-          <span className="absolute -translate-x-1/2 text-zinc-300" style={{ left: pct(m.z) }}>CRQC {BASE_YEAR + m.z}</span>
-          <span className="absolute right-0">{BASE_YEAR + span}</span>
-        </div>
-      </Section>
-      <Section title="Per-algorithm verdict">
-        <DataTable head={<><Th>Component</Th><Th>Algorithm</Th><Th>Verdict</Th></>} minWidth={420}>
-          {m.rows.map((r) => (
-            <tr key={r.role}>
-              <Td>{r.role}</Td>
-              <Td mono>{r.algorithm}</Td>
-              <Td><StatusLabel status={VERDICT[r.verdict].status}>{VERDICT[r.verdict].label}</StatusLabel></Td>
             </tr>
           ))}
         </DataTable>
