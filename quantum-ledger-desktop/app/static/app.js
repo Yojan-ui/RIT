@@ -5,7 +5,7 @@ const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const short = (h, n = 12) => (h ? `${h.slice(0, n)}…${h.slice(-6)}` : '—');
 
-const state = { verify: null, selected: null, migrated: new Set() };
+const state = { verify: null, selected: null, migrated: new Set(), audit: new Set(), config: null };
 
 async function api(method, path, body) {
   const res = await fetch(path, {
@@ -63,6 +63,8 @@ const STANDARD = {
   'curve25519-sha256': 'Shor-breakable (HNDL)',
 };
 
+const SEVERITY_CLASS = { CRITICAL: 'forgeable', High: 'vulnerable', Low: 'safe' };
+
 function riskColor(v) {
   if (v >= 70) return 'var(--bad)';
   if (v >= 35) return 'var(--warn)';
@@ -78,6 +80,51 @@ function mosca(a) {
   return `${m.x}+${m.y} <b style="color:${m.holds ? 'var(--bad)' : 'var(--ok)'}">${cmp}</b> ${m.z}`;
 }
 
+// ── CWM score validation ─────────────────────────────────────────────────────
+// Recomputes each score in the browser from the inputs the server used, so the
+// number on screen can be checked independently.
+
+const DEFAULT_CWM = { thresholds: [40, 70], max: 100 };
+const num = (n) => (Number.isInteger(n) ? n.toFixed(1) : String(n));
+
+function recompute(c) {
+  const raw = ((c.x_ml + c.y_shelf_life) / c.z_crqc) * c.exposure_weight * c.crypto_fragility * 100;
+  const max = state.config?.max_score ?? DEFAULT_CWM.max;
+  const score = Math.round(Math.min(max, raw) * 10) / 10;
+  const [lo, hi] = state.config?.severity_thresholds ?? DEFAULT_CWM.thresholds;
+  const severity = score < lo ? 'Low' : score < hi ? 'High' : 'CRITICAL';
+  return { raw: Math.round(raw * 10) / 10, score, severity };
+}
+
+function auditLine(a) {
+  const c = a.cwm;
+  const tail = c.capped ? `${num(c.raw_score)} → capped at ${num(c.score)}` : num(c.score);
+  return `((X_ML [${num(c.x_ml)}] + Y [${num(c.y_shelf_life)}]) / Z [${num(c.z_crqc)}]) × Exp [${num(c.exposure_weight)}] × Fragility [${num(c.crypto_fragility)}] × 100 = ${tail} (${a.severity})`;
+}
+
+function auditRow(a) {
+  const c = a.cwm;
+  const check = recompute(c);
+  const ok = check.score === c.score && check.severity === a.severity;
+  const f = c.prediction?.features || {};
+  const [lo, hi] = state.config?.severity_thresholds ?? DEFAULT_CWM.thresholds;
+  return `<tr class="audit-row" id="audit-${esc(a.id)}"><td colspan="7">
+    <div class="audit">
+      <div class="audit-head">Validation audit · ${esc(a.host)}</div>
+      <code class="audit-formula">${esc(auditLine(a))}</code>
+      <div class="audit-check ${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} Recomputed in your browser: ${num(check.score)} (${check.severity}) ${ok ? 'matches the server' : 'DOES NOT match the server'}</div>
+      <dl class="audit-grid">
+        <dt>X<sub>ML</sub> · migration</dt><dd><b>${num(c.x_ml)} yrs</b> predicted for <code>${esc(c.prediction?.asset_type ?? '')}</code> in the <code>${esc(c.prediction?.network_zone ?? '')}</code> zone${f.base_years != null ? ` (base ${num(f.base_years)} × zone factor ${num(f.zone_factor)})` : ''}<div class="std">${esc(c.prediction?.model ?? '')}</div></dd>
+        <dt>Y · shelf life</dt><dd><b>${num(c.y_shelf_life)} yrs</b> that this asset's signatures must stay trustworthy (estate record)</dd>
+        <dt>Z · CRQC horizon</dt><dd><b>${num(c.z_crqc)} yrs</b> set on the Score stage · Mosca ratio (X+Y)/Z = <b>${c.mosca_ratio}</b>${c.mosca_ratio > 1 ? ' (inequality holds)' : ''}</dd>
+        <dt>Exposure</dt><dd><b>${num(c.exposure_weight)}</b> for <code>${esc(a.exposure)}</code> (internet 1.2 · internal 0.8)</dd>
+        <dt>Fragility</dt><dd><b>${num(c.crypto_fragility)}</b> for <code>${esc(a.signature_alg)}</code> (RSA-2048 1.0 · ECDSA-P256 1.0 · ML-DSA-65 0.1)</dd>
+        <dt>Severity</dt><dd>0–${lo - 1} Low · ${lo}–${hi - 1} High · ${hi}–100 CRITICAL${c.capped ? ` · raw ${num(c.raw_score)} is capped at 100 and used to break ties` : ''}</dd>
+      </dl>
+    </div>
+  </td></tr>`;
+}
+
 // ── Renderers ────────────────────────────────────────────────────────────────
 function renderAssets(assets) {
   const body = $('#assets-body');
@@ -87,18 +134,21 @@ function renderAssets(assets) {
   }
   body.innerHTML = assets
     .map((a, i) => {
-      const m = a.mosca;
       const scored = a.status != null;
       const risk = a.risk_score ?? 0;
-      return `<tr class="${state.migrated.has(a.id) ? 'migrated' : ''}">
+      const open = state.audit.has(a.id) && a.cwm;
+      const validate = a.cwm
+        ? `<button class="validate-link" data-audit="${esc(a.id)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="audit-${esc(a.id)}" title="${esc(auditLine(a))}">${open ? 'Hide' : 'Validate'}</button>`
+        : '';
+      return `<tr class="${state.migrated.has(a.id) ? 'migrated' : ''}${open ? ' audit-open' : ''}">
         <td class="mono muted">${scored ? i + 1 : '—'}</td>
         <td><div class="host">${esc(a.host)}:${a.port}</div><div class="svc">${esc(a.protocol)} · ${esc(a.service)} · ${esc(a.exposure)}</div></td>
         <td><div class="alg">${esc(a.signature_alg)}</div><div class="std">${esc(STANDARD[a.signature_alg] || '')}</div></td>
         <td><div class="alg">${esc(a.key_exchange)}</div><div class="std">${esc(STANDARD[a.key_exchange] || '')}</div></td>
         <td class="mosca">${mosca(a)}</td>
-        <td>${scored ? `<div class="risk"><div class="risk-bar"><span style="width:${risk}%;background:${riskColor(risk)}"></span></div><span class="risk-num">${risk}</span></div>` : '<span class="muted">—</span>'}</td>
+        <td>${scored ? `<div class="risk"><div class="risk-bar"><span style="width:${risk}%;background:${riskColor(risk)}"></span></div><span class="risk-num">${risk}</span></div>${a.severity ? `<div class="std sev-${esc(SEVERITY_CLASS[a.severity])}">${esc(a.severity)}${a.cwm ? ` · X<sub>ML</sub> ${a.cwm.x_ml}y` : ''}</div>` : ''}${validate}` : '<span class="muted">—</span>'}</td>
         <td>${scored ? `<span class="badge badge-${esc(a.status)}">${esc(a.status)}</span>` : '<span class="badge badge-none">unscored</span>'}</td>
-      </tr>`;
+      </tr>${open ? auditRow(a) : ''}`;
     })
     .join('');
 }
@@ -182,15 +232,17 @@ const actions = {
   async assess() {
     const z = Number($('#z-years').value) || 7;
     const r = await api('POST', '/assess', { z_years: z });
+    state.config = r.config;
     const s = r.summary;
-    stageResult('score', `<b style="color:var(--bad)">${s.forgeable} forgeable</b> · ${s.vulnerable} vulnerable · ${s.safe} safe (Z = ${z})`, s.forgeable ? 'bad' : 'ok');
+    const sev = r.severity_summary;
+    stageResult('score', `<b style="color:var(--bad)">${sev.CRITICAL} critical</b> · ${sev.High} high · ${sev.Low} low · ${s.forgeable} forgeable (Z = ${z})`, sev.CRITICAL ? 'bad' : 'ok');
     const top = r.ranked[0];
-    log(`Mosca assessment (Z = ${z}): ${s.forgeable} forgeable. Highest risk: ${esc(top.host)} (${esc(top.signature_alg)}, ${top.risk_score}). Block #${r.block.idx}.`, s.forgeable ? 'bad' : 'ok');
+    log(`CWM assessment (Z = ${z}): ${sev.CRITICAL} critical, ${sev.High} high, ${sev.Low} low. Top risk: ${esc(top.host)} (${esc(top.signature_alg)}, score ${top.risk_score}, X<sub>ML</sub> ${top.cwm.x_ml}y). Block #${r.block.idx}.`, sev.CRITICAL ? 'bad' : 'ok');
   },
   async remediate() {
     const r = await api('POST', '/remediate/demo');
     state.migrated.add(r.asset);
-    stageResult('defend', `${esc(r.host)}: ${esc(r.before.signature_alg)} → <b>${esc(r.after.signature_alg)}</b> · risk ${r.risk_before} → ${r.risk_after}`, 'ok');
+    stageResult('defend', `${esc(r.host)}: ${esc(r.before.signature_alg)} → <b>${esc(r.after.signature_alg)}</b> · risk ${r.risk_before} → ${r.risk_after} (${esc(r.severity_after)})`, 'ok');
     $('#tab-evidence').textContent = JSON.stringify(r, null, 2);
     showTab('evidence');
     log(`Migrated ${esc(r.host)} to ${esc(r.after.signature_alg)} + ${esc(r.after.key_exchange)} (simulated OpenSSL 3.5). Evidence anchored as block #${r.block.idx}.`, 'ok');
@@ -247,6 +299,14 @@ async function run(name, button) {
 // ── Wiring ───────────────────────────────────────────────────────────────────
 document.querySelectorAll('[data-action]').forEach((b) => b.addEventListener('click', () => run(b.dataset.action, b)));
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
+$('#assets-body').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-audit]');
+  if (!btn) return;
+  const id = btn.dataset.audit;
+  if (state.audit.has(id)) state.audit.delete(id);
+  else state.audit.add(id);
+  refresh().then(() => document.querySelector(`[data-audit="${CSS.escape(id)}"]`)?.focus());
+});
 $('#blocks').addEventListener('click', (e) => {
   const li = e.target.closest('.block');
   if (li) showBlock(Number(li.dataset.idx)).catch((err) => toast(err.message, true));
@@ -257,6 +317,8 @@ $('#btn-reset').addEventListener('click', async () => {
   state.verify = null;
   state.selected = null;
   state.migrated.clear();
+  state.audit.clear();
+  state.config = null;
   ['detect', 'score', 'defend', 'prove'].forEach((s) => {
     $(`#res-${s}`).textContent = 'Not run';
     $(`#res-${s}`).className = 'stage-result';

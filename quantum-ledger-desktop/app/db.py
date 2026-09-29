@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS estate (
     key_exchange TEXT NOT NULL,
     exposure TEXT NOT NULL,
     shelf_life_years REAL NOT NULL,
-    migration_years REAL NOT NULL
+    migration_years REAL NOT NULL,
+    asset_type TEXT NOT NULL DEFAULT 'generic'
 );
 CREATE TABLE IF NOT EXISTS assets (
     id TEXT PRIMARY KEY,
@@ -46,7 +47,9 @@ CREATE TABLE IF NOT EXISTS assets (
     status TEXT,
     risk_score REAL,
     mosca TEXT,
-    scanned_at TEXT NOT NULL
+    scanned_at TEXT NOT NULL,
+    severity TEXT,
+    cwm TEXT
 );
 CREATE TABLE IF NOT EXISTS scans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +97,22 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(SCHEMA)
+        self._migrate()
         self._lock = threading.RLock()
+
+    # Columns added after the first release; ALTER TABLE brings older databases up to date.
+    _ADDED_COLUMNS = {
+        "estate": {"asset_type": "TEXT NOT NULL DEFAULT 'generic'"},
+        "assets": {"severity": "TEXT", "cwm": "TEXT"},
+    }
+
+    def _migrate(self) -> None:
+        for table, columns in self._ADDED_COLUMNS.items():
+            existing = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+            for name, decl in columns.items():
+                if name not in existing:
+                    self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+        self._conn.commit()
 
     @contextmanager
     def tx(self):

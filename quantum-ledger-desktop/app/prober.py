@@ -28,29 +28,35 @@ ALGORITHMS: dict[str, dict] = {
     "mlkem768x25519-sha256": {"primitive": "kem", "family": "ML-KEM", "oid": "2.16.840.1.101.3.4.4.2", "param": "768", "nist_level": 3, "standard": "FIPS 203 (ML-KEM-768) hybrid with X25519"},
 }
 
-# The simulated estate. shelf_life = X (years signatures/data must stay trustworthy),
-# migration = Y (years this system needs to migrate). Z comes from the assessment.
+# The simulated estate. shelf_life_years = Y in Mosca (how long signatures/data must stay
+# trustworthy). asset_type + exposure feed the migration-time model that predicts X
+# (see cwm.predict_migration_time); migration_years is the legacy manual estimate.
 DEFAULT_ESTATE: list[dict] = [
-    {"id": "payments-gw", "host": "payments-gw.corp.local", "port": 443, "protocol": "TLS 1.2", "service": "Payment gateway (signed transaction receipts)",
+    {"id": "payments-gw", "asset_type": "payment-gateway", "host": "payments-gw.corp.local", "port": 443, "protocol": "TLS 1.2", "service": "Payment gateway (signed transaction receipts)",
      "signature_alg": "RSA-2048", "key_exchange": "ECDHE-P256", "exposure": "internet", "shelf_life_years": 10, "migration_years": 3},
-    {"id": "sso", "host": "sso.corp.local", "port": 443, "protocol": "TLS 1.3", "service": "Single sign-on (SAML/OIDC token signing)",
+    {"id": "sso", "asset_type": "identity-provider", "host": "sso.corp.local", "port": 443, "protocol": "TLS 1.3", "service": "Single sign-on (SAML/OIDC token signing)",
      "signature_alg": "ECDSA-P256", "key_exchange": "X25519", "exposure": "internet", "shelf_life_years": 5, "migration_years": 3},
-    {"id": "codesign", "host": "codesign.corp.local", "port": 443, "protocol": "TLS 1.2", "service": "Firmware code-signing service",
+    {"id": "codesign", "asset_type": "code-signing", "host": "codesign.corp.local", "port": 443, "protocol": "TLS 1.2", "service": "Firmware code-signing service",
      "signature_alg": "RSA-2048", "key_exchange": "ECDHE-P256", "exposure": "internal", "shelf_life_years": 15, "migration_years": 4},
-    {"id": "bastion", "host": "bastion.corp.local", "port": 22, "protocol": "SSH-2.0", "service": "Admin bastion (host key authentication)",
+    {"id": "bastion", "asset_type": "bastion", "host": "bastion.corp.local", "port": 22, "protocol": "SSH-2.0", "service": "Admin bastion (host key authentication)",
      "signature_alg": "ECDSA-P256", "key_exchange": "curve25519-sha256", "exposure": "internal", "shelf_life_years": 5, "migration_years": 3},
-    {"id": "pqc-pilot", "host": "pqc-pilot.corp.local", "port": 443, "protocol": "TLS 1.3", "service": "PQC pilot API",
+    {"id": "pqc-pilot", "asset_type": "api-service", "host": "pqc-pilot.corp.local", "port": 443, "protocol": "TLS 1.3", "service": "PQC pilot API",
      "signature_alg": "ML-DSA-65", "key_exchange": "X25519MLKEM768", "exposure": "internet", "shelf_life_years": 10, "migration_years": 0},
 ]
 
 
 def seed_estate(db: Database) -> None:
     if db.one("SELECT 1 AS x FROM estate LIMIT 1"):
+        # Databases created before asset_type existed: fill it in for the known hosts.
+        with db.tx() as c:
+            for h in DEFAULT_ESTATE:
+                c.execute("UPDATE estate SET asset_type=? WHERE id=? AND asset_type='generic'", (h["asset_type"], h["id"]))
         return
     with db.tx() as c:
         for h in DEFAULT_ESTATE:
             c.execute(
-                "INSERT INTO estate VALUES (:id,:host,:port,:protocol,:service,:signature_alg,:key_exchange,:exposure,:shelf_life_years,:migration_years)",
+                "INSERT INTO estate (id,host,port,protocol,service,signature_alg,key_exchange,exposure,shelf_life_years,migration_years,asset_type) "
+                "VALUES (:id,:host,:port,:protocol,:service,:signature_alg,:key_exchange,:exposure,:shelf_life_years,:migration_years,:asset_type)",
                 h,
             )
 
@@ -189,7 +195,7 @@ def scan(db: Database) -> tuple[list[dict], dict]:
     ts = now_iso()
     assets = [
         {
-            "id": h["id"], "host": h["host"], "port": h["port"], "protocol": h["protocol"], "service": h["service"],
+            "id": h["id"], "host": h["host"], "port": h["port"], "protocol": h["protocol"], "service": h["service"], "asset_type": h["asset_type"],
             "signature_alg": h["signature_alg"], "key_exchange": h["key_exchange"], "exposure": h["exposure"],
             "handshake": handshakes[h["id"]], "scanned_at": ts,
         }

@@ -41,7 +41,7 @@
 
         <article class="stage" data-stage="score">
           <div class="stage-head"><span class="stage-num">2</span><span class="stage-name">Score</span></div>
-          <p class="stage-desc">Rank by Mosca's inequality: an asset is forgeable when <b>X&nbsp;+&nbsp;Y&nbsp;&gt;&nbsp;Z</b>.</p>
+          <p class="stage-desc">Context-Weighted Mosca: <b>((X<sub>ML</sub>&nbsp;+&nbsp;Y)&nbsp;/&nbsp;Z)</b> × exposure × fragility, scored 0–100.</p>
           <label class="field">
             <span>Z · years to CRQC</span>
             <input id="z-years" type="number" min="1" max="50" step="1" value="7" />
@@ -90,8 +90,8 @@
                   <th>Asset</th>
                   <th>Signature</th>
                   <th>Key exchange</th>
-                  <th title="Mosca: X (shelf life) + Y (migration) vs Z (CRQC)">Mosca X+Y vs Z</th>
-                  <th>Risk</th>
+                  <th title="Mosca: X_ML (predicted migration) + Y (shelf life) vs Z (CRQC)">Mosca X+Y vs Z</th>
+                  <th>CWM risk</th>
                   <th>Status</th>
                 </tr>
               </thead>

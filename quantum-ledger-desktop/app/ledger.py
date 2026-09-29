@@ -220,6 +220,8 @@ class Ledger:
             if "status" in victim:
                 victim["status"] = "safe"
                 victim["risk_score"] = 0.0
+                if "severity" in victim:
+                    victim["severity"] = "Low"
             after = "ML-DSA-65" + (" / safe" if "status" in victim else "")
             change = {"asset": victim.get("id"), "field": "signature_alg" + ("/status" if "status" in victim else ""), "before": before, "after": after}
         else:

@@ -14,17 +14,20 @@ def client(tmp_path):
 
 
 def test_mosca_inequality():
-    assert mosca(10, 3, 7)["holds"] is True
-    assert mosca(2, 1, 7)["holds"] is False
-    assert mosca(4, 3, 7)["holds"] is False  # equality is not "greater than"
+    assert mosca(10, 3, 7).holds is True
+    assert mosca(2, 1, 7).holds is False
+    assert mosca(4, 3, 7).holds is False  # equality is not "greater than"
 
 
 def test_scoring_flags_classical_signatures_and_clears_ml_dsa():
+    estate = {"asset_type": "payment-gateway", "exposure": "internet", "shelf_life_years": 10}
     base = {"exposure": "internet", "key_exchange": "X25519"}
-    assert score_asset({**base, "signature_alg": "RSA-2048"}, 10, 3, 7)["status"] == "forgeable"
-    assert score_asset({**base, "signature_alg": "ECDSA-P256"}, 5, 3, 7)["status"] == "forgeable"
-    safe = score_asset({**base, "signature_alg": "ML-DSA-65", "key_exchange": "X25519MLKEM768"}, 10, 3, 7)
-    assert safe["status"] == "safe" and safe["risk_score"] == 0
+    rsa = score_asset({**base, "signature_alg": "RSA-2048"}, estate, 7)
+    assert rsa.status == "forgeable" and rsa.severity.value == "CRITICAL"
+    ecdsa = score_asset({**base, "signature_alg": "ECDSA-P256"}, {**estate, "asset_type": "identity-provider", "shelf_life_years": 5}, 7)
+    assert ecdsa.status == "forgeable"
+    safe = score_asset({**base, "signature_alg": "ML-DSA-65", "key_exchange": "X25519MLKEM768"}, estate, 7)
+    assert safe.status == "safe" and safe.severity.value == "Low" and safe.risk_score < rsa.risk_score
 
 
 def test_merkle_inclusion_proofs():
@@ -51,9 +54,10 @@ def test_full_pipeline_and_tamper_evidence(client):
     assessed = client.post("/assess", json={"z_years": 7}).json()
     status = {a["id"]: a["status"] for a in assessed["ranked"]}
     assert status["payments-gw"] == "forgeable" and status["sso"] == "forgeable" and status["pqc-pilot"] == "safe"
+    assert status["bastion"] == "vulnerable"  # X_ML 0.5 + Y 5 < Z 7
 
     fix = client.post("/remediate/demo").json()
-    assert fix["before"]["signature_alg"] == "RSA-2048"
+    assert fix["asset"] == "payments-gw" and fix["before"]["signature_alg"] == "RSA-2048"
     assert fix["after"] == {"signature_alg": "ML-DSA-65", "key_exchange": "X25519MLKEM768", "protocol": "TLS 1.3"}
     assert fix["status_after"] == "safe" and fix["risk_after"] < fix["risk_before"]
 
@@ -68,7 +72,7 @@ def test_full_pipeline_and_tamper_evidence(client):
     assert ok["valid"] and ok["blocks_checked"] == 5  # scan, assess, remediate, scan, attest
 
     tampered = client.post("/ledger/tamper").json()["tampered"]
-    # the insider falsifies the risk assessment (block 1): forgeable RSA-2048 → "safe"
+    # the insider falsifies the risk assessment (block 1): the top forgeable RSA-2048 asset → "safe"
     assert tampered["idx"] == 1 and tampered["kind"] == "assessment"
     assert tampered["change"]["before"] == "RSA-2048 / forgeable" and tampered["change"]["after"] == "ML-DSA-65 / safe"
 

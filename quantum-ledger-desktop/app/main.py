@@ -13,15 +13,27 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import prober, scoring, shield
+from . import cwm, prober, scoring, shield
+from .cwm import CWMConfig
 from .db import Database, dumps
 from .ledger import Ledger, now_iso
 
 STATIC = Path(__file__).resolve().parent / "static"
+CWM_METHOD = "Context-Weighted Mosca: ((X_ML + Y) / Z) × exposure × fragility × 100, capped at 100"
 
 
 class AssessRequest(BaseModel):
     z_years: float = Field(scoring.DEFAULT_Z_YEARS, gt=0, le=50, description="Mosca Z: years until a CRQC")
+
+
+class AssessResponse(BaseModel):
+    z_years: float
+    method: str
+    config: CWMConfig = Field(..., description="Multipliers and thresholds used for this assessment")
+    summary: scoring.AssessSummary = Field(..., description="Classic Mosca verdict counts")
+    severity_summary: scoring.SeveritySummary = Field(..., description="CWM severity counts")
+    ranked: list[scoring.RankedAsset]
+    block: dict
 
 
 class RemediateRequest(BaseModel):
@@ -53,10 +65,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return path.read_bytes()
 
     def load_assets() -> list[dict]:
-        rows = db.query("SELECT * FROM assets ORDER BY COALESCE(risk_score, -1) DESC, id")
+        rows = db.query("SELECT * FROM assets")
         for r in rows:
             r["handshake"] = json.loads(r["handshake"])
             r["mosca"] = json.loads(r["mosca"]) if r["mosca"] else None
+            r["cwm"] = json.loads(r["cwm"]) if r.get("cwm") else None
+        rows.sort(key=lambda r: (-(r["risk_score"] if r["risk_score"] is not None else -1), -((r["cwm"] or {}).get("raw_score", 0)), r["id"]))
         return rows
 
     def last_z() -> float:
@@ -96,24 +110,35 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return JSONResponse(json.loads(row["cbom"]), headers={"Content-Disposition": 'inline; filename="cbom.cdx.json"'})
 
     # ── Stage 2: SCORE ─────────────────────────────────────────────────────────
-    @app.post("/assess", tags=["2 · score"])
-    def assess(req: AssessRequest | None = Body(None)):
+    @app.post("/assess", tags=["2 · score"], response_model=AssessResponse)
+    def assess(req: AssessRequest | None = Body(None)) -> AssessResponse:
+        """Context-Weighted Mosca: a 0-100 risk score per asset, ranked, with severity and full breakdown."""
         req = req or AssessRequest()
         assets = load_assets()
         if not assets:
             raise HTTPException(409, "Nothing to assess: run /scan first.")
         estate = {e["id"]: e for e in db.query("SELECT * FROM estate")}
-        ranked = scoring.assess(assets, estate, req.z_years)
+        config = cwm.DEFAULT_CONFIG
+        ranked = scoring.assess(assets, estate, req.z_years, config)
         with db.tx() as c:
             for r in ranked:
-                c.execute("UPDATE assets SET status=?, risk_score=?, mosca=? WHERE id=?", (r["status"], r["risk_score"], dumps(r["mosca"]), r["id"]))
+                c.execute(
+                    "UPDATE assets SET status=?, risk_score=?, severity=?, mosca=?, cwm=? WHERE id=?",
+                    (r.status, r.risk_score, r.severity.value, dumps(r.mosca.model_dump()), dumps(r.cwm.model_dump(mode="json")), r.id),
+                )
         block = ledger.append("assessment", {
             "z_years": req.z_years,
-            "method": "Mosca: X + Y > Z",
-            "assets": [{k: r[k] for k in ("id", "signature_alg", "status", "risk_score", "mosca")} for r in ranked],
+            "method": CWM_METHOD,
+            "model": cwm.MODEL_ID,
+            "assets": [
+                {"id": r.id, "signature_alg": r.signature_alg, "status": r.status, "risk_score": r.risk_score,
+                 "severity": r.severity.value, "x_ml": r.cwm.x_ml, "mosca": r.mosca.model_dump()}
+                for r in ranked
+            ],
         })
-        counts = {s: sum(1 for r in ranked if r["status"] == s) for s in ("forgeable", "vulnerable", "safe")}
-        return {"z_years": req.z_years, "summary": counts, "ranked": ranked, "block": block}
+        summary, severity_summary = scoring.summarise(ranked)
+        return AssessResponse(z_years=req.z_years, method=CWM_METHOD, config=config, summary=summary,
+                              severity_summary=severity_summary, ranked=ranked, block=block)
 
     # ── Stage 3: DEFEND ────────────────────────────────────────────────────────
     @app.post("/remediate/demo", tags=["3 · defend"])
@@ -130,7 +155,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             candidates = [a for a in assets if a["status"] == "forgeable" and a["signature_alg"] == "RSA-2048" and a["protocol"].startswith("TLS")]
             if not candidates:
                 raise HTTPException(409, "No forgeable RSA-2048 TLS asset left to migrate.")
-            target = max(candidates, key=lambda a: a["risk_score"] or 0)
+            # highest CWM score; the uncapped raw score breaks ties at 100
+            target = max(candidates, key=lambda a: (a["risk_score"] or 0, (a["cwm"] or {}).get("raw_score", 0)))
         try:
             record = shield.upgrade(target)
         except shield.RemediationError as e:
@@ -139,18 +165,21 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         after = record["after"]
         estate_row = db.one("SELECT * FROM estate WHERE id=?", (target["id"],))
         with db.tx() as c:
-            c.execute("UPDATE estate SET signature_alg=?, key_exchange=?, protocol=?, migration_years=0 WHERE id=?",
+            c.execute("UPDATE estate SET signature_alg=?, key_exchange=?, protocol=? WHERE id=?",
                       (after["signature_alg"], after["key_exchange"], after["protocol"], target["id"]))
-        rescored = scoring.score_asset({**target, **after}, estate_row["shelf_life_years"], 0, last_z())
+        rescored = scoring.score_asset({**target, **after}, estate_row, last_z())
         with db.tx() as c:
             c.execute(
-                "UPDATE assets SET signature_alg=?, key_exchange=?, protocol=?, handshake=?, status=?, risk_score=?, mosca=? WHERE id=?",
+                "UPDATE assets SET signature_alg=?, key_exchange=?, protocol=?, handshake=?, status=?, risk_score=?, severity=?, mosca=?, cwm=? WHERE id=?",
                 (after["signature_alg"], after["key_exchange"], after["protocol"], dumps(record["post_handshake"]),
-                 rescored["status"], rescored["risk_score"], dumps(rescored["mosca"]), target["id"]),
+                 rescored.status, rescored.risk_score, rescored.severity.value, dumps(rescored.mosca.model_dump()),
+                 dumps(rescored.cwm.model_dump(mode="json")), target["id"]),
             )
         record["risk_before"] = target["risk_score"]
-        record["risk_after"] = rescored["risk_score"]
-        record["status_after"] = rescored["status"]
+        record["risk_after"] = rescored.risk_score
+        record["severity_before"] = target.get("severity")
+        record["severity_after"] = rescored.severity.value
+        record["status_after"] = rescored.status
         block = ledger.append("remediation", record)
         return {**record, "block": block}
 
