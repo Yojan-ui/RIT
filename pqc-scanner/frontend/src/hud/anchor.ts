@@ -54,3 +54,8 @@ export function nodeAngles(id: string): { az: number; el: number } {
   const v = (((h >>> 0) / 10000) % 10000) / 10000
   return { az: u * 360, el: -35 + v * 70 }
 }
+
+/** Horizontal centre of the free column between the HUD's side panels (matches the hologram fit). */
+export function columnCenter(W: number) {
+  return W >= 1024 ? (Math.min(560, W * 0.4) + W - 350) / 2 : W / 2
+}

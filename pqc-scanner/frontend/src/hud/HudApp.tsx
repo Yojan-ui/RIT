@@ -188,6 +188,9 @@ export default function HudApp() {
   const serial = r?.certificate.serial ? (r.certificate.serial.length % 2 ? `0${r.certificate.serial}` : r.certificate.serial).match(/.{2}/g)!.map((b) => b.toUpperCase()) : []
   const addrs = r ? r.addresses ?? [r.resolved_ip] : []
   const [statusText, statusCls] = STATUS[mode]
+  useEffect(() => {
+    document.title = 'QuantumLedger · PQC HUD'
+  }, [])
 
   // The 3D narrative (harvest → Q-Day → lattice fix → ledger → sweep) follows the real pipeline state.
   const story: Story = useMemo(
@@ -221,17 +224,17 @@ export default function HudApp() {
         <HudGlobe mode={mode} nodes={nodes} story={story} />
       </div>
       <div className="hud-vignette" aria-hidden />
-      <HudRings target={story.active ? null : r ? `${r.domain} · ${r.resolved_ip}` : null} index={1} total={Math.max(1, addrs.length)} dim={story.active} />
+      <HudRings target={story.active ? null : r ? `${r.domain} · ${r.resolved_ip}` : null} index={1} total={Math.max(1, addrs.length)} dim={!story.active ? 1 : story.scanning || story.stage === 1 || story.stage === 3 ? 0.3 : 0} />
       <StoryOverlay story={story} data={storyData} />
-      <NodeMarkers nodes={nodes} />
+      <NodeMarkers nodes={r && p.step === 2 && p.vulnerable > 0 ? [] : nodes} />
       <TrackingLayer nodes={nodes} active={tracking} />
 
       {/* ── header ── */}
       <header className="fixed inset-x-0 top-0 z-30 grid h-9 grid-cols-[1fr_auto] items-center border-b border-[var(--line)] bg-[rgb(8_10_15/0.8)] px-4">
         <button onClick={p.reset} className="flex items-center gap-3 text-left" aria-label="Reset">
           <span className="hud-live" />
-          <span className="hud-h text-[11px]">STARK · PQC DIAGNOSTICS</span>
-          <span className="hud-k hidden sm:inline">tls quantum-readiness</span>
+          <span className="hud-h text-[12px] tracking-[0.2em]">QUANTUMLEDGER</span>
+          <span className="hud-k hidden sm:inline">pqc diagnostics · tls quantum-readiness</span>
         </button>
         <div className="flex items-center gap-4 text-[10px]">
           <span className="hud-dim hidden lg:inline">CONSOLE {CONSOLE}</span>
@@ -266,7 +269,7 @@ export default function HudApp() {
               })}
             </nav>
 
-            <Panel title="diagnostics" right={p.scanning ? <span className="hud-live" /> : undefined} tone={mode === 'critical' || mode === 'alert' ? 'warn' : mode === 'secure' ? 'ok' : undefined}>
+            <Panel title="quantumledger · diagnostics" right={p.scanning ? <span className="hud-live" /> : undefined} tone={mode === 'critical' || mode === 'alert' ? 'warn' : mode === 'secure' ? 'ok' : undefined}>
               <Row k="scan_spectral_analysis" cls={p.scanning ? 'hud-ice' : 'hud-white'}>{p.scanning ? 'running' : r ? 'complete' : 'idle'}</Row>
               <Row k="target">{r ? `${r.domain}:443` : p.scanning ? p.query.trim() : '—'}</Row>
               <Row k="shor_exposure" cls={shorVuln ? 'hud-crit hud-sharp' : r ? 'hud-ok' : 'hud-dim'}>
@@ -294,7 +297,7 @@ export default function HudApp() {
 
           {/* ── right ── */}
           <aside className="space-y-3">
-            <Panel title="event log" right={<span className="hud-dim text-[10px]">{events.length} ev</span>}>
+            <Panel title="quantumledger · event log" right={<span className="hud-dim text-[10px]">{events.length} ev</span>}>
               <EventLog events={events} />
             </Panel>
             <Panel title="link">
@@ -465,7 +468,7 @@ function Defend({ p }: { p: Pipeline }) {
 function Prove({ p }: { p: Pipeline }) {
   const b = p.block
   return (
-    <Panel title="merkle ledger" tone={p.typed && p.verification?.valid ? 'ok' : undefined}>
+    <Panel title="quantumledger · merkle ledger" tone={p.typed && p.verification?.valid ? 'ok' : undefined}>
       <Head n={4} title={p.typed && p.verification?.valid ? 'proof anchored' : 'anchor proof'} sub="Each stage record is hashed (SHA-256), combined into a Merkle root and chained to the previous block." />
       {!b ? (
         <button className="hud-btn" onClick={p.anchorProof} disabled={p.anchoring}>{p.anchoring ? 'hashing…' : 'anchor to merkle ledger'}</button>

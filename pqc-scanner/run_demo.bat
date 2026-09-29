@@ -6,7 +6,7 @@ rem
 rem   run_demo.bat                 http://localhost:8000
 rem   set PORT=8080 ^& run_demo.bat  another port
 rem   set REBUILD=1 ^& run_demo.bat  force a fresh frontend build
-rem   set UI=hud ^& run_demo.bat     Stark-HUD variant (see run_cyber_demo.bat)
+rem   set UI=hud ^& run_demo.bat     QuantumLedger HUD variant (see run_cyber_demo.bat)
 setlocal EnableExtensions
 
 set "ROOT=%~dp0"

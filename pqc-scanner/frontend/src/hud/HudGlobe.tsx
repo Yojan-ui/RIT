@@ -132,7 +132,7 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
   const cloud = usePointCloud()
   const phase = useRef(0)
   const rot = useRef(0)
-  const { camera, size, viewport } = useThree()
+  const { camera, size } = useThree()
   const tmp = useMemo(() => ({ v: new THREE.Vector3(), n: new THREE.Vector3(), c: new THREE.Vector3(), q: new THREE.Vector3(), e: new THREE.Vector3() }), [])
   const unitCircle = useMemo(() => new THREE.BufferGeometry().setFromPoints(circle(1, 0, Math.PI * 2, 192)), [])
   const equator = useMemo(() => new THREE.BufferGeometry().setFromPoints(circle(R * 1.001, 0, Math.PI * 2, 256)), [])
@@ -195,7 +195,8 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
       const cy = wide ? H * (story.active ? 0.44 : 0.5) : H * 0.23
       const k0 = story.active ? 0.2 : 0.3
       const rpx = wide ? Math.min(right - left, H - 160) * k0 : Math.min(W, H * 0.5) * k0
-      const px = viewport.width / W
+      // world units per pixel at the base camera distance (fixed, so camera moves don't refit the scene)
+      const px = (2 * Math.tan(THREE.MathUtils.degToRad(19)) * Math.hypot(0.9, 7.4)) / H
       const k = 1 - Math.exp(-dt * 4)
       root.current.position.x += ((cx - W / 2) * px - root.current.position.x) * k
       root.current.position.y += (-(cy - H / 2) * px - root.current.position.y) * k
@@ -217,7 +218,7 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
     eqMat.current?.color.copy(accent)
     ;(scanRing.current?.material as THREE.LineBasicMaterial | undefined)?.color.copy(accent)
     // the radar sweep replaces the scan plane on the Rescan stage; orbits step back while the story runs
-    fade(scan.current, story.stage === 5 && story.rescan !== 'idle' ? 0 : 1, dt)
+    fade(scan.current, story.active && !story.scanning && story.stage >= 4 ? 0 : 1, dt)
     fade(orbits.current, story.active ? 0.35 : 1, dt, 3)
     if (nodeMat.current) {
       const pulse = story.stage === 5 && story.rescan === 'done'

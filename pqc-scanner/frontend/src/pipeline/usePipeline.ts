@@ -1,5 +1,5 @@
 // The five-stage pipeline (Detect, Score, Defend, Prove, Rescan) as one hook, so every UI
-// variant (the default dashboard and the Stark HUD) runs exactly the same logic.
+// variant (the default dashboard and the QuantumLedger HUD) runs exactly the same logic.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { scanDomain, type ScanResult } from '../api'
 import type { CoreState } from '../scene/CryptoCore'

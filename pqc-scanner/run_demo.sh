@@ -6,7 +6,7 @@
 #   ./run_demo.sh              http://localhost:8000
 #   PORT=8080 ./run_demo.sh    another port
 #   REBUILD=1 ./run_demo.sh    force a fresh frontend build
-#   UI=hud ./run_demo.sh       Stark-HUD variant (see run_cyber_demo.sh)
+#   UI=hud ./run_demo.sh       QuantumLedger HUD variant (see run_cyber_demo.sh)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

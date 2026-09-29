@@ -23,7 +23,7 @@ function useFrameLoop(fn: () => void) {
 
 // ── Hairline ring chrome registered to the hologram ──────────────────────────
 
-export function HudRings({ target, index, total, dim = false }: { target: string | null; index: number; total: number; dim?: boolean }) {
+export function HudRings({ target, index, total, dim = 1 }: { target: string | null; index: number; total: number; dim?: number }) {
   const box = useRef<HTMLDivElement>(null)
   const brg = useRef<HTMLSpanElement>(null)
   const marker = useRef<SVGGElement>(null)
@@ -33,7 +33,7 @@ export function HudRings({ target, index, total, dim = false }: { target: string
     const d = hudAnchor.r * 1.75
     el.style.transform = `translate(${hudAnchor.x - d}px, ${hudAnchor.y - d}px)`
     el.style.width = el.style.height = `${d * 2}px`
-    el.style.opacity = dim ? '0.3' : '1'
+    el.style.opacity = String(dim)
     const deg = hudAnchor.rotationDeg
     if (brg.current) brg.current.textContent = deg.toFixed(1).padStart(5, '0')
     marker.current?.setAttribute('transform', `rotate(${deg})`)
@@ -68,7 +68,7 @@ export function HudRings({ target, index, total, dim = false }: { target: string
         <line x1="-100" y1="0" x2="-95" y2="0" stroke="#ffffff" strokeWidth="0.2" opacity="0.5" />
         <line x1="95" y1="0" x2="100" y2="0" stroke="#ffffff" strokeWidth="0.2" opacity="0.5" />
       </svg>
-      <div className={`hud-k absolute top-[8.5%] left-1/2 -translate-x-1/2 whitespace-nowrap ${dim ? 'hidden' : 'hidden lg:block'}`}>
+      <div className={`hud-k absolute top-[8.5%] left-1/2 -translate-x-1/2 whitespace-nowrap ${dim < 1 ? 'hidden' : 'hidden lg:block'}`}>
         ROT <span ref={brg} className="hud-ice">000.0</span>°
       </div>
       {target && (

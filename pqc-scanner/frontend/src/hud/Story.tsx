@@ -1,14 +1,22 @@
-// The Harvest-Now-Decrypt-Later narrative, drawn in the hologram's own space (child of the
-// fitted root group). Every beat is driven by real pipeline state; timings only choreograph
-// the transition between two real states.
+// QuantumLedger's 3D storytelling layer, drawn in the hologram's own space (child of the fitted
+// root group). Each pipeline stage has its own scene and camera framing; every beat is driven by
+// real pipeline state, and timings only choreograph the move between two real states.
+//
+//   1 DETECT  fragile white TLS link, pulsing crimson wiretap into adversary storage
+//   2 SCORE   camera closes on the storage node; Q-Day dial + Mosca project out of it
+//   3 DEFEND  white link shatters, lattice cages wrap client + server, wiretap snaps on contact
+//   4 PROVE   camera pulls back to the Merkle tree; secured link compresses into a block that snaps into the chain
+//   5 RESCAN  radar plane drops over the whole topology; every node locks to pulsing emerald
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { hudAnchor, type Story } from './anchor'
+import { columnCenter, hudAnchor, type Story } from './anchor'
 
 const R = 1.5 // globe radius, same as HudGlobe
 
+const WHITE = new THREE.Color('#e6edf3')
 const CRIMSON = new THREE.Color('#ef4444')
+const AMBER = new THREE.Color('#f97316')
 const EMERALD = new THREE.Color('#10b981')
 const CYAN = new THREE.Color('#06b6d4')
 const ICE = new THREE.Color('#67e8f9')
@@ -25,23 +33,33 @@ const VAULT_R = 0.3 * R
 const VAULT_H = 0.42 * R
 const P_VAULT = v3(0, -1.9, 0.75)
 const P_INTAKE = P_VAULT.clone().add(new THREE.Vector3(0, VAULT_H / 2 + 0.1 * R, 0))
-const SHIELD_R = 0.28 * R
-const P_CONTACT = P_TAP.clone().add(P_INTAKE.clone().sub(P_TAP).normalize().multiplyScalar(SHIELD_R))
+const P_CONTACT = P_TAP.clone().add(P_INTAKE.clone().sub(P_TAP).normalize().multiplyScalar(0.075 * R))
+const CAGE_R = 0.3 * R
+
+// Q-Day dial projected out of the storage node (to its right, clear of the siphon)
+const P_DIAL = v3(0.95, -1.62, 0.85)
+const DIAL_R = 0.34 * R
 
 // Merkle tree above the globe: 4 leaf slots (3 stage records + duplicate), 2 inner nodes, root inside the block
 const Z_TREE = 0.2
 const LEAVES = [-0.72, -0.24, 0.24, 0.72].map((x) => v3(x, 1.32, Z_TREE))
 const INNER = [v3(-0.48, 1.58, Z_TREE), v3(0.48, 1.58, Z_TREE)]
 const P_BLOCK = v3(0, 1.86, Z_TREE)
+const P_HOVER = v3(0, 2.45, Z_TREE)
 const P_PREV = v3(-0.78, 1.86, Z_TREE)
 const P_NEXT = v3(0.78, 1.86, Z_TREE)
+
+// floor-level network topology lit by the radar plane
+const FLOOR_Y = -2.3 * R
 
 const ANCHORS: Record<string, THREE.Vector3> = {
   client: P_CLIENT,
   server: P_SERVER,
   tap: P_TAP,
   vault: P_VAULT,
-  vaultBase: P_VAULT.clone().add(new THREE.Vector3(0, -VAULT_H / 2, 0)),
+  dial: P_DIAL,
+  dialTop: P_DIAL.clone().add(new THREE.Vector3(0, DIAL_R * 1.3, 0)),
+  dialBottom: P_DIAL.clone().add(new THREE.Vector3(0, -DIAL_R * 1.2, 0)),
   mosca: v3(0, 1.28, 0.2),
   top: v3(0, 1.22, 0),
   block: P_BLOCK,
@@ -61,13 +79,19 @@ function segs(p: number[]) {
   return g
 }
 
-function ring(r: number, n = 64, plane: 'xz' | 'yz' = 'xz') {
+function ring(r: number, n = 64, plane: 'xz' | 'yz' | 'xy' = 'xz') {
   const pts: THREE.Vector3[] = []
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2
-    pts.push(plane === 'xz' ? new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r) : new THREE.Vector3(0, Math.cos(a) * r, Math.sin(a) * r))
+    const c = Math.cos(a) * r
+    const s = Math.sin(a) * r
+    pts.push(plane === 'xz' ? new THREE.Vector3(c, 0, s) : plane === 'yz' ? new THREE.Vector3(0, c, s) : new THREE.Vector3(c, s, 0))
   }
   return new THREE.BufferGeometry().setFromPoints(pts)
+}
+
+function boxEdges(w: number, h: number, d: number) {
+  return new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d))
 }
 
 /** Fade every material under `g` toward `target`, scaling each material's base opacity. */
@@ -136,12 +160,31 @@ function buildLattice() {
   return { lines: segs(lines), points: segs(verts), segCount: lines.length / 6, vertCount: verts.length / 3 }
 }
 
-function boxEdges(w: number, h: number, d: number) {
-  return new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d))
+/** Geodesic lattice cage: outer icosphere + inner shell joined by struts. */
+function buildCage() {
+  const outer = new THREE.IcosahedronGeometry(CAGE_R, 1)
+  const inner = new THREE.IcosahedronGeometry(CAGE_R * 0.7, 0)
+  const pos = outer.getAttribute('position')
+  const seen = new Set<string>()
+  const verts: THREE.Vector3[] = []
+  for (let i = 0; i < pos.count; i++) {
+    const v = new THREE.Vector3().fromBufferAttribute(pos, i)
+    const k = v.toArray().map((n) => n.toFixed(3)).join()
+    if (!seen.has(k)) {
+      seen.add(k)
+      verts.push(v)
+    }
+  }
+  const struts: number[] = []
+  verts.forEach((v) => {
+    const w = v.clone().multiplyScalar(0.7)
+    struts.push(v.x, v.y, v.z, w.x, w.y, w.z)
+  })
+  return { outer: new THREE.EdgesGeometry(outer), inner: new THREE.EdgesGeometry(inner), struts: segs(struts), nodes: new THREE.BufferGeometry().setFromPoints(verts) }
 }
 
-// Fragment pool for the shattering wiretap / probe
-const N_SHARD = 64
+// Fragment pool for shattering lines
+const N_SHARD = 128
 interface Shards {
   pos: Float32Array
   vel: Float32Array
@@ -151,13 +194,12 @@ interface Shards {
   next: number
 }
 
-function burst(sh: Shards, origin: THREE.Vector3, n: number, speed: number, color: THREE.Color, spread = new THREE.Vector3()) {
+function burst(sh: Shards, origin: THREE.Vector3, n: number, speed: number, color: THREE.Color, len = 0.03) {
   for (let i = 0; i < n; i++) {
     const k = sh.next++ % N_SHARD
-    const o = origin.clone().addScaledVector(spread, Math.random())
     const v = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.35, Math.random() - 0.5).normalize().multiplyScalar(speed * (0.4 + Math.random()))
-    const d = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize().multiplyScalar(0.03 * R * (0.5 + Math.random()))
-    sh.pos.set([o.x, o.y, o.z], k * 3)
+    const d = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize().multiplyScalar(len * R * (0.5 + Math.random()))
+    sh.pos.set([origin.x, origin.y, origin.z], k * 3)
     sh.vel.set([v.x, v.y, v.z], k * 3)
     sh.dir.set([d.x, d.y, d.z], k * 3)
     sh.col.set([color.r, color.g, color.b], k * 3)
@@ -165,52 +207,67 @@ function burst(sh: Shards, origin: THREE.Vector3, n: number, speed: number, colo
   }
 }
 
+type CamMode = 'base' | 'vault' | 'wide' | 'radar'
+
 export function StoryLayer({ story }: { story: Story }) {
-  const { camera, size } = useThree()
+  const { camera, size, scene } = useThree()
   const g = {
+    self: useRef<THREE.Group>(null),
     ends: useRef<THREE.Group>(null),
+    cages: useRef<THREE.Group>(null),
     link: useRef<THREE.Group>(null),
+    lattice: useRef<THREE.Group>(null),
     harvest: useRef<THREE.Group>(null),
     vault: useRef<THREE.Group>(null),
-    shield: useRef<THREE.Group>(null),
-    lattice: useRef<THREE.Group>(null),
+    dial: useRef<THREE.Group>(null),
     probe: useRef<THREE.Group>(null),
     ledger: useRef<THREE.Group>(null),
     tree: useRef<THREE.Group>(null),
     block: useRef<THREE.Group>(null),
     chain: useRef<THREE.Group>(null),
     condense: useRef<THREE.Group>(null),
-    lock: useRef<THREE.Mesh>(null),
     radar: useRef<THREE.Group>(null),
+    floor: useRef<THREE.Group>(null),
     halos: useRef<THREE.Group>(null),
-    self: useRef<THREE.Group>(null),
   }
-  const linkLine = useRef<THREE.LineBasicMaterial>(null)
+  const linkMat = useRef<THREE.LineBasicMaterial>(null)
   const packetMat = useRef<THREE.PointsMaterial>(null)
   const packets = useRef<THREE.BufferGeometry>(null)
+  const siphonMat = useRef<THREE.LineBasicMaterial>(null)
   const siphonPk = useRef<THREE.BufferGeometry>(null)
   const fill = useRef<THREE.Mesh>(null)
   const latLines = useRef<THREE.LineSegments>(null)
   const latPoints = useRef<THREE.Points>(null)
-  const shieldMat = useRef<THREE.LineBasicMaterial>(null)
-  const shieldSpin = useRef<THREE.Group>(null)
+  const cageSpin = useRef<(THREE.Group | null)[]>([])
+  const cageMat = useRef<(THREE.LineBasicMaterial | null)[]>([])
+  const dialFace = useRef<THREE.Group>(null)
+  const dialHand = useRef<THREE.Group>(null)
   const probeGeo = useRef<THREE.BufferGeometry>(null)
+  const flash = useRef<THREE.Mesh>(null)
   const shardGeo = useRef<THREE.BufferGeometry>(null)
   const condenseGeo = useRef<THREE.BufferGeometry>(null)
   const leafMats = useRef<(THREE.LineBasicMaterial | null)[]>([])
   const blockMat = useRef<THREE.LineBasicMaterial>(null)
+  const lock = useRef<THREE.Mesh>(null)
+  const plane = useRef<THREE.Group>(null)
   const sweep = useRef<THREE.Group>(null)
+  const cut = useRef<THREE.LineLoop>(null)
+  const floorGeo = useRef<THREE.BufferGeometry>(null)
+  const floorLinkMat = useRef<THREE.LineBasicMaterial>(null)
   const halo = useRef<(THREE.Mesh | null)[]>([])
 
   const st = useRef({
     harvest: { on: false, t0: 0 },
-    patched: { on: false, t0: 0 },
+    patch: { on: false, t0: 0 },
     anchored: { on: false, t0: 0 },
+    rescan: { on: false, t0: 0 },
     prog: 0,
     shattered: false,
+    snapped: false,
     flash: 0,
     probePh: 0,
     sweepA: 0,
+    cam: { pos: new THREE.Vector3(0, 0.9, 7.4), look: new THREE.Vector3(0, 0, 0) },
   })
 
   const geo = useMemo(() => {
@@ -219,7 +276,6 @@ export function StoryLayer({ story }: { story: Story }) {
       const a = (i / 12) * Math.PI * 2
       vault.push(Math.cos(a) * VAULT_R, -VAULT_H / 2, Math.sin(a) * VAULT_R, Math.cos(a) * VAULT_R, VAULT_H / 2, Math.sin(a) * VAULT_R)
     }
-    // intake funnel from the top rim to a narrow throat
     const funnel: number[] = []
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2
@@ -227,6 +283,30 @@ export function StoryLayer({ story }: { story: Story }) {
     }
     const fillG = new THREE.CylinderGeometry(VAULT_R * 0.92, VAULT_R * 0.92, VAULT_H, 32, 1, true)
     fillG.translate(0, VAULT_H / 2, 0)
+
+    // dial: 60 ticks, remaining-window arc, projector beams from the storage node's rim
+    const ticks: number[] = []
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2
+      const r0 = i % 5 === 0 ? DIAL_R * 0.86 : DIAL_R * 0.92
+      ticks.push(Math.sin(a) * r0, Math.cos(a) * r0, 0, Math.sin(a) * DIAL_R, Math.cos(a) * DIAL_R, 0)
+    }
+    const arcPts = Array.from({ length: 129 }, (_, i) => {
+      const a = (i / 128) * Math.PI * 2
+      return new THREE.Vector3(Math.sin(a) * DIAL_R * 0.8, Math.cos(a) * DIAL_R * 0.8, 0)
+    })
+    const rim = P_VAULT.clone().add(new THREE.Vector3(0, VAULT_H / 2, 0))
+    const beams: number[] = []
+    for (const [dx, dz, ex, ey] of [
+      [VAULT_R, 0, -1, -1],
+      [0, VAULT_R, -1, 1],
+      [VAULT_R * 0.7, -VAULT_R * 0.7, 1, -1],
+    ]) {
+      const a = rim.clone().add(new THREE.Vector3(dx, 0, dz))
+      const b = P_DIAL.clone().add(new THREE.Vector3(ex * DIAL_R * 0.7, ey * DIAL_R * 0.7, 0))
+      beams.push(a.x, a.y, a.z, b.x, b.y, b.z)
+    }
+
     const edges: number[] = []
     const e = (a: THREE.Vector3, b: THREE.Vector3) => edges.push(a.x, a.y, a.z, b.x, b.y, b.z)
     e(LEAVES[0], INNER[0])
@@ -243,6 +323,35 @@ export function StoryLayer({ story }: { story: Story }) {
     const nextSlot = new THREE.LineSegments(boxEdges(0.16 * R, 0.16 * R, 0.16 * R), new THREE.LineDashedMaterial({ color: STEEL, dashSize: 0.02, gapSize: 0.02, transparent: true, opacity: 0.55, depthWrite: false }))
     nextSlot.computeLineDistances()
     nextSlot.position.copy(P_NEXT)
+
+    const PR = 2.7 * R
+
+    // floor topology: grid intersections inside an ellipse, linked to some orthogonal neighbours
+    const nodes: THREE.Vector3[] = []
+    const key = new Map<string, number>()
+    for (let i = -4; i <= 4; i++)
+      for (let j = -3; j <= 3; j++) {
+        const x = i * 0.5 * R
+        const z = j * 0.5 * R
+        if ((x / (2.3 * R)) ** 2 + (z / (1.7 * R)) ** 2 > 1) continue
+        key.set(`${i},${j}`, nodes.length)
+        nodes.push(new THREE.Vector3(x, FLOOR_Y, z))
+      }
+    const floorLinks: number[] = []
+    key.forEach((idx, k) => {
+      const [i, j] = k.split(',').map(Number)
+      for (const [di, dj] of [
+        [1, 0],
+        [0, 1],
+      ]) {
+        const o = key.get(`${i + di},${j + dj}`)
+        if (o === undefined || Math.abs(i * 7 + j * 13 + di) % 3 === 0) continue
+        const a = nodes[idx]
+        const b = nodes[o]
+        floorLinks.push(a.x, a.y, a.z, b.x, b.y, b.z)
+      }
+    })
+
     return {
       curve: new THREE.BufferGeometry().setFromPoints(CURVE.getPoints(120)),
       siphon: new THREE.BufferGeometry().setFromPoints([P_TAP, P_INTAKE]),
@@ -253,9 +362,13 @@ export function StoryLayer({ story }: { story: Story }) {
       vaultBars: segs(vault),
       funnel: segs(funnel),
       fill: fillG,
-      shieldOuter: new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(SHIELD_R, 1)),
-      shieldInner: new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(SHIELD_R * 0.62, 0)),
+      dialTicks: segs(ticks),
+      dialRing: ring(DIAL_R * 1.06, 96, 'xy'),
+      dialArc: new THREE.BufferGeometry().setFromPoints(arcPts),
+      dialHand: segs([0, 0, 0, 0, DIAL_R * 0.74, 0]),
+      beams: segs(beams),
       lattice: buildLattice(),
+      cage: buildCage(),
       server: boxEdges(0.2 * R, 0.34 * R, 0.2 * R),
       serverSlots: segs([-0.09, -0.03, 0.03, 0.09].flatMap((y) => [-0.07 * R, y * R, 0.101 * R, 0.07 * R, y * R, 0.101 * R])),
       client: boxEdges(0.32 * R, 0.2 * R, 0.02 * R),
@@ -270,14 +383,14 @@ export function StoryLayer({ story }: { story: Story }) {
       chainNext,
       nextSlot,
       lockRing: new THREE.RingGeometry(0.2 * R, 0.21 * R, 64),
+      flashRing: new THREE.RingGeometry(0.05 * R, 0.058 * R, 40),
       halo: new THREE.RingGeometry(0.12 * R, 0.13 * R, 48),
-      radarEdge: segs([0, 0, 0, 1.75 * R, 0, 0]),
-      meridian: new THREE.BufferGeometry().setFromPoints(
-        Array.from({ length: 65 }, (_, i) => {
-          const e2 = -Math.PI / 2 + (Math.PI * i) / 64
-          return new THREE.Vector3(Math.cos(e2) * R * 1.02, Math.sin(e2) * R * 1.02, 0)
-        }),
-      ),
+      planeLines: segs([-PR, 0, 0, PR, 0, 0, 0, 0, -PR, 0, 0, PR]),
+      planeRings: [0.9, 1.8, 2.7].map((k) => ring(k * R, 128)),
+      unit: ring(1, 128),
+      radarEdge: segs([0, 0, 0, PR, 0, 0]),
+      floorNodes: nodes,
+      floorLinks: segs(floorLinks),
     }
   }, [])
 
@@ -287,19 +400,26 @@ export function StoryLayer({ story }: { story: Story }) {
   )
   const shardBuf = useMemo(() => ({ pos: new Float32Array(N_SHARD * 6), col: new Float32Array(N_SHARD * 6) }), [])
   const condense = useMemo(() => {
-    const n = 90
+    const n = 110
     const from = new Float32Array(n * 3)
     const to = new Float32Array(n * 3)
+    const h = 0.12 * R
     for (let i = 0; i < n; i++) {
       const a = CURVE.getPoint(0.04 + Math.random() * 0.92)
-      const b = LEAVES[i % 3].clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.06 * R, (Math.random() - 0.5) * 0.06 * R, (Math.random() - 0.5) * 0.06 * R))
+      const b = P_HOVER.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2 * h, (Math.random() - 0.5) * 2 * h, (Math.random() - 0.5) * 2 * h))
       from.set([a.x, a.y, a.z], i * 3)
       to.set([b.x, b.y, b.z], i * 3)
     }
-    return { n, from, to, cur: new Float32Array(n * 3), delay: Float32Array.from({ length: n }, () => Math.random() * 0.35) }
+    return { n, from, to, cur: new Float32Array(n * 3), delay: Float32Array.from({ length: n }, () => Math.random() * 0.3) }
   }, [])
+  const floor = useMemo(() => {
+    const n = geo.floorNodes.length
+    const pos = new Float32Array(n * 3)
+    geo.floorNodes.forEach((v, i) => pos.set([v.x, v.y, v.z], i * 3))
+    return { n, pos, col: new Float32Array(n * 3), dist: geo.floorNodes.map((v) => Math.hypot(v.x, v.z) / R) }
+  }, [geo])
   const pk = useMemo(() => ({ link: new Float32Array(12 * 3), siphon: new Float32Array(6 * 3) }), [])
-  const tmp = useMemo(() => ({ v: new THREE.Vector3(), w: new THREE.Vector3() }), [])
+  const tmp = useMemo(() => ({ v: new THREE.Vector3(), w: new THREE.Vector3(), c: new THREE.Color(), p: new THREE.Vector3(), l: new THREE.Vector3() }), [])
 
   useFrame(({ clock }, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05)
@@ -307,13 +427,59 @@ export function StoryLayer({ story }: { story: Story }) {
     const s = st.current
     const { active, scanning, stage, vulnerable, patching, patched, anchored, rescan } = story
     const results = active && !scanning
+    const self = g.self.current
+    if (self) self.updateMatrixWorld()
 
-    // ── link + packets ──
+    // ── camera framing per stage (world space; the root group has no rotation) ──
+    const mode: CamMode = !results ? 'base' : stage === 2 && vulnerable ? 'vault' : stage === 4 ? 'wide' : stage === 5 ? 'radar' : 'base'
+    if (self) {
+      const toWorld = (x: number, y: number, z: number, out: THREE.Vector3) => out.set(x, y, z).applyMatrix4(self.matrixWorld)
+      const k = self.getWorldScale(tmp.w).x * R // one globe radius in world units
+      if (mode === 'vault') {
+        toWorld(0.47 * R, -1.62 * R, 0.8 * R, tmp.l)
+        tmp.p.copy(tmp.l).add(tmp.v.set(0, 0.5 * k, 4.6 * k))
+      } else if (mode === 'wide') {
+        toWorld(0, 0.35 * R, 0, tmp.l)
+        tmp.p.copy(tmp.l).add(tmp.v.set(0, 2.3 * k, 11.6 * k))
+      } else if (mode === 'radar') {
+        toWorld(0, -0.35 * R, 0, tmp.l)
+        tmp.p.copy(tmp.l).add(tmp.v.set(0, 3.6 * k, 9.2 * k))
+      } else {
+        tmp.p.set(0, 0.9, 7.4)
+        tmp.l.set(0, 0, 0)
+      }
+      if (mode !== 'base') {
+        // keep the framed subject in the free column between the side panels
+        const wpp = (2 * tmp.p.distanceTo(tmp.l) * Math.tan(THREE.MathUtils.degToRad(19))) / size.height
+        const dx = (columnCenter(size.width) - size.width / 2) * wpp
+        tmp.p.x -= dx
+        tmp.l.x -= dx
+      }
+      const kc = 1 - Math.exp(-dt * 1.8)
+      s.cam.pos.lerp(tmp.p, kc)
+      s.cam.look.lerp(tmp.l, kc)
+      camera.position.copy(s.cam.pos)
+      camera.lookAt(s.cam.look)
+      const fog = scene.fog as THREE.Fog | null
+      if (fog) {
+        const d = s.cam.pos.distanceTo(s.cam.look)
+        fog.near = d - 1.25
+        fog.far = d + 3.1
+      }
+    }
+
+    // ── 1 · fragile white link + packets ──
     fade(g.ends.current, active ? 1 : 0, dt)
-    fade(g.link.current, active ? 1 : 0, dt)
+    const pAge = edge(s.patch, patching || patched, t)
     s.prog = patched ? Math.min(1, s.prog + dt / 0.45) : patching ? Math.min(0.92, s.prog + dt / 1.8) : 0
-    if (linkLine.current) linkLine.current.userData.base = 0.75 * (1 - s.prog) + 0.06
-    packetMat.current?.color.copy(ICE).lerp(EMERALD, s.prog)
+    fade(g.link.current, active && !patching && !patched ? 1 : 0, dt, patching || patched ? 40 : 5)
+    if (linkMat.current) linkMat.current.userData.base = 0.55 + 0.1 * Math.sin(t * 7) * Math.sin(t * 2.3)
+    const compressing = stage === 4 && anchored && t - s.anchored.t0 < 1.3
+    fade(g.lattice.current, patching || patched ? (compressing ? 0.3 : 1) : 0, dt, 4)
+    if (packetMat.current) {
+      packetMat.current.color.copy(patched ? ICE : WHITE)
+      packetMat.current.visible = active
+    }
     const pace = scanning ? 0.55 : 0.22
     for (let i = 0; i < 12; i++) {
       let u = (t * pace + i / 12) % 1
@@ -326,10 +492,11 @@ export function StoryLayer({ story }: { story: Story }) {
       packets.current.attributes.position.needsUpdate = true
     }
 
-    // ── harvest: wiretap, siphon, vault ──
+    // ── 1 · pulsing crimson wiretap into adversary storage ──
     const harvesting = results && vulnerable && !patched && stage <= 3
     const hAge = edge(s.harvest, results && vulnerable, t)
     fade(g.harvest.current, harvesting ? 1 : 0, dt, patched ? 30 : 4)
+    if (siphonMat.current) siphonMat.current.userData.base = 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(t * 5))
     fade(g.vault.current, results && vulnerable && stage <= 3 ? 1 : 0, dt)
     if (fill.current) fill.current.scale.y = Math.max(0.02, Math.min(0.9, 0.12 + Math.max(0, hAge) * 0.035))
     for (let i = 0; i < 6; i++) {
@@ -342,39 +509,51 @@ export function StoryLayer({ story }: { story: Story }) {
       siphonPk.current.attributes.position.needsUpdate = true
     }
 
-    // ── defend: lattice, shield, shattered wiretap, failing probes ──
-    const pAge = edge(s.patched, patched, t)
-    if (!patched) s.shattered = false
-    if (patched && !s.shattered && pAge < 0.5) {
+    // ── 2 · Q-Day dial projected from the storage node ──
+    fade(g.dial.current, results && vulnerable && stage === 2 ? 1 : 0, dt, 3)
+    if (dialFace.current) dialFace.current.quaternion.copy(camera.quaternion)
+    {
+      const qday = Date.UTC(2033, 0, 1)
+      const left = clamp01((qday - Date.now()) / (qday - Date.UTC(2026, 0, 1)))
+      geo.dialArc.setDrawRange(0, Math.max(2, Math.round(left * 128) + 1))
+    }
+    if (dialHand.current) dialHand.current.rotation.z = -(((Date.now() / 1000) % 60) / 60) * Math.PI * 2
+
+    // ── 3 · white link shatters, lattice cages wrap the endpoints, wiretap snaps ──
+    if (!patching && !patched) s.shattered = false
+    if ((patching || patched) && !s.shattered && pAge >= 0 && pAge < 0.5) {
       s.shattered = true
-      if (vulnerable && stage <= 3) {
-        burst(shards, P_TAP, 14, 0.9 * R, CRIMSON)
-        burst(shards, P_TAP, 18, 0.5 * R, CRIMSON, P_INTAKE.clone().sub(P_TAP))
-        s.flash = 1
+      if (results && stage <= 3) {
+        for (let i = 0; i <= 36; i++) burst(shards, CURVE.getPoint(i / 36, tmp.w), 1, 0.35 * R, WHITE, 0.035)
+        if (vulnerable) burst(shards, P_TAP, 14, 0.8 * R, CRIMSON)
       }
     }
-    fade(g.lattice.current, patching || patched ? 1 : 0, dt)
     const lat = geo.lattice
     latLines.current?.geometry.setDrawRange(0, Math.floor(ease(s.prog) * lat.segCount) * 2)
     latPoints.current?.geometry.setDrawRange(0, Math.floor(ease(s.prog) * lat.vertCount))
-    fade(g.shield.current, patched && stage <= 3 ? 1 : 0, dt, 4)
-    if (shieldSpin.current) {
-      shieldSpin.current.rotation.y += dt * 0.25
-      shieldSpin.current.rotation.x += dt * 0.1
-      shieldSpin.current.scale.setScalar(ease(clamp01(pAge / 0.6)) * (1 + 0.06 * s.flash))
-    }
-    if (shieldMat.current) shieldMat.current.userData.base = 0.4 + 0.55 * s.flash
-    s.flash = Math.max(0, s.flash - dt * 2.2)
+    fade(g.cages.current, patching || patched ? 1 : 0, dt, 4)
+    cageSpin.current.forEach((c, i) => {
+      if (!c) return
+      c.rotation.y += dt * (i ? -0.3 : 0.3)
+      c.rotation.x += dt * 0.12
+      c.scale.setScalar((0.2 + 0.8 * ease(clamp01(pAge / 1.4))) * (1 + 0.05 * s.flash))
+    })
+    const done = results && stage === 5 && rescan === 'done'
+    cageMat.current.forEach((m) => {
+      if (!m) return
+      m.color.copy(done ? EMERALD : CYAN)
+      m.userData.base = 0.5 + 0.35 * s.flash
+    })
 
-    // adversary retries every 3 s and shatters on the shield
-    const probing = patched && vulnerable && stage === 3 && pAge > 1.4
+    // the adversary keeps probing; each wiretap snaps and dissolves on contact with the lattice
+    const probing = patched && vulnerable && stage === 3 && pAge > 2.2
     let probeLen = 0
     if (probing) {
-      const ph = (pAge - 1.4) % 3
-      probeLen = ph < 0.75 ? ease(ph / 0.75) : 0
-      if (s.probePh < 0.75 && ph >= 0.75) {
-        burst(shards, P_CONTACT, 12, 0.7 * R, CRIMSON)
-        burst(shards, P_CONTACT, 6, 0.45 * R, EMERALD)
+      const ph = (pAge - 2.2) % 3
+      probeLen = ph < 0.8 ? ease(ph / 0.8) : 0
+      if (s.probePh < 0.8 && ph >= 0.8) {
+        burst(shards, P_CONTACT, 16, 0.6 * R, CRIMSON, 0.025)
+        burst(shards, P_CONTACT, 6, 0.35 * R, CYAN, 0.02)
         s.flash = 1
       }
       s.probePh = ph
@@ -385,6 +564,14 @@ export function StoryLayer({ story }: { story: Story }) {
       ;(probeGeo.current.attributes.position as THREE.BufferAttribute).setXYZ(1, tmp.w.x, tmp.w.y, tmp.w.z)
       probeGeo.current.attributes.position.needsUpdate = true
     }
+    if (flash.current) {
+      const f = s.flash
+      flash.current.visible = f > 0.01 && stage === 3
+      flash.current.scale.setScalar(1 + (1 - f) * 2.2)
+      flash.current.quaternion.copy(camera.quaternion)
+      ;(flash.current.material as THREE.MeshBasicMaterial).opacity = f * 0.9
+    }
+    s.flash = Math.max(0, s.flash - dt * 2.2)
 
     // shards: short line fragments, fading out through additive colour
     for (let k = 0; k < N_SHARD; k++) {
@@ -413,15 +600,14 @@ export function StoryLayer({ story }: { story: Story }) {
       shardGeo.current.attributes.color.needsUpdate = true
     }
 
-    // ── prove: condense into leaves, build tree, drop block into chain ──
-    const aAge = edge(s.anchored, anchored, t)
+    // ── 4 · secured link compresses into a block that drops and snaps into the chain ──
+    const la = edge(s.anchored, anchored, t)
     const fL = fade(g.ledger.current, results && stage === 4 ? 1 : 0, dt)
-    const la = aAge < 0 ? -1 : aAge
-    fade(g.condense.current, la >= 0 && la < 1.35 ? fL : 0, dt, 10)
-    if (condenseGeo.current && la >= 0 && la < 1.5) {
+    fade(g.condense.current, la >= 0 && la < 1.15 ? fL : 0, dt, 10)
+    if (condenseGeo.current && la >= 0 && la < 1.3) {
       const c = condense
       for (let i = 0; i < c.n; i++) {
-        const u = ease(clamp01((la - c.delay[i]) / 0.9))
+        const u = ease(clamp01((la - c.delay[i]) / 0.8))
         for (let a = 0; a < 3; a++) c.cur[i * 3 + a] = c.from[i * 3 + a] + (c.to[i * 3 + a] - c.from[i * 3 + a]) * u
       }
       ;(condenseGeo.current.attributes.position as THREE.BufferAttribute).set(c.cur)
@@ -429,85 +615,138 @@ export function StoryLayer({ story }: { story: Story }) {
     }
     leafMats.current.forEach((m, i) => {
       if (!m) return
-      const lit = la > 0.9 + i * 0.08 && i < 3
+      const lit = la > 0.2 + i * 0.15 && i < 3
       m.userData.base = lit ? 0.95 : 0.28
       m.color.copy(lit ? CYAN : STEEL)
     })
-    fade(g.tree.current, la > 1.05 ? fL : 0, dt, 6)
-    const drop = clamp01((la - 1.45) / 0.45)
-    fade(g.block.current, la > 1.45 ? fL : 0, dt, 12)
+    fade(g.tree.current, la > 0.7 ? fL : 0, dt, 6)
+    // hover while forming (0.75-1.25 s), fall (1.25-1.6 s), snap
+    const fall = clamp01((la - 1.25) / 0.35)
+    fade(g.block.current, la > 0.75 ? fL : 0, dt, 10)
     if (g.block.current) {
-      g.block.current.position.y = (1 - ease(drop)) * 0.45 * R
-      g.block.current.rotation.y = (1 - ease(drop)) * 1.2
+      const snapT = la - 1.6
+      const bounce = snapT > 0 ? Math.exp(-snapT * 9) * Math.cos(snapT * 30) * 0.12 : 0
+      g.block.current.position.y = (1 - fall * fall) * (P_HOVER.y - P_BLOCK.y)
+      g.block.current.rotation.y = la < 1.6 ? (1 - fall) * t * 0.8 : 0
+      g.block.current.scale.setScalar(1 + bounce)
     }
-    blockMat.current?.color.copy(drop >= 1 ? EMERALD : CYAN)
-    if (g.lock.current) {
-      const lk = clamp01((la - 1.9) / 0.7)
-      g.lock.current.visible = la > 1.9 && lk < 1
-      g.lock.current.scale.setScalar(1 + lk * 1.6)
-      ;(g.lock.current.material as THREE.MeshBasicMaterial).opacity = (1 - lk) * 0.8 * fL
-      g.lock.current.quaternion.copy(camera.quaternion)
+    if (la >= 1.6 && !s.snapped) {
+      s.snapped = true
+      if (stage === 4) burst(shards, P_BLOCK, 18, 0.5 * R, EMERALD, 0.02)
     }
-    fade(g.chain.current, la > 1.95 ? fL : 0, dt, 6)
+    if (la < 0) s.snapped = false
+    if (blockMat.current) blockMat.current.color.copy(la < 1.6 ? ICE : tmp.c.copy(WHITE).lerp(EMERALD, clamp01((la - 1.6) / 0.5)))
+    if (lock.current) {
+      const lk = clamp01((la - 1.6) / 0.7)
+      lock.current.visible = la > 1.6 && lk < 1
+      lock.current.scale.setScalar(1 + lk * 1.8)
+      ;(lock.current.material as THREE.MeshBasicMaterial).opacity = (1 - lk) * 0.9 * fL
+      lock.current.quaternion.copy(camera.quaternion)
+    }
+    fade(g.chain.current, la > 1.6 ? fL : 0, dt, 8)
 
-    // ── rescan: rapid 360° radar sweep, then a slow watch ──
-    fade(g.radar.current, results && stage === 5 && rescan !== 'idle' ? 1 : 0, dt)
-    s.sweepA += dt * (rescan === 'running' ? 6.5 : 0.9)
+    // ── 5 · radar plane drops over the topology; nodes lock emerald ──
+    const rAge = edge(s.rescan, rescan !== 'idle', t)
+    const onFive = results && stage === 5
+    fade(g.radar.current, onFive && rescan !== 'idle' ? (rescan === 'done' ? 0.35 : 1) : 0, dt, 3)
+    fade(g.floor.current, onFive ? 1 : 0, dt, 3)
+    const drop = rAge < 0 ? 0 : ease(clamp01(rAge / 2.4))
+    const py = 2.4 * R + (FLOOR_Y - 2.4 * R) * drop
+    if (plane.current) plane.current.position.y = py
+    if (cut.current) {
+      const rr = Math.sqrt(Math.max(0, R * R - py * py))
+      cut.current.visible = rr > 0.01
+      cut.current.scale.setScalar(Math.max(0.001, rr * 1.01))
+    }
+    s.sweepA += dt * (rescan === 'running' ? 6.5 : 0.8)
     if (sweep.current) sweep.current.rotation.y = s.sweepA
-    const done = results && stage === 5 && rescan === 'done'
-    fade(g.halos.current, done ? 1 : 0, dt)
+    for (let i = 0; i < floor.n; i++) {
+      const lit = rAge >= 0 && (drop >= 1 || done) && rAge > 2.4 + floor.dist[i] * 0.12
+      const b = lit ? 0.65 + 0.35 * Math.sin(t * 3.9 - floor.dist[i] * 1.2) : 0.5
+      tmp.c.copy(lit ? EMERALD : STEEL).multiplyScalar(b)
+      floor.col.set([tmp.c.r, tmp.c.g, tmp.c.b], i * 3)
+    }
+    if (floorGeo.current) {
+      ;(floorGeo.current.attributes.color as THREE.BufferAttribute).set(floor.col)
+      floorGeo.current.attributes.color.needsUpdate = true
+    }
+    floorLinkMat.current?.color.copy(done ? EMERALD : STEEL)
+    const fH = fade(g.halos.current, done ? 1 : 0, dt)
     halo.current.forEach((h, i) => {
       if (!h) return
       const ph = (t / 1.6 + i * 0.5) % 1
       h.scale.setScalar(1 + ph * 1.4)
       h.quaternion.copy(camera.quaternion)
-      ;(h.material as THREE.MeshBasicMaterial).opacity = (1 - ph) * 0.8 * ((g.halos.current?.userData.f as number) ?? 0)
+      ;(h.material as THREE.MeshBasicMaterial).opacity = (1 - ph) * 0.8 * fH
     })
 
     // ── publish story anchors in screen pixels ──
-    const self = g.self.current
     if (self) {
-      self.updateMatrixWorld()
       for (const k in ANCHORS) {
         tmp.v.copy(ANCHORS[k]).applyMatrix4(self.matrixWorld).project(camera)
-        hudAnchor.points[k] = { x: (tmp.v.x * 0.5 + 0.5) * size.width, y: (-tmp.v.y * 0.5 + 0.5) * size.height, on: true }
+        hudAnchor.points[k] = { x: (tmp.v.x * 0.5 + 0.5) * size.width, y: (-tmp.v.y * 0.5 + 0.5) * size.height, on: tmp.v.z < 1 }
       }
     }
   })
 
-  const serverCol = story.stage === 5 && story.rescan === 'done' ? EMERALD : story.patched ? CYAN : new THREE.Color('#cfd8e0')
-  const clientCol = story.stage === 5 && story.rescan === 'done' ? EMERALD : new THREE.Color('#cfd8e0')
+  const endCol = story.stage === 5 && story.rescan === 'done' ? EMERALD : WHITE
   const line = (color: THREE.Color, opacity: number) => <lineBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} />
 
   return (
     <group ref={g.self}>
-      {/* client + server */}
+      {/* client + server nodes */}
       <group ref={g.ends} visible={false}>
         <group position={P_CLIENT}>
-          <lineSegments geometry={geo.client}>{line(clientCol, 0.85)}</lineSegments>
-          <lineSegments geometry={geo.clientStand}>{line(clientCol, 0.6)}</lineSegments>
+          <lineSegments geometry={geo.client}>{line(endCol, 0.85)}</lineSegments>
+          <lineSegments geometry={geo.clientStand}>{line(endCol, 0.6)}</lineSegments>
         </group>
         <group position={P_SERVER}>
-          <lineSegments geometry={geo.server}>{line(serverCol, 0.85)}</lineSegments>
-          <lineSegments geometry={geo.serverSlots}>{line(serverCol, 0.5)}</lineSegments>
+          <lineSegments geometry={geo.server}>{line(endCol, 0.85)}</lineSegments>
+          <lineSegments geometry={geo.serverSlots}>{line(endCol, 0.5)}</lineSegments>
         </group>
       </group>
 
-      {/* classical link with packets in both directions */}
+      {/* lattice cages (ML-KEM / ML-DSA) wrapping client and server */}
+      <group ref={g.cages} visible={false}>
+        {[P_CLIENT, P_SERVER].map((p, i) => (
+          <group key={i} position={p}>
+            <group ref={(el) => { cageSpin.current[i] = el }}>
+              <lineSegments geometry={geo.cage.outer}>
+                <lineBasicMaterial ref={(m) => { cageMat.current[i] = m }} color={CYAN} transparent opacity={0.5} depthWrite={false} />
+              </lineSegments>
+              <lineSegments geometry={geo.cage.inner}>{line(ICE, 0.35)}</lineSegments>
+              <lineSegments geometry={geo.cage.struts}>{line(CYAN, 0.22)}</lineSegments>
+              <points geometry={geo.cage.nodes}>
+                <pointsMaterial color={ICE} size={2.4} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} />
+              </points>
+            </group>
+          </group>
+        ))}
+      </group>
+
+      {/* fragile classical link (RSA / ECDSA TLS) */}
       <group ref={g.link} visible={false}>
         <line>
           <primitive object={geo.curve} attach="geometry" />
-          <lineBasicMaterial ref={linkLine} color={ICE} transparent opacity={0.75} depthWrite={false} />
+          <lineBasicMaterial ref={linkMat} color={WHITE} transparent opacity={0.6} depthWrite={false} />
         </line>
-        <points>
-          <bufferGeometry ref={packets}>
-            <bufferAttribute attach="attributes-position" args={[pk.link, 3]} />
-          </bufferGeometry>
-          <pointsMaterial ref={packetMat} color={ICE} size={3.5} sizeAttenuation={false} transparent opacity={0.95} depthWrite={false} />
+      </group>
+      <points>
+        <bufferGeometry ref={packets}>
+          <bufferAttribute attach="attributes-position" args={[pk.link, 3]} />
+        </bufferGeometry>
+        <pointsMaterial ref={packetMat} color={WHITE} size={3} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} visible={false} />
+      </points>
+
+      {/* lattice tube replacing the link */}
+      <group ref={g.lattice} visible={false}>
+        <lineSegments ref={latLines} geometry={geo.lattice.lines}>{line(CYAN, 0.36)}</lineSegments>
+        <points ref={latPoints} geometry={geo.lattice.points}>
+          <pointsMaterial color={ICE} size={2.2} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} />
         </points>
       </group>
 
-      {/* hostile wiretap: clamp on the link, crimson siphon down into the vault */}
+      {/* crimson wiretap: clamp on the link, pulsing siphon into storage */}
       <group ref={g.harvest} visible={false}>
         <group position={P_TAP}>
           <lineLoop geometry={geo.clampA}>{line(CRIMSON, 0.95)}</lineLoop>
@@ -515,7 +754,7 @@ export function StoryLayer({ story }: { story: Story }) {
         </group>
         <line>
           <primitive object={geo.siphon} attach="geometry" />
-          <lineBasicMaterial color={CRIMSON} transparent opacity={0.8} depthWrite={false} />
+          <lineBasicMaterial ref={siphonMat} color={CRIMSON} transparent opacity={0.8} depthWrite={false} />
         </line>
         <points>
           <bufferGeometry ref={siphonPk}>
@@ -525,7 +764,7 @@ export function StoryLayer({ story }: { story: Story }) {
         </points>
       </group>
 
-      {/* adversary storage vault */}
+      {/* adversary storage node */}
       <group ref={g.vault} visible={false} position={P_VAULT}>
         {[-VAULT_H / 2, 0, VAULT_H / 2].map((y) => (
           <lineLoop key={y} geometry={geo.vaultRing} position={[0, y, 0]}>{line(CRIMSON, y === 0 ? 0.25 : 0.7)}</lineLoop>
@@ -538,25 +777,25 @@ export function StoryLayer({ story }: { story: Story }) {
         </mesh>
       </group>
 
-      {/* ML-KEM / ML-DSA lattice replacing the classical link */}
-      <group ref={g.lattice} visible={false}>
-        <lineSegments ref={latLines} geometry={geo.lattice.lines}>{line(CYAN, 0.36)}</lineSegments>
-        <points ref={latPoints} geometry={geo.lattice.points}>
-          <pointsMaterial color={EMERALD} size={2.2} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} />
-        </points>
-      </group>
-
-      {/* cryptographic shield around the old tap point */}
-      <group ref={g.shield} visible={false} position={P_TAP}>
-        <group ref={shieldSpin}>
-          <lineSegments geometry={geo.shieldOuter}>
-            <lineBasicMaterial ref={shieldMat} color={EMERALD} transparent opacity={0.4} depthWrite={false} />
-          </lineSegments>
-          <lineSegments geometry={geo.shieldInner}>{line(CYAN, 0.3)}</lineSegments>
+      {/* Q-Day dial + projector beams (amber) */}
+      <group ref={g.dial} visible={false}>
+        <lineSegments geometry={geo.beams}>{line(AMBER, 0.28)}</lineSegments>
+        <group position={P_DIAL}>
+          <group ref={dialFace}>
+            <lineSegments geometry={geo.dialTicks}>{line(AMBER, 0.75)}</lineSegments>
+            <lineLoop geometry={geo.dialRing}>{line(AMBER, 0.3)}</lineLoop>
+            <line>
+              <primitive object={geo.dialArc} attach="geometry" />
+              <lineBasicMaterial color={AMBER} transparent opacity={1} depthWrite={false} />
+            </line>
+            <group ref={dialHand}>
+              <lineSegments geometry={geo.dialHand}>{line(WHITE, 0.7)}</lineSegments>
+            </group>
+          </group>
         </group>
       </group>
 
-      {/* adversary probe that fails on the shield */}
+      {/* adversary probe + contact flash */}
       <group ref={g.probe} visible={false}>
         <line>
           <bufferGeometry ref={probeGeo}>
@@ -565,6 +804,9 @@ export function StoryLayer({ story }: { story: Story }) {
           <lineBasicMaterial color={CRIMSON} transparent opacity={0.9} depthWrite={false} />
         </line>
       </group>
+      <mesh ref={flash} geometry={geo.flashRing} position={P_CONTACT} visible={false}>
+        <meshBasicMaterial color={CYAN} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
 
       <lineSegments frustumCulled={false}>
         <bufferGeometry ref={shardGeo}>
@@ -586,7 +828,7 @@ export function StoryLayer({ story }: { story: Story }) {
             <bufferGeometry ref={condenseGeo}>
               <bufferAttribute attach="attributes-position" args={[condense.cur, 3]} />
             </bufferGeometry>
-            <pointsMaterial color={EMERALD} size={2.4} sizeAttenuation={false} transparent opacity={0.95} depthWrite={false} />
+            <pointsMaterial color={ICE} size={2.4} sizeAttenuation={false} transparent opacity={0.95} depthWrite={false} />
           </points>
         </group>
         <group ref={g.tree} visible={false}>
@@ -600,11 +842,11 @@ export function StoryLayer({ story }: { story: Story }) {
         <group position={P_BLOCK}>
           <group ref={g.block} visible={false}>
             <lineSegments geometry={geo.block}>
-              <lineBasicMaterial ref={blockMat} color={CYAN} transparent opacity={0.95} depthWrite={false} />
+              <lineBasicMaterial ref={blockMat} color={ICE} transparent opacity={0.95} depthWrite={false} />
             </lineSegments>
             <lineSegments geometry={geo.root}>{line(EMERALD, 0.9)}</lineSegments>
           </group>
-          <mesh ref={g.lock} geometry={geo.lockRing} visible={false}>
+          <mesh ref={lock} geometry={geo.lockRing} visible={false}>
             <meshBasicMaterial color={EMERALD} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
           </mesh>
         </group>
@@ -617,24 +859,45 @@ export function StoryLayer({ story }: { story: Story }) {
         </group>
       </group>
 
-      {/* radar sweep aligned to the globe's equator */}
-      <group ref={g.radar} visible={false} rotation={[0.28, 0, 0]}>
-        <group ref={sweep}>
-          {[0.18, 0.36, 0.6].map((len, i) => (
-            <mesh key={len} rotation={[-Math.PI / 2, 0, 0]}>
-              <circleGeometry args={[1.75 * R, 32, -len, len]} />
-              <meshBasicMaterial color={EMERALD} transparent opacity={0.07 - i * 0.015} depthWrite={false} side={THREE.DoubleSide} />
-            </mesh>
+      {/* radar plane: drops from above the ledger to the floor, sweeping as it goes */}
+      <group ref={g.radar} visible={false}>
+        <group ref={plane}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]}>
+            <circleGeometry args={[2.7 * R, 96]} />
+            <meshBasicMaterial color={EMERALD} transparent opacity={0.035} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+          {geo.planeRings.map((rg, i) => (
+            <lineLoop key={i} geometry={rg}>{line(EMERALD, i === 2 ? 0.55 : 0.22)}</lineLoop>
           ))}
-          <lineSegments geometry={geo.radarEdge}>{line(EMERALD, 0.9)}</lineSegments>
-          <line>
-            <primitive object={geo.meridian} attach="geometry" />
-            <lineBasicMaterial color={EMERALD} transparent opacity={0.85} depthWrite={false} />
-          </line>
+          <lineSegments geometry={geo.planeLines}>{line(EMERALD, 0.18)}</lineSegments>
+          <lineLoop ref={cut} geometry={geo.unit}>{line(EMERALD, 0.9)}</lineLoop>
+          <group ref={sweep}>
+            {[0.18, 0.36, 0.6].map((len, i) => (
+              <mesh key={len} rotation={[-Math.PI / 2, 0, 0]}>
+                <circleGeometry args={[2.7 * R, 32, -len, len]} />
+                <meshBasicMaterial color={EMERALD} transparent opacity={0.08 - i * 0.02} depthWrite={false} side={THREE.DoubleSide} />
+              </mesh>
+            ))}
+            <lineSegments geometry={geo.radarEdge}>{line(EMERALD, 0.9)}</lineSegments>
+          </group>
         </group>
       </group>
 
-      {/* stable emerald pulses on every endpoint once verified */}
+      {/* network topology on the floor grid */}
+      <group ref={g.floor} visible={false}>
+        <lineSegments geometry={geo.floorLinks}>
+          <lineBasicMaterial ref={floorLinkMat} color={STEEL} transparent opacity={0.3} depthWrite={false} />
+        </lineSegments>
+        <points frustumCulled={false}>
+          <bufferGeometry ref={floorGeo}>
+            <bufferAttribute attach="attributes-position" args={[floor.pos, 3]} />
+            <bufferAttribute attach="attributes-color" args={[floor.col, 3]} />
+          </bufferGeometry>
+          <pointsMaterial size={4.5} sizeAttenuation={false} vertexColors transparent opacity={1} depthWrite={false} />
+        </points>
+      </group>
+
+      {/* stable emerald pulses on the endpoints once verified */}
       <group ref={g.halos} visible={false}>
         {[P_CLIENT, P_SERVER, P_TAP].map((p, i) => (
           <mesh key={i} ref={(m) => { halo.current[i] = m }} geometry={geo.halo} position={p}>

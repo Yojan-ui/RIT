@@ -23,21 +23,28 @@ missing or out of date, and starts one FastAPI/Uvicorn process that serves the R
 `PORT=8080` (another port), `REBUILD=1` (force a fresh frontend build). It stops with a clear message if the port
 is already taken.
 
-## Stark-HUD variant (port 8002)
+## QuantumLedger HUD variant (port 8002)
 
 ```bash
-./run_cyber_demo.sh      # macOS / Linux → STARK-HUD SCANNER ONLINE: http://localhost:8002
+./run_cyber_demo.sh      # macOS / Linux → QUANTUMLEDGER HUD ONLINE: http://localhost:8002
 run_cyber_demo.bat       # Windows
 ```
 
-Same API and the same five-stage logic (both UIs use `frontend/src/pipeline/usePipeline.ts`), with an "Iron Man /
-Jarvis diagnostics" presentation: holographic wireframe globe with orbit rings, sonar sweep and pulsating grid
-(`src/hud/HudGlobe.tsx`); rotating HUD rings, bearing ticker and `[ TARGET ACQUIRED ]`; tracking lines that lock onto the
-detected legacy algorithms; falling code fragments; a CRT scanline layer; and a telemetry cascade, network ping sweep and
-bit-pattern readout (`src/hud/overlays.tsx`). Status readouts use real scan data: `SHOR_EXPOSURE` is the share of
-detected algorithms that Shor's algorithm breaks, `DECAY_RATE` follows the CWM severity, the hex bytes are the
-certificate's serial number and scan speed is the measured handshake time. The header coordinates are the console's
-(Bengaluru), not the target's.
+Same API and the same five-stage logic (both UIs use `frontend/src/pipeline/usePipeline.ts`), presented as a
+QuantumLedger holographic HUD where the 3D scene (`src/hud/Story.tsx`) narrates each stage for a non-specialist:
+
+1. **Detect**: client and server joined by a thin white TLS link; a pulsing crimson wiretap siphons it into adversary storage
+   (`QuantumLedger: HARVESTING IN PROGRESS`).
+2. **Score**: the camera closes on the storage node; a Q-Day countdown dial and Mosca's `X + Y > Z` project out of it in amber,
+   using the real X, Y and Z values.
+3. **Defend**: the white link shatters, lattice cages (ML-KEM / ML-DSA) wrap client and server, and each new wiretap snaps
+   on contact (`QuantumLedger: LATTICE CRYPTOGRAPHY ENGAGED`).
+4. **Prove**: the camera pulls back to a Merkle tree; the secured link compresses into a block that drops and snaps into
+   the chain, labelled with the real block hash and root (`QuantumLedger: STATE ANCHORED TO BLOCKCHAIN`).
+5. **Rescan**: a radar plane drops over the network topology and every node locks to pulsing emerald.
+
+A caption bar explains each beat in plain language. Side panels show only real scan data (TLS link, certificate serial,
+timestamped event log). The header coordinates are the console's (Bengaluru), not the target's.
 
 It builds to `frontend/dist-hud` (`npm run build:hud`, dev server `npm run dev:hud` on :5182) and runs alongside the
 standard demo on :8000. `run_cyber_demo.sh` is a thin wrapper around `run_demo.sh` (`UI=hud`, `PORT=8002`).

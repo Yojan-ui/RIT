@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 // Two UI variants share one codebase:
 //   default  → dist/      (dev on :5180)
-//   --mode hud → dist-hud/  the Stark-HUD dashboard (dev on :5182)
+//   --mode hud → dist-hud/  the QuantumLedger HUD dashboard (dev on :5182)
 // In dev, /api is proxied to the local FastAPI scanner. In production set VITE_API_URL.
 export default defineConfig(({ mode }) => {
   const hud = mode === 'hud'

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PQC Scanner, Stark-HUD variant: same API and five-stage logic, "Jarvis diagnostics" UI.
+# PQC Scanner, QuantumLedger HUD variant: same API and five-stage logic, holographic 3D storytelling UI.
 # Runs alongside the standard demo (which uses :8000).
 #
 #   ./run_cyber_demo.sh              http://localhost:8002
@@ -8,5 +8,5 @@
 set -euo pipefail
 export UI=hud
 export PORT="${PORT:-8002}"
-export BANNER="STARK-HUD SCANNER ONLINE"
+export BANNER="QUANTUMLEDGER HUD ONLINE"
 exec "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/run_demo.sh"
