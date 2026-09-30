@@ -3,15 +3,16 @@
 //
 //   LatticeCore   a skewed 3D lattice (the Module-LWE picture behind ML-KEM / ML-DSA) inside the globe.
 //                 Its points "consolidate" from a scattered cloud into lattice sites as the post-quantum
-//                 patch deploys, then pulse in HDR cyan (the bloom pass makes it glow).
-//   DustMotes     slow drifting dust that brightens near the core, as if catching its light.
+//                 patch deploys. Clicked, it explodes (X-ray) into its seven basis layers, stacked and
+//                 held still so the ML-KEM math projected beside each layer can be read.
 //   CommandDeck   a dim, vast tactical room: long floor grid, a ring of server racks fading into fog.
-//   DataStreams   particles flowing from the Diagnostics and Terminal panes into the core.
+//   DataStreams   one short burst from the Diagnostics / Terminal pane into the core per real event.
 import { useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { Story } from './anchor'
+import { hudAnchor, type Story } from './anchor'
 import { spatial } from './spatial'
+import { xray } from './xray'
 import { xrState } from './xr'
 
 const R = 1.5 // globe radius, same as HudGlobe
@@ -26,16 +27,19 @@ const STEEL = new THREE.Color('#577c95')
 const LATTICE_VERT = /* glsl */ `
   attribute vec3 aNoise;
   attribute float aPhase;
+  attribute float aLayer; // basis-b3 index of the site, -3..3
   uniform float uC;      // consolidation 0 (scattered) .. 1 (every point on its lattice site)
   uniform float uTime;
   uniform float uSize;
+  uniform vec3 uAxis;    // unit b3: layers separate along it
+  uniform float uExplode;
   varying float vShimmer;
   varying float vC;
   void main() {
     // staggered snap: each point starts moving at its own phase, so the lattice assembles in a wave
     float c = smoothstep(aPhase * 0.45, aPhase * 0.45 + 0.55, uC);
     vec3 drift = vec3(sin(uTime * 1.3 + aPhase * 40.0), cos(uTime * 1.1 + aPhase * 23.0), sin(uTime * 0.9 + aPhase * 31.0)) * 0.06 * (1.0 - c);
-    vec3 p = mix(aNoise, position, c) + drift;
+    vec3 p = mix(aNoise, position, c) + drift + uAxis * aLayer * uExplode;
     vShimmer = 0.5 + 0.5 * sin(uTime * 3.2 + aPhase * 6.2831);
     vC = c;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -58,13 +62,18 @@ const LATTICE_FRAG = /* glsl */ `
 const EDGE_VERT = /* glsl */ `
   attribute vec3 aNoise;
   attribute float aPhase;
+  attribute float aLayer;
+  attribute float aCross; // 1 for bonds between layers
   uniform float uC;
   uniform float uTime;
+  uniform vec3 uAxis;
+  uniform float uExplode;
+  uniform float uExplodeAmt; // 0..1, fades the stretched inter-layer bonds
   varying float vA;
   void main() {
     float c = smoothstep(aPhase * 0.45, aPhase * 0.45 + 0.55, uC);
-    vec3 p = mix(aNoise, position, c);
-    vA = c * c * (0.6 + 0.4 * sin(uTime * 2.1 + aPhase * 12.0));
+    vec3 p = mix(aNoise, position, c) + uAxis * aLayer * uExplode;
+    vA = c * c * (0.6 + 0.4 * sin(uTime * 2.1 + aPhase * 12.0)) * (1.0 - 0.85 * aCross * uExplodeAmt);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
 `
@@ -89,6 +98,7 @@ function buildLattice() {
   const pos: number[] = []
   const noise: number[] = []
   const phase: number[] = []
+  const layer: number[] = []
   const rand = (): THREE.Vector3 => {
     const v = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1)
     return v.lengthSq() > 1 ? rand() : v
@@ -102,16 +112,20 @@ function buildLattice() {
         sites.set(key(a, b, c), { p, i: pos.length / 3 })
         pos.push(p.x, p.y, p.z)
         noise.push(q.x, q.y, q.z)
+        layer.push(c)
         phase.push(Math.min(1, p.length() / radius) * 0.7 + Math.random() * 0.3) // assemble from the centre out
       }
   const points = new THREE.BufferGeometry()
   points.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
   points.setAttribute('aNoise', new THREE.Float32BufferAttribute(noise, 3))
   points.setAttribute('aPhase', new THREE.Float32BufferAttribute(phase, 1))
+  points.setAttribute('aLayer', new THREE.Float32BufferAttribute(layer, 1))
 
   const ePos: number[] = []
   const eNoise: number[] = []
   const ePhase: number[] = []
+  const eLayer: number[] = []
+  const eCross: number[] = []
   sites.forEach((site, k) => {
     const [a, b, c] = k.split(',').map(Number)
     for (const [da, db, dc] of [
@@ -125,6 +139,8 @@ function buildLattice() {
         ePos.push(e.p.x, e.p.y, e.p.z)
         eNoise.push(noise[e.i * 3], noise[e.i * 3 + 1], noise[e.i * 3 + 2])
         ePhase.push(phase[e.i])
+        eLayer.push(layer[e.i])
+        eCross.push(dc)
       }
     }
   })
@@ -132,10 +148,21 @@ function buildLattice() {
   edges.setAttribute('position', new THREE.Float32BufferAttribute(ePos, 3))
   edges.setAttribute('aNoise', new THREE.Float32BufferAttribute(eNoise, 3))
   edges.setAttribute('aPhase', new THREE.Float32BufferAttribute(ePhase, 1))
-  return { points, edges }
+  edges.setAttribute('aLayer', new THREE.Float32BufferAttribute(eLayer, 1))
+  edges.setAttribute('aCross', new THREE.Float32BufferAttribute(eCross, 1))
+  const axis = b3.clone().normalize()
+  // exploded pose: layers stacked vertically, tipped toward the viewer so each plane reads as a slab
+  const x = b1.clone().addScaledVector(axis, -b1.dot(axis)).normalize()
+  const z = new THREE.Vector3().crossVectors(x, axis)
+  const exploded = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, axis, z).invert()).premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5, -0.35, 0)))
+  return { points, edges, axis, exploded, step: s }
 }
 
+/** Layer gap in the exploded view, world units of the lattice's own space. */
+const LAYER_GAP = 0.4 * R
+
 export function LatticeCore({ story }: { story: Story }) {
+  const { camera, size } = useThree()
   const group = useRef<THREE.Group>(null)
   const geo = useMemo(buildLattice, [])
   const pointsMat = useMemo(
@@ -143,7 +170,7 @@ export function LatticeCore({ story }: { story: Story }) {
       new THREE.ShaderMaterial({
         vertexShader: LATTICE_VERT,
         fragmentShader: LATTICE_FRAG,
-        uniforms: { uC: { value: 0.8 }, uTime: { value: 0 }, uSize: { value: 5 }, uColor: { value: ICE.clone() }, uGain: { value: 2 }, uOpacity: { value: 1 } },
+        uniforms: { uC: { value: 0.8 }, uTime: { value: 0 }, uSize: { value: 5 }, uColor: { value: ICE.clone() }, uGain: { value: 2 }, uOpacity: { value: 1 }, uAxis: { value: geo.axis }, uExplode: { value: 0 } },
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
@@ -156,7 +183,7 @@ export function LatticeCore({ story }: { story: Story }) {
       new THREE.ShaderMaterial({
         vertexShader: EDGE_VERT,
         fragmentShader: EDGE_FRAG,
-        uniforms: { uC: { value: 0.8 }, uTime: { value: 0 }, uColor: { value: CYAN.clone() }, uGain: { value: 1.6 }, uOpacity: { value: 0.5 } },
+        uniforms: { uC: { value: 0.8 }, uTime: { value: 0 }, uColor: { value: CYAN.clone() }, uGain: { value: 1.6 }, uOpacity: { value: 0.5 }, uAxis: { value: geo.axis }, uExplode: { value: 0 }, uExplodeAmt: { value: 0 } },
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
@@ -164,7 +191,7 @@ export function LatticeCore({ story }: { story: Story }) {
       }),
     [],
   )
-  const st = useRef({ c: 0.8, patchT: -1 })
+  const st = useRef({ c: 0.8, patchT: -1, spin: 0, free: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3() })
 
   useFrame(({ clock }, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05)
@@ -183,24 +210,41 @@ export function LatticeCore({ story }: { story: Story }) {
       target = Math.min(1, (t - s.patchT) / 1.8) // assembles over the deployment
     } else s.patchT = -1
     if (story.patched) target = 1
+    const x = xray.shown === 'kem' ? xray.amt : 0
+    target += (1 - target) * x // the X-ray shows the assembled lattice
     s.c += (target - s.c) * (1 - Math.exp(-dt * (story.patching ? 12 : 2.5)))
 
     // cyan pulse once consolidated; warm and dim while the handshake is still classical
     const pulse = 0.5 + 0.5 * Math.sin(t * 2.6)
-    const col = done ? EMERALD : exposed ? AMBER : story.scanning ? STEEL.clone().lerp(ICE, 0.5) : ICE
+    const col = x > 0.5 ? ICE : done ? EMERALD : exposed ? AMBER : story.scanning ? STEEL.clone().lerp(ICE, 0.5) : ICE
     const hover = spatial.hoverAmt
-    const gain = exposed ? 0.9 : story.patched || story.patching ? 2.4 + 2.2 * pulse : 1.6 + 0.5 * pulse
+    // gains kept just over the bloom threshold: crisp sites with a tight halo, not a glowing blob
+    const gain = exposed ? 0.8 : story.patched || story.patching ? 1.4 + 0.6 * pulse : 1.15 + 0.25 * pulse
     pointsMat.uniforms.uC.value = edgeMat.uniforms.uC.value = s.c
+    pointsMat.uniforms.uExplode.value = edgeMat.uniforms.uExplode.value = x * LAYER_GAP
+    edgeMat.uniforms.uExplodeAmt.value = x
     pointsMat.uniforms.uTime.value = edgeMat.uniforms.uTime.value = t
     ;(pointsMat.uniforms.uColor.value as THREE.Color).copy(col)
-    ;(edgeMat.uniforms.uColor.value as THREE.Color).copy(done ? EMERALD : exposed ? AMBER : CYAN)
+    ;(edgeMat.uniforms.uColor.value as THREE.Color).copy(x > 0.5 ? CYAN : done ? EMERALD : exposed ? AMBER : CYAN)
     pointsMat.uniforms.uGain.value = gain * (1 + 0.35 * hover) // the room light rises when a pane is touched
     edgeMat.uniforms.uGain.value = gain * 0.7 * (1 + 0.35 * hover)
     // DPR-aware sprite size; smaller while the camera is pulled back for the ledger
-    pointsMat.uniforms.uSize.value = (story.stage >= 4 && results ? 4 : 5.5) * Math.min(2, devicePixelRatio)
-    if (group.current) {
-      group.current.rotation.y += dt * (story.patching ? 0.9 : 0.16)
-      group.current.rotation.x = 0.35 + 0.08 * Math.sin(t * 0.3)
+    pointsMat.uniforms.uSize.value = (story.stage >= 4 && results ? 3.5 : 4.5) * Math.min(2, devicePixelRatio)
+    const g = group.current
+    if (g) {
+      // free spin, eased into the fixed exploded pose while the X-ray is open
+      s.spin += dt * (story.patching ? 0.9 : 0.16) * (1 - x)
+      s.free.setFromEuler(s.e.set(0.35 + 0.08 * Math.sin(t * 0.3), s.spin, 0))
+      g.quaternion.copy(s.free).slerp(geo.exploded, x)
+      g.updateMatrixWorld()
+      if (xray.shown === 'kem') {
+        g.getWorldPosition(xray.focus)
+        // publish each layer's centre in screen pixels for the math labels
+        for (let c = -3; c <= 3; c++) {
+          s.v.copy(geo.axis).multiplyScalar(c * (geo.step + x * LAYER_GAP)).applyMatrix4(g.matrixWorld).project(camera)
+          hudAnchor.points[`kem${c + 3}`] = { x: (s.v.x * 0.5 + 0.5) * size.width, y: (-s.v.y * 0.5 + 0.5) * size.height, on: s.v.z < 1 }
+        }
+      }
     }
   })
 
@@ -210,68 +254,6 @@ export function LatticeCore({ story }: { story: Story }) {
       <points geometry={geo.points} material={pointsMat} />
     </group>
   )
-}
-
-// ── dust motes ───────────────────────────────────────────────────────────────
-
-const DUST_VERT = /* glsl */ `
-  attribute float aSeed;
-  uniform float uTime;
-  uniform float uPx;
-  varying float vB;
-  void main() {
-    vec3 p = position;
-    p.x += sin(uTime * 0.07 + aSeed * 17.0) * 0.6;
-    p.y += mod(uTime * (0.03 + aSeed * 0.05) + aSeed * 9.0, 8.0) - 4.0;
-    p.z += cos(uTime * 0.05 + aSeed * 11.0) * 0.6;
-    vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    // catches the core's light: brightest near the centre of the room
-    float near = exp(-dot(p, p) / 22.0);
-    vB = (0.12 + 1.3 * near) * (0.6 + 0.4 * sin(uTime * 2.0 + aSeed * 40.0));
-    gl_Position = projectionMatrix * mv;
-    gl_PointSize = uPx * (1.0 + aSeed) / -mv.z;
-  }
-`
-const DUST_FRAG = /* glsl */ `
-  uniform vec3 uColor;
-  varying float vB;
-  void main() {
-    float a = smoothstep(0.5, 0.0, length(gl_PointCoord - 0.5));
-    gl_FragColor = vec4(uColor * vB, a * min(1.0, vB));
-  }
-`
-
-export function DustMotes({ count = 700 }: { count?: number }) {
-  const geo = useMemo(() => {
-    const p = new Float32Array(count * 3)
-    const seed = new Float32Array(count)
-    for (let i = 0; i < count; i++) {
-      p.set([(Math.random() * 2 - 1) * 9, (Math.random() * 2 - 1) * 4, (Math.random() * 2 - 1) * 7 - 1], i * 3)
-      seed[i] = Math.random()
-    }
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(p, 3))
-    g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1))
-    return g
-  }, [count])
-  const mat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        vertexShader: DUST_VERT,
-        fragmentShader: DUST_FRAG,
-        uniforms: { uTime: { value: 0 }, uPx: { value: 18 }, uColor: { value: new THREE.Color('#bfeaf5') } },
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        fog: false,
-      }),
-    [],
-  )
-  useFrame(({ clock }) => {
-    mat.uniforms.uTime.value = clock.elapsedTime
-    mat.uniforms.uPx.value = 18 * Math.min(2, devicePixelRatio)
-  })
-  return <points geometry={geo} material={mat} frustumCulled={false} />
 }
 
 // ── command deck ─────────────────────────────────────────────────────────────
@@ -338,7 +320,7 @@ export function DataStreams({ core }: { core: React.RefObject<THREE.Object3D | n
       const from = spatial.emitters.get(id)
       const pulse = spatial.pulse[id] ?? 0
       spatial.pulse[id] = Math.max(0, pulse - dt * 1.2)
-      const speed = 0.22 + 0.55 * pulse
+      const speed = 0.35 + 0.5 * pulse
       for (let i = 0; i < PER; i++) {
         const k = s * PER + i
         if (!from) {
@@ -357,7 +339,8 @@ export function DataStreams({ core }: { core: React.RefObject<THREE.Object3D | n
         tmp.p.set(a * from.x + b * tmp.m.x + c * tmp.c.x, a * from.y + b * tmp.m.y + c * tmp.c.y, a * from.z + b * tmp.m.z + c * tmp.c.z)
         pos.setXYZ(k, tmp.p.x, tmp.p.y, tmp.p.z)
         // HDR cyan, fading in off the pane and out into the core; black is invisible under additive blending
-        const f = Math.sin(Math.PI * t) * (0.9 + 0.8 * Math.min(1, pulse)) * 2.2
+        // only while a real event is in flight: idle panes send nothing
+        const f = Math.sin(Math.PI * t) * Math.min(1, pulse) * 1.6
         tmp.col.copy(ICE).multiplyScalar(f)
         col.setXYZ(k, tmp.col.r, tmp.col.g, tmp.col.b)
       }

@@ -14,6 +14,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import gsap from 'gsap'
 import { coreZone, hudAnchor, type Story } from './anchor'
 import { sfx } from './sfx'
+import { toggleXray, xray } from './xray'
 import { xrState } from './xr'
 
 const R = 1.5 // globe radius, same as HudGlobe
@@ -90,6 +91,11 @@ const ANCHORS: Record<string, THREE.Vector3> = {
   leaf1: LEAVES[1],
   leaf2: LEAVES[2],
 }
+
+// objects that open an X-ray when clicked; hitboxes that must not grow on hover
+const MERKLE_IDS = new Set(['block', 'leaf0', 'leaf1', 'leaf2', 'prev', 'next'])
+const NO_SCALE = new Set(['link', 'core'])
+const N_PK = 12
 
 const ease = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t))
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t))
@@ -228,7 +234,7 @@ function burst(sh: Shards, origin: THREE.Vector3, n: number, speed: number, colo
   }
 }
 
-type CamMode = 'base' | 'vault' | 'wide' | 'radar'
+type CamMode = 'base' | 'vault' | 'wide' | 'radar' | 'xkem' | 'xmerkle'
 
 export function StoryLayer({ story }: { story: Story }) {
   const { camera, size, scene, gl } = useThree()
@@ -252,8 +258,11 @@ export function StoryLayer({ story }: { story: Story }) {
     halos: useRef<THREE.Group>(null),
   }
   const linkMat = useRef<THREE.LineBasicMaterial>(null)
-  const packetMat = useRef<THREE.PointsMaterial>(null)
-  const packets = useRef<THREE.BufferGeometry>(null)
+  const packetMesh = useRef<THREE.InstancedMesh>(null)
+  const xg = { leaves: useRef<THREE.Group>(null), inner: useRef<THREE.Group>(null), top: useRef<THREE.Group>(null) }
+  const treeEdgeMat = useRef<THREE.LineBasicMaterial>(null)
+  const storyRef = useRef(story)
+  storyRef.current = story
   const siphonMat = useRef<THREE.LineBasicMaterial>(null)
   const siphonPk = useRef<THREE.BufferGeometry>(null)
   const fill = useRef<THREE.Mesh>(null)
@@ -308,6 +317,10 @@ export function StoryLayer({ story }: { story: Story }) {
     flight: { active: false, t: 0, dur: 2, swoop: 0, fromT: new THREE.Vector3(), from: new THREE.Spherical(), to: new THREE.Spherical() },
     reframe: false,
     hover: null as string | null,
+    hitPoint: new THREE.Vector3(),
+    pkT: 0, // packet clock; stops while the link is hovered (freeze-frame)
+    picked: -1, // the frozen packet under the cursor
+    press: { x: 0, y: 0, t: 0, hover: null as string | null },
     mode: '' as string,
     frames: 0,
     fpsT: 0,
@@ -345,11 +358,20 @@ export function StoryLayer({ story }: { story: Story }) {
     const leave = () => {
       ptr.inside = false
     }
-    const down = () => {
+    const down = (e: PointerEvent) => {
       ptr.dragging = true
+      // hover is suspended while the button is held, so remember what was under the cursor at press time
+      s.press = { x: e.clientX, y: e.clientY, t: performance.now(), hover: s.hover }
     }
-    const up = () => {
+    const up = (e: PointerEvent) => {
       ptr.dragging = false
+      // a click (not an orbit drag) on the lattice core or the ledger block toggles its X-ray view
+      if (e.target !== el || Math.hypot(e.clientX - s.press.x, e.clientY - s.press.y) > 5 || performance.now() - s.press.t > 400) return
+      const st = storyRef.current
+      const h = s.press.hover
+      if (h === 'core') toggleXray('kem')
+      else if (h && MERKLE_IDS.has(h) && st.stage === 4 && st.anchored) toggleXray('merkle')
+      else if (xray.open) toggleXray(null)
     }
     controls.addEventListener('start', grab)
     el.addEventListener('dblclick', reframe)
@@ -453,6 +475,7 @@ export function StoryLayer({ story }: { story: Story }) {
 
     return {
       curve: new THREE.BufferGeometry().setFromPoints(CURVE.getPoints(120)),
+      linkTube: new THREE.TubeGeometry(CURVE, 64, 0.07 * R, 6),
       siphon: new THREE.BufferGeometry().setFromPoints([P_TAP, P_INTAKE]),
       clampA: ring(0.06 * R, 40, 'yz'),
       clampB: ring(0.095 * R, 40, 'yz'),
@@ -517,7 +540,7 @@ export function StoryLayer({ story }: { story: Story }) {
     geo.floorNodes.forEach((v, i) => pos.set([v.x, v.y, v.z], i * 3))
     return { n, pos, col: new Float32Array(n * 3), dist: geo.floorNodes.map((v) => Math.hypot(v.x, v.z) / R) }
   }, [geo])
-  const pk = useMemo(() => ({ link: new Float32Array(12 * 3), siphon: new Float32Array(6 * 3) }), [])
+  const pk = useMemo(() => ({ link: new Float32Array(N_PK * 3), siphon: new Float32Array(6 * 3), dummy: new THREE.Object3D() }), [])
   const tmp = useMemo(() => ({ v: new THREE.Vector3(), w: new THREE.Vector3(), c: new THREE.Color(), p: new THREE.Vector3(), l: new THREE.Vector3() }), [])
 
   useFrame(({ clock }, dtRaw) => {
@@ -531,7 +554,9 @@ export function StoryLayer({ story }: { story: Story }) {
 
     // ── camera framing per stage (world space; the root group has no rotation) ──
     // In AR the viewer's own head / phone is the camera, so no framing or flights.
-    const mode: CamMode = !results ? 'base' : stage === 2 && vulnerable ? 'vault' : stage === 4 ? 'wide' : stage === 5 ? 'radar' : 'base'
+    const stageMode: CamMode = !results ? 'base' : stage === 2 && vulnerable ? 'vault' : stage === 4 ? 'wide' : stage === 5 ? 'radar' : 'base'
+    // an open X-ray takes the camera in close on the exploded object; closing returns to the stage framing
+    const mode: CamMode = xray.open === 'kem' ? 'xkem' : xray.open === 'merkle' ? 'xmerkle' : stageMode
     if (xrState.presenting) s.mode = ''
     else if (self) {
       const toWorld = (x: number, y: number, z: number, out: THREE.Vector3) => out.set(x, y, z).applyMatrix4(self.matrixWorld)
@@ -542,6 +567,12 @@ export function StoryLayer({ story }: { story: Story }) {
       } else if (mode === 'wide') {
         toWorld(0, 0.7 * R, 0, tmp.l)
         tmp.p.copy(tmp.l).add(tmp.v.set(0, 2.3 * k, 13.4 * k))
+      } else if (mode === 'xkem') {
+        toWorld(0, 0, 0, tmp.l)
+        tmp.p.copy(tmp.l).add(tmp.v.set(0, 0.35 * k, 11.5 * k))
+      } else if (mode === 'xmerkle') {
+        toWorld(0, 1.45 * R, Z_TREE, tmp.l)
+        tmp.p.copy(tmp.l).add(tmp.v.set(0, 0.4 * k, 8.6 * k))
       } else if (mode === 'radar') {
         toWorld(0, 0.05 * R, 0, tmp.l)
         tmp.p.copy(tmp.l).add(tmp.v.set(0, 3.6 * k, 10.4 * k))
@@ -570,7 +601,7 @@ export function StoryLayer({ story }: { story: Story }) {
         f.fromT.copy(controls.target)
         f.from.setFromVector3(tmp.v.copy(camera.position).sub(controls.target))
         const travel = camera.position.distanceTo(tmp.p) + controls.target.distanceTo(tmp.l)
-        f.swoop = mode === 'wide' ? 1.25 : mode === 'radar' ? 0.8 : mode === 'vault' ? 0.6 : 0.35
+        f.swoop = mode === 'wide' ? 1.25 : mode === 'radar' ? 0.8 : mode === 'vault' ? 0.6 : mode === 'xkem' || mode === 'xmerkle' ? 0.3 : 0.35
         f.dur = Math.min(3.6, Math.max(mode === 'wide' ? 3 : 1.9, 1.5 + travel * 0.4))
         gsap.killTweensOf(f)
         if (first) f.t = 1
@@ -613,20 +644,27 @@ export function StoryLayer({ story }: { story: Story }) {
     if (linkMat.current) linkMat.current.userData.base = 0.55 + 0.1 * Math.sin(t * 7) * Math.sin(t * 2.3)
     const compressing = stage === 4 && anchored && t - s.anchored.t0 < 1.3
     fade(g.lattice.current, patching || patched ? (compressing ? 0.3 : 1) : 0, dt, 4)
-    if (packetMat.current) {
-      packetMat.current.color.copy(patched ? G_ICE : G_WHITE)
-      packetMat.current.visible = active
-    }
+    // packets: small octahedra, even ones client → server (ClientHello), odd ones back (ServerHello);
+    // hovering the link freezes them mid-air so one can be inspected
     const pace = scanning ? 0.55 : 0.22
-    for (let i = 0; i < 12; i++) {
-      let u = (t * pace + i / 12) % 1
-      if (i % 2) u = 1 - u
-      CURVE.getPoint(u, tmp.w)
-      pk.link.set([tmp.w.x, tmp.w.y, tmp.w.z], i * 3)
-    }
-    if (packets.current) {
-      ;(packets.current.attributes.position as THREE.BufferAttribute).set(pk.link)
-      packets.current.attributes.position.needsUpdate = true
+    if (s.hover !== 'link') s.pkT += dt * pace
+    const pm = packetMesh.current
+    if (pm) {
+      pm.visible = active
+      for (let i = 0; i < N_PK; i++) {
+        let u = (s.pkT + i / N_PK) % 1
+        if (i % 2) u = 1 - u
+        CURVE.getPoint(u, tmp.w)
+        pk.link.set([tmp.w.x, tmp.w.y, tmp.w.z], i * 3)
+        pk.dummy.position.copy(tmp.w)
+        pk.dummy.rotation.set(s.pkT * 5 + i, s.pkT * 3.3 + i * 0.7, 0)
+        pk.dummy.scale.setScalar(i === s.picked ? 1.8 : 1)
+        pk.dummy.updateMatrix()
+        pm.setMatrixAt(i, pk.dummy.matrix)
+        pm.setColorAt(i, i === s.picked ? G_CRIMSON : patched ? G_ICE : G_WHITE)
+      }
+      pm.instanceMatrix.needsUpdate = true
+      if (pm.instanceColor) pm.instanceColor.needsUpdate = true
     }
 
     // ── 1 · pulsing crimson wiretap into adversary storage ──
@@ -790,6 +828,20 @@ export function StoryLayer({ story }: { story: Story }) {
     }
     fade(g.chain.current, la > 1.6 ? fL : 0, dt, 8)
 
+    // ── 4 · X-ray: the ledger pulls apart into its hash layers (leaves ↓, nodes, block + chain ↑) ──
+    if (xray.open === 'merkle' && !(stage === 4 && anchored)) toggleXray(null)
+    const mx = xray.shown === 'merkle' ? xray.amt : 0
+    if (xg.leaves.current) {
+      xg.leaves.current.position.set(0, -1.0 * R * mx, 0.3 * R * mx)
+      xg.leaves.current.children.forEach((c, i) => (c.position.x = LEAVES[i].x * (1 + 1.6 * mx)))
+    }
+    if (xg.inner.current) {
+      xg.inner.current.position.set(0, -0.1 * R * mx, 0.18 * R * mx)
+      xg.inner.current.children.forEach((c, i) => (c.position.x = INNER[i].x * (1 + 1.2 * mx)))
+    }
+    xg.top.current?.position.set(0, 0.8 * R * mx, 0.36 * R * mx)
+    if (treeEdgeMat.current) treeEdgeMat.current.opacity *= 1 - mx // the bonds between layers let go
+
     // ── 5 · radar plane drops over the topology; nodes lock emerald ──
     const rAge = edge(s.rescan, rescan !== 'idle', t)
     const onFive = results && stage === 5
@@ -859,6 +911,7 @@ export function StoryLayer({ story }: { story: Story }) {
         while (o && !o.userData.inspect) o = o.parent
         if (o) {
           hit = o.userData.inspect as string
+          s.hitPoint.copy(h1.point)
           break
         }
       }
@@ -874,7 +927,7 @@ export function StoryLayer({ story }: { story: Story }) {
       const now = was + ((id === hit ? 1 : 0) - was) * (1 - Math.exp(-dt * 14))
       h0.userData.h = now
       if (now < 0.002 && was < 0.002) continue
-      h0.scale.setScalar(1 + 0.09 * now)
+      if (!NO_SCALE.has(id)) h0.scale.setScalar(1 + 0.09 * now)
       h0.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
         if (m && 'emissiveIntensity' in m) {
@@ -888,11 +941,42 @@ export function StoryLayer({ story }: { story: Story }) {
       hudAnchor.hover = { id: hit, x: (tmp.v.x * 0.5 + 0.5) * size.width, y: (-tmp.v.y * 0.5 + 0.5) * size.height }
     } else hudAnchor.hover = null
 
+    // ── hex-dump freeze-frame: the frozen packet nearest the cursor's hit on the link ──
+    s.picked = -1
+    hudAnchor.packet = null
+    if (hit === 'link' && self) {
+      self.worldToLocal(tmp.p.copy(s.hitPoint))
+      let best = Infinity
+      for (let i = 0; i < N_PK; i++) {
+        const d = tmp.w.set(pk.link[i * 3], pk.link[i * 3 + 1], pk.link[i * 3 + 2]).distanceToSquared(tmp.p)
+        if (d < best) {
+          best = d
+          s.picked = i
+        }
+      }
+      tmp.v.set(pk.link[s.picked * 3], pk.link[s.picked * 3 + 1], pk.link[s.picked * 3 + 2]).applyMatrix4(self.matrixWorld).project(camera)
+      hudAnchor.packet = { i: s.picked, dir: s.picked % 2 ? 'in' : 'out', x: (tmp.v.x * 0.5 + 0.5) * size.width, y: (-tmp.v.y * 0.5 + 0.5) * size.height }
+    }
+
     // ── publish story anchors in screen pixels ──
     if (self) {
+      const px = (v: THREE.Vector3) => ({ x: (v.x * 0.5 + 0.5) * size.width, y: (-v.y * 0.5 + 0.5) * size.height, on: v.z < 1 })
       for (const k in ANCHORS) {
         tmp.v.copy(ANCHORS[k]).applyMatrix4(self.matrixWorld).project(camera)
-        hudAnchor.points[k] = { x: (tmp.v.x * 0.5 + 0.5) * size.width, y: (-tmp.v.y * 0.5 + 0.5) * size.height, on: tmp.v.z < 1 }
+        hudAnchor.points[k] = px(tmp.v)
+      }
+      if (xray.shown === 'merkle') {
+        self.updateMatrixWorld()
+        const at = (k: string, o: THREE.Object3D | null | undefined) => {
+          if (!o) return
+          o.getWorldPosition(tmp.v)
+          hudAnchor.points[k] = px(tmp.v.project(camera))
+        }
+        ;[0, 1, 2].forEach((i) => at(`mk_leaf${i}`, hov.current[`leaf${i}`]))
+        xg.inner.current?.children.forEach((c, i) => at(`mk_inner${i}`, c))
+        at('mk_block', hov.current.block)
+        at('mk_prev', hov.current.prev)
+        hov.current.block?.getWorldPosition(xray.focus)
       }
     }
   })
@@ -985,13 +1069,19 @@ export function StoryLayer({ story }: { story: Story }) {
           <primitive object={geo.curve} attach="geometry" />
           <lineBasicMaterial ref={linkMat} color={WHITE} transparent opacity={0.6} depthWrite={false} />
         </line>
+        {/* hover target along the link: freezes the packets for the hex-dump inspection */}
+        <group ref={H('link')}>
+          <mesh geometry={geo.linkTube}>
+            <meshBasicMaterial visible={false} />
+          </mesh>
+        </group>
       </group>
-      <points>
-        <bufferGeometry ref={packets}>
-          <bufferAttribute attach="attributes-position" args={[pk.link, 3]} />
-        </bufferGeometry>
-        <pointsMaterial ref={packetMat} color={G_WHITE} size={3} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} visible={false} />
-      </points>
+      <instancedMesh ref={packetMesh} args={[undefined, undefined, N_PK]} frustumCulled={false} visible={false}>
+        <octahedronGeometry args={[0.03 * R, 0]} />
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </instancedMesh>
+      {/* the lattice core inside the globe: hover target that opens its X-ray */}
+      <group ref={H('core')}>{hitbox(0.72 * R)}</group>
 
       {/* lattice tube replacing the link */}
       <group ref={g.lattice} visible={false}>
@@ -1092,6 +1182,7 @@ export function StoryLayer({ story }: { story: Story }) {
 
       {/* Merkle tree + block chain */}
       <group ref={g.ledger} visible={false}>
+        <group ref={xg.leaves}>
         {LEAVES.map((p, i) => (
           <group key={i} position={p} ref={i < 3 ? H(`leaf${i}`) : undefined}>
             <mesh>
@@ -1103,6 +1194,7 @@ export function StoryLayer({ story }: { story: Story }) {
             </lineSegments>
           </group>
         ))}
+        </group>
         <group ref={g.condense} visible={false}>
           <points frustumCulled={false}>
             <bufferGeometry ref={condenseGeo}>
@@ -1112,7 +1204,10 @@ export function StoryLayer({ story }: { story: Story }) {
           </points>
         </group>
         <group ref={g.tree} visible={false}>
-          <lineSegments geometry={geo.treeEdges}>{line(CYAN, 0.45)}</lineSegments>
+          <lineSegments geometry={geo.treeEdges}>
+            <lineBasicMaterial ref={treeEdgeMat} color={CYAN} transparent opacity={0.45} depthWrite={false} />
+          </lineSegments>
+          <group ref={xg.inner}>
           {INNER.map((p, i) => (
             <group key={i} position={p}>
               <mesh>
@@ -1122,7 +1217,9 @@ export function StoryLayer({ story }: { story: Story }) {
               <lineSegments geometry={geo.inner}>{line(CYAN, 0.8)}</lineSegments>
             </group>
           ))}
+          </group>
         </group>
+        <group ref={xg.top}>
         <group position={P_PREV} ref={H('prev')}>
           <mesh>
             <boxGeometry args={[0.2 * R, 0.2 * R, 0.2 * R]} />
@@ -1155,6 +1252,7 @@ export function StoryLayer({ story }: { story: Story }) {
             <lineBasicMaterial color={EMERALD} transparent opacity={0.7} depthWrite={false} />
           </line>
           <primitive object={geo.chainNext} />
+        </group>
         </group>
       </group>
 

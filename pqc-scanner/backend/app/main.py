@@ -172,6 +172,8 @@ def run_scan(raw_domain: str) -> dict:
             "connect_ms": kx.connect_ms,
             "hello_rtt_ms": kx.hello_rtt_ms,
             "cert_chain_bytes": cert.chain_bytes,
+            "client_hello_hex": kx.client_hello_hex,
+            "server_flight_hex": kx.server_flight_hex,
         },
         "tls": {
             "version": kx.tls_version or cert.tls_version,

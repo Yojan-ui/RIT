@@ -74,6 +74,7 @@ export interface ScanResult {
     issuer_org: string | null
     not_before: string
     not_after: string
+    spki_hex?: string // the leaf public key (SubjectPublicKeyInfo DER), absent from older backends
     days_remaining: number
     serial?: string
     sans: string[]
@@ -109,6 +110,8 @@ export interface WireStats {
   connect_ms: number | null
   hello_rtt_ms: number | null
   cert_chain_bytes: number | null
+  client_hello_hex?: string | null // the exact ClientHello the probe sent
+  server_flight_hex?: string | null // first 512 bytes the server answered with
 }
 
 /** One backend log record (`pqc.scan` / `uvicorn.access`) or client-side stream status (`client.sse`). */

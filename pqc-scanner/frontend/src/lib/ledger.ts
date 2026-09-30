@@ -45,8 +45,11 @@ export async function sha256(data: string | Uint8Array): Promise<string> {
   return hex(await crypto.subtle.digest('SHA-256', bytes as BufferSource))
 }
 
-/** RFC 6962-style Merkle root: 0x00-prefixed leaves, 0x01-prefixed nodes, odd node promoted. */
-export async function merkleRoot(leafHashes: string[]): Promise<string> {
+/**
+ * Every level of the RFC 6962-style Merkle tree, leaves first: 0x00-prefixed leaves, 0x01-prefixed nodes,
+ * odd node promoted. The last level holds the root.
+ */
+export async function merkleLevels(leafHashes: string[]): Promise<string[][]> {
   const prefixed = (p: number, ...parts: string[]) => {
     const out = new Uint8Array(1 + parts.length * 32)
     out[0] = p
@@ -54,12 +57,19 @@ export async function merkleRoot(leafHashes: string[]): Promise<string> {
     return out
   }
   let level = await Promise.all(leafHashes.map((h) => sha256(prefixed(0, h))))
+  const levels = [level]
   while (level.length > 1) {
     const next: string[] = []
     for (let i = 0; i < level.length; i += 2) next.push(i + 1 < level.length ? await sha256(prefixed(1, level[i], level[i + 1])) : level[i])
     level = next
+    levels.push(level)
   }
-  return level[0] ?? (await sha256(''))
+  return levels
+}
+
+export async function merkleRoot(leafHashes: string[]): Promise<string> {
+  const levels = await merkleLevels(leafHashes)
+  return levels[levels.length - 1][0] ?? (await sha256(''))
 }
 
 async function blockHash(b: Omit<LedgerBlock, 'block_hash' | 'records' | 'leaves'>) {

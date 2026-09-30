@@ -13,6 +13,8 @@ import { Comparison, TelemetryTerminal, type StreamState, type TLine } from './P
 import { hudAnchor, type HoloNode, type HudMode, type Story } from './anchor'
 import { StoryOverlay, type StoryData } from './StoryOverlay'
 import { ArHandoff } from './ArHandoff'
+import { HexTip, XrayOverlay } from './XrayOverlay'
+import { useXray } from './xray'
 import { Pane } from './pane'
 import { SpatialSlot, spatial } from './spatial'
 import { geiger, sfx } from './sfx'
@@ -254,6 +256,7 @@ export default function HudApp() {
     }
   }, [])
   const xr = useXR()
+  const xrayOpen = useXray() // focus mode: panes and story captions step back while an X-ray is open
   const sfxOn = useSyncExternalStore(sfx.subscribe, () => sfx.enabled)
   const mode = xr.presenting ? 'secure' : MODE[p.core]
   const r = p.result
@@ -364,11 +367,18 @@ export default function HudApp() {
       <div className="pointer-events-none fixed inset-0 z-[4]">
         <div className="hud-vignette" aria-hidden />
         <HudRings target={story.active ? null : r ? `${r.domain} · ${r.resolved_ip}` : null} index={1} total={Math.max(1, addrs.length)} dim={!story.active ? 1 : story.scanning || story.stage === 1 || story.stage === 3 ? 0.3 : 0} />
-        <StoryOverlay story={story} data={storyData} />
+        <div className={`transition-opacity duration-300 ${xrayOpen ? 'opacity-0' : ''}`}>
+          <StoryOverlay story={story} data={storyData} />
+        </div>
         <NodeMarkers nodes={r && p.step === 2 && p.vulnerable > 0 ? [] : nodes} />
       </div>
+      {/* inspection layers above the panes: packet hex dump, X-ray math */}
+      <div className="pointer-events-none fixed inset-0 z-[24]">
+        <XrayOverlay block={p.block} />
+        <HexTip r={r} />
+      </div>
       {/* CSS3D layer: the floating panes, registered to the WebGL camera */}
-      <div ref={(el) => { spatial.mount = el }} className="pointer-events-none fixed inset-0 z-[21]" aria-hidden={!spatialOn} />
+      <div ref={(el) => { spatial.mount = el }} className={`pointer-events-none fixed inset-0 z-[21] transition-opacity duration-500 ${xrayOpen ? 'opacity-[0.14]' : ''}`} aria-hidden={!spatialOn} />
 
       {/* ── header ── */}
       <header className="fixed inset-x-0 top-0 z-30 grid h-9 grid-cols-[1fr_auto] items-center border-b border-[var(--line)] bg-[rgb(8_10_15/0.8)] px-4">

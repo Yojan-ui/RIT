@@ -22,6 +22,7 @@ export const hudAnchor = {
   stats: { fps: 0, calls: 0, points: 0, flying: true },
   userCam: false, // the viewer has orbited the camera at least once
   hover: null as null | { id: string; x: number; y: number }, // raycast-inspected 3D object
+  packet: null as null | { i: number; dir: 'out' | 'in'; x: number; y: number }, // frozen packet under the cursor
   zoneEl: null as HTMLElement | null, // the free page region between the floating panes that the hologram fits into
 }
 

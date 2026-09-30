@@ -39,6 +39,7 @@ TIMEOUT = 6.0
 CONNECT_TIMEOUT = 3.0  # per address; a silent (dropping) address shouldn't eat the whole scan budget
 MAX_ADDRESSES = 4
 MAX_READ = 96 * 1024
+SERVER_HEX_BYTES = 512  # server flight bytes returned for display (hex dump); the rest is only counted
 
 # ── Registries ──────────────────────────────────────────────────────────────
 
@@ -222,6 +223,8 @@ class KeyExchangeResult:
     server_flight_bytes: int | None = None
     connect_ms: float | None = None
     hello_rtt_ms: float | None = None
+    client_hello_hex: str | None = None  # the exact ClientHello record sent
+    server_flight_hex: str | None = None  # first bytes of the server's reply (ServerHello record onward)
 
 
 class _Reader:
@@ -360,6 +363,7 @@ def probe_key_exchange(target: Target) -> KeyExchangeResult:
     res = parse_server_flight(data)
     res.client_hello_bytes, res.server_flight_bytes = len(hello), len(data)
     res.connect_ms, res.hello_rtt_ms = round(connect_ms, 1), round(rtt_ms, 1)
+    res.client_hello_hex, res.server_flight_hex = hello.hex(), data[:SERVER_HEX_BYTES].hex()
     if res.alert:
         telemetry.emit("tls", f"← alert {res.alert} ({len(data)} B, {rtt_ms:.1f} ms)", 30)
     else:
@@ -527,6 +531,8 @@ def probe_certificate(target: Target) -> CertificateResult:
         except ValueError:
             continue
     leaf = describe_certificate(leaf_der)
+    # the leaf's SubjectPublicKeyInfo: the classical public key a CRQC would attack
+    leaf["spki_hex"] = x509.load_der_x509_certificate(leaf_der).public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo).hex()
     chain_bytes = sum(len(d) for d in chain) or len(leaf_der)
     telemetry.emit(
         "cert",

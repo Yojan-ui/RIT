@@ -6,10 +6,12 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { GlitchPass } from 'three/examples/jsm/postprocessing/GlitchPass.js'
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { hudAnchor, nodeAngles, type HoloNode, type HudMode, type Story } from './anchor'
 import { StoryLayer, fade } from './Story'
-import { CommandDeck, DataStreams, DustMotes, LatticeCore } from './Core'
+import { CommandDeck, DataStreams, LatticeCore } from './Core'
+import { xray } from './xray'
 import { SpatialLayer, spatial } from './spatial'
 import { XR_SCALE, setXR, useXR, xrState } from './xr'
 
@@ -225,6 +227,8 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
     }
     rot.current += dt * SPEED[mode]
     if (globe.current) globe.current.rotation.y = rot.current
+    // the shell steps back while the lattice core is exploded
+    fade(globe.current, 1 - 0.8 * (xray.shown === 'kem' ? xray.amt : 0), dt, 8)
     hudAnchor.rotationDeg = ((THREE.MathUtils.radToDeg(rot.current) % 360) + 360) % 360
 
     // vertical sweep of the horizontal scan plane
@@ -330,7 +334,6 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
 
         <StoryLayer story={story} />
         <LatticeCore story={story} />
-        <DustMotes />
         {!xr && <CommandDeck floorY={-R * 2.35} />}
 
         <group visible={!xr}>
@@ -363,14 +366,19 @@ function Effects({ glitch }: { glitch: boolean }) {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
     const composer = new EffectComposer(gl, rt)
     composer.addPass(new RenderPass(scene, camera))
-    const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.42, 0.8)
+    // depth of field: off until the cursor is on a pane or an X-ray is open (see useFrame below)
+    const bokeh = new BokehPass(scene, camera, { focus: 7, aperture: 0, maxblur: 0.009 })
+    bokeh.enabled = false
+    composer.addPass(bokeh)
+    // tight bloom: a small radius keeps geometry sharp and distinct; only HDR emitters get a halo
+    const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.12, 0.85)
     composer.addPass(bloom)
     // digital tearing while the post-quantum patch deploys, and never otherwise
     const glitchPass = new GlitchPass()
     glitchPass.enabled = false
     composer.addPass(glitchPass)
     composer.addPass(new OutputPass())
-    return { composer, bloom, glitchPass }
+    return { composer, bloom, glitchPass, bokeh, dof: { ap: 0, focus: 7 }, v: new THREE.Vector3() }
   }, [gl, scene, camera])
   useEffect(() => {
     fx.glitchPass.enabled = glitch
@@ -386,6 +394,19 @@ function Effects({ glitch }: { glitch: boolean }) {
   // headset / phone framebuffer (the composer can't target it); HDR colours are still tone-mapped there.
   useFrame((_, dt) => {
     gl.info.reset() // count every pass of the frame, not just the last one
+    // Depth of field follows attention: a pane under the cursor blurs the whole 3D room behind the glass
+    // (focus pulled in front of everything); an open X-ray focuses on the exploded object and blurs the
+    // rest. Returning to the scene snaps focus back fast; the pass is off entirely when idle.
+    const d = fx.dof
+    const onPane = !!spatial.hovered
+    const target = xray.open ? 0.0028 : onPane ? 0.006 : 0
+    const focus = xray.open ? camera.position.distanceTo(xray.focus) : onPane ? 1.2 : d.focus
+    d.ap += (target - d.ap) * (1 - Math.exp(-dt * (target > d.ap ? 5 : 16)))
+    d.focus += (focus - d.focus) * (1 - Math.exp(-dt * 8))
+    fx.bokeh.enabled = d.ap > 0.00004
+    const u = fx.bokeh.uniforms as Record<string, THREE.IUniform>
+    u.aperture.value = d.ap
+    u.focus.value = d.focus
     // GlitchPass alone tears once every 2-4 s, longer than the deploy: burst it for the whole deployment
     if (fx.glitchPass.enabled) fx.glitchPass.goWild = Math.random() < 0.28
     if (gl.xr.isPresenting) gl.render(scene, camera)

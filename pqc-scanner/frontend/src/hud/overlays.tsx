@@ -5,7 +5,7 @@ import { hudAnchor, type HoloNode } from './anchor'
 const NODE_HEX = { warn: '#f97316', crit: '#ef4444', ok: '#10b981' } as const
 
 /** rAF loop that only runs while mounted. */
-function useFrameLoop(fn: () => void) {
+export function useFrameLoop(fn: () => void) {
   const ref = useRef(fn)
   useLayoutEffect(() => {
     ref.current = fn

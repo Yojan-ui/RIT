@@ -82,10 +82,25 @@ Spatial and sensory layer:
   there in the scene. Stage changes swoop the camera with a GSAP `expo.inOut` tween. Below 1024px and in AR the
   panes render flat in one column under the hologram.
 - **Quantum lattice core** (`src/hud/Core.tsx`): a skewed 3D lattice (the Module-LWE picture behind ML-KEM /
-  ML-DSA) inside the globe, animated on the GPU. It is a scattered amber cloud while the handshake is classical,
-  consolidates site by site as the patch deploys, then pulses HDR cyan through the `UnrealBloomPass`. A `GlitchPass`
-  tears the frame only while the patch is deploying. Particle streams flow from the Diagnostics and Terminal panes
-  into the core, faster with each log line and new result.
+  ML-DSA) inside the globe, animated on the GPU. It is a scattered amber cloud while the handshake is classical and
+  consolidates site by site as the patch deploys. Bloom is kept tight (small radius, high threshold) so geometry
+  stays sharp; a `GlitchPass` tears the frame only while the patch is deploying. Stream particles from the
+  Diagnostics and Terminal panes into the core fire only on real events (a log line, a new result).
+- **Hex-dump freeze-frame** (Detect): packets are small 3D octahedra on the TLS link. Hovering the link freezes
+  them; a tooltip snaps onto the packet under the cursor and scrolls a hex dump of the bytes the probe actually
+  exchanged with the target: the ClientHello it sent, or the server's reply (the scan returns
+  `wire.client_hello_hex` and the first 512 bytes as `wire.server_flight_hex`). Record headers and key shares are
+  highlighted from a parse of the record; the leaf public key (`certificate.spki_hex`) is shown underneath.
+- **Exploded X-ray** (`src/hud/xray.ts`, `XrayOverlay.tsx`): click the lattice core, or the Stage 4 ledger block,
+  and GSAP pulls the geometry apart into layers (expo out) while the camera moves in; click again or press Esc and
+  it snaps back (back-in). The ML-KEM view uses a real ML-KEM-768 keypair generated in the browser
+  (`@noble/post-quantum`): ρ, Â re-expanded from ρ with SHAKE128 exactly as FIPS 203 SampleNTT does, t̂ decoded
+  from the encapsulation key, key sizes, and one encapsulation/decapsulation round trip. The Merkle view
+  recomputes every level of the block's RFC 6962-style tree from its leaves and checks it against the stored root.
+- **Depth of field**: a `BokehPass`, off when idle. With the cursor on a pane it blurs the whole 3D room behind
+  the glass; with an X-ray open it focuses on the exploded object; moving back to the scene snaps focus back.
+- **Tabular typography**: tabular (and slashed-zero) figures on every value that updates, and a 1px blueprint
+  grid (8px / 40px) behind each pane's content.
 
 A caption bar explains each beat in plain language. Side panels show only real scan data (TLS link, certificate serial,
 timestamped event log). The header coordinates are the console's (Bengaluru), not the target's.
