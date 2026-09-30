@@ -264,6 +264,19 @@ export default function HudApp() {
     qDayYear: BASE_YEAR + Z_YEARS,
     block: p.block ? { index: p.block.index, hash: p.block.block_hash, root: p.block.merkle_root, prev: p.block.prev_hash, timestamp: p.block.timestamp, leaves: p.block.leaves } : null,
     rescanStep: p.rescanStep,
+    net: r
+      ? {
+          ip: r.resolved_ip,
+          tls: r.tls.version,
+          cipher: r.tls.cipher_suite,
+          rttMs: r.wire?.hello_rtt_ms ?? null,
+          connectMs: r.wire?.connect_ms ?? null,
+          clientHello: r.wire?.client_hello_bytes ?? null,
+          serverShare: r.wire?.server_share_bytes ?? null,
+          chainBytes: r.wire?.cert_chain_bytes ?? null,
+        }
+      : null,
+    verified: !!p.verification?.valid,
   }
 
   return (
@@ -303,15 +316,17 @@ export default function HudApp() {
                 const n = i + 1
                 const on = n === p.step
                 const open = n <= p.reached
+                const done = n < p.reached || (n === 5 && p.complete) || (n === p.reached && n < p.step)
                 return (
                   <button
                     key={s}
                     disabled={!open}
                     onClick={() => p.setStep(n)}
                     aria-current={on ? 'step' : undefined}
-                    className={`bg-[rgb(8_10_15/0.9)] px-2 py-1.5 text-left text-[10px] tracking-[0.14em] ${on ? 'hud-white' : open ? 'hud-steel' : 'text-[#2f3742]'}`}
-                    style={on ? { boxShadow: 'inset 0 -1px 0 #67e8f9' } : undefined}
+                    data-state={on ? 'current' : done ? 'done' : open ? 'open' : 'locked'}
+                    className={`hud-step bg-[rgb(8_10_15/0.9)] px-2 py-1.5 text-left text-[10px] tracking-[0.14em] ${on ? 'hud-white' : open ? 'hud-steel' : 'text-[#2f3742]'}`}
                   >
+                    <span className="hud-sdot" aria-hidden />
                     <span className="hud-dim">0{n}</span> {s}
                   </button>
                 )

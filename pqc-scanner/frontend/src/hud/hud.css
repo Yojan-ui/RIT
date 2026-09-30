@@ -110,15 +110,17 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, box-shadow 0.18s, transform 0.08s, filter 0.08s;
 }
-.hud-btn:hover:not(:disabled) { background: rgb(103 232 249 / 0.14); border-color: var(--ice); color: var(--white); }
+.hud-btn:hover:not(:disabled) { background: rgb(103 232 249 / 0.14); border-color: var(--ice); color: var(--white); box-shadow: 0 0 0 1px rgb(103 232 249 / 0.18), 0 0 14px -4px rgb(103 232 249 / 0.55); }
+.hud-btn:active:not(:disabled) { transform: translateY(1px) scale(0.985); filter: brightness(1.3); box-shadow: 0 0 0 1px rgb(103 232 249 / 0.4), inset 0 0 10px rgb(103 232 249 / 0.2); }
 .hud-btn:disabled { opacity: 0.4; cursor: default; }
 .hud-btn:focus-visible { outline: 1px solid var(--white); outline-offset: 2px; }
 .hud-btn.warn { border-color: rgb(249 115 22 / 0.55); background: rgb(249 115 22 / 0.07); color: var(--warn); }
-.hud-btn.warn:hover:not(:disabled) { background: rgb(249 115 22 / 0.15); border-color: var(--warn); color: #fff; }
+.hud-btn.warn:hover:not(:disabled) { background: rgb(249 115 22 / 0.15); border-color: var(--warn); color: #fff; box-shadow: 0 0 0 1px rgb(249 115 22 / 0.2), 0 0 14px -4px rgb(249 115 22 / 0.55); }
+.hud-btn.warn:active:not(:disabled) { box-shadow: 0 0 0 1px rgb(249 115 22 / 0.45), inset 0 0 10px rgb(249 115 22 / 0.2); }
 .hud-btn.quiet { border-color: var(--line-2); background: transparent; color: var(--dim); height: 22px; padding: 0 8px; font-size: 10px; }
-.hud-btn.quiet:hover:not(:disabled) { color: var(--white); border-color: rgb(255 255 255 / 0.25); background: transparent; }
+.hud-btn.quiet:hover:not(:disabled) { color: var(--white); border-color: rgb(103 232 249 / 0.45); background: rgb(103 232 249 / 0.05); box-shadow: 0 0 10px -4px rgb(103 232 249 / 0.5); }
 
 .hud-input {
   height: 28px;
@@ -185,6 +187,8 @@
 
 /* Primary call to action: the compliance report */
 .hud-cta {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -203,6 +207,27 @@
 }
 .hud-cta:hover { background: linear-gradient(90deg, rgb(103 232 249 / 0.3), rgb(6 182 212 / 0.12)); box-shadow: 0 0 0 1px rgb(103 232 249 / 0.3), 0 0 3px rgb(103 232 249 / 0.8); }
 .hud-cta:focus-visible { outline: 1px solid var(--white); outline-offset: 2px; }
+.hud-cta:active { transform: translateY(1px) scale(0.995); filter: brightness(1.35); }
+/* a single sheen sweeps across on hover */
+.hud-cta::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 35%, rgb(255 255 255 / 0.14) 50%, transparent 65%); transform: translateX(-110%); transition: transform 0.7s cubic-bezier(0.2, 0, 0, 1); }
+.hud-cta:hover::after { transform: translateX(110%); }
+
+/* Pipeline timeline: state dots, hover glow, pressed state */
+.hud-step { position: relative; display: flex; align-items: center; gap: 6px; transition: color 0.15s, background 0.15s, box-shadow 0.2s, transform 0.08s; }
+.hud-step::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--ice); transform: scaleX(0); transform-origin: left; transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1); }
+.hud-step[data-state="current"]::after { transform: scaleX(1); }
+.hud-step:not(:disabled):hover { background: rgb(103 232 249 / 0.07) !important; color: var(--white); box-shadow: 0 0 16px -6px rgb(103 232 249 / 0.6); }
+.hud-step:not(:disabled):active { transform: translateY(1px); background: rgb(103 232 249 / 0.14) !important; }
+.hud-step:disabled { cursor: not-allowed; }
+.hud-sdot { width: 5px; height: 5px; flex: none; background: #2f3742; transition: background 0.25s, box-shadow 0.25s, transform 0.2s; }
+.hud-step[data-state="done"] .hud-sdot { background: var(--ok); box-shadow: 0 0 4px rgb(16 185 129 / 0.7); }
+.hud-step[data-state="open"] .hud-sdot { background: var(--steel); }
+.hud-step[data-state="current"] .hud-sdot { background: var(--ice); box-shadow: 0 0 6px var(--ice); animation: hud-live 1.6s ease-in-out infinite; }
+.hud-step:not(:disabled):hover .hud-sdot { transform: scale(1.5); }
+
+/* serial-console caret */
+.hud-caret { display: inline-block; width: 6px; height: 11px; margin-left: 1px; vertical-align: -1px; background: var(--ice); animation: hud-caret 0.9s steps(1) infinite; }
+@keyframes hud-caret { 50% { opacity: 0; } }
 
 /* Story captions: placed by rAF at 3D anchors, fade in once positioned */
 .hud-at { opacity: 0; transition: opacity 0.4s ease-out; will-change: transform; }
@@ -215,6 +240,7 @@
 .hud-scroll::-webkit-scrollbar-thumb { background: var(--line-2); }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud-spin, .hud-live, .hud-track, .hud-fade { animation: none !important; }
+  .hud-spin, .hud-live, .hud-track, .hud-fade, .hud-caret, .hud-step .hud-sdot { animation: none !important; }
+  .hud-cta::after { display: none; }
   .hud-track { stroke-dashoffset: 0; }
 }

@@ -23,6 +23,23 @@ const CYAN = new THREE.Color('#06b6d4')
 const ICE = new THREE.Color('#67e8f9')
 const STEEL = new THREE.Color('#577c95')
 
+// HDR (> 1) colours: only these pass the bloom threshold, so light bleeds from the
+// lattice, shields, data streams, siphon and locked block, and nowhere else.
+const hdr = (c: THREE.Color, k: number) => c.clone().multiplyScalar(k)
+const G_CYAN = hdr(CYAN, 7)
+const G_LATTICE = hdr(CYAN, 2.6) // dense geometry: a lower gain keeps the bleed diffuse, not a wash
+const G_ICE = hdr(ICE, 3)
+const G_CRIMSON = hdr(CRIMSON, 5)
+const G_EMERALD = hdr(EMERALD, 3.2)
+const G_WHITE = hdr(WHITE, 2.2)
+const G_AMBER = hdr(AMBER, 3)
+
+/** True when the object and all its ancestors are visible. */
+function visibleDeep(o: THREE.Object3D | null) {
+  for (; o; o = o.parent) if (!o.visible) return false
+  return true
+}
+
 const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x * R, y * R, z * R)
 
 // client ↔ server link sags under the globe's front face; the tap sits at its lowest point
@@ -256,6 +273,23 @@ export function StoryLayer({ story }: { story: Story }) {
   const floorGeo = useRef<THREE.BufferGeometry>(null)
   const floorLinkMat = useRef<THREE.LineBasicMaterial>(null)
   const halo = useRef<(THREE.Mesh | null)[]>([])
+  const blockGlass = useRef<THREE.MeshPhysicalMaterial>(null)
+  const light = {
+    tap: useRef<THREE.PointLight>(null),
+    link: useRef<THREE.PointLight>(null),
+    client: useRef<THREE.PointLight>(null),
+    server: useRef<THREE.PointLight>(null),
+    block: useRef<THREE.PointLight>(null),
+  }
+  // Raycast-inspectable objects: each is a group tagged with an inspect id; its meshes are the hit targets.
+  const hov = useRef<Record<string, THREE.Group | null>>({})
+  const H = (id: string) => (el: THREE.Group | null) => {
+    hov.current[id] = el
+    if (el) el.userData.inspect = id
+  }
+  const pointer = useRef({ ndc: new THREE.Vector2(), inside: false, dragging: false })
+  const ray = useMemo(() => new THREE.Raycaster(), [])
+  const sph = useMemo(() => new THREE.Spherical(), [])
 
   const st = useRef({
     harvest: { on: false, t0: 0 },
@@ -268,8 +302,9 @@ export function StoryLayer({ story }: { story: Story }) {
     flash: 0,
     probePh: 0,
     sweepA: 0,
-    cam: { pos: new THREE.Vector3(0, 0.9, 7.4), look: new THREE.Vector3(0, 0, 0) },
-    flying: true,
+    flight: { active: false, t: 0, dur: 2, swoop: 0, fromT: new THREE.Vector3(), from: new THREE.Spherical(), to: new THREE.Spherical() },
+    reframe: false,
+    hover: null as string | null,
     mode: '' as string,
     frames: 0,
     fpsT: 0,
@@ -288,18 +323,43 @@ export function StoryLayer({ story }: { story: Story }) {
   }, [camera, gl])
   useEffect(() => {
     const s = st.current
+    const el = gl.domElement
+    const ptr = pointer.current
+    // grabbing the scene hands the camera to OrbitControls mid-flight
     const grab = () => {
-      s.flying = false
+      s.flight.active = false
       hudAnchor.userCam = true
     }
     const reframe = () => {
-      s.flying = true
+      s.reframe = true
+    }
+    const move = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect()
+      ptr.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
+      ptr.inside = true
+    }
+    const leave = () => {
+      ptr.inside = false
+    }
+    const down = () => {
+      ptr.dragging = true
+    }
+    const up = () => {
+      ptr.dragging = false
     }
     controls.addEventListener('start', grab)
-    gl.domElement.addEventListener('dblclick', reframe)
+    el.addEventListener('dblclick', reframe)
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerleave', leave)
+    el.addEventListener('pointerdown', down)
+    addEventListener('pointerup', up)
     return () => {
       controls.removeEventListener('start', grab)
-      gl.domElement.removeEventListener('dblclick', reframe)
+      el.removeEventListener('dblclick', reframe)
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerleave', leave)
+      el.removeEventListener('pointerdown', down)
+      removeEventListener('pointerup', up)
       controls.dispose()
     }
   }, [controls, gl])
@@ -489,18 +549,38 @@ export function StoryLayer({ story }: { story: Story }) {
         tmp.p.x -= dx
         tmp.l.x -= dx
       }
+      // Cinematic flight to the stage framing: eased (cubic in-out), spherical about the moving focal point,
+      // with a mid-flight rise and orbital sweep ("swoop"), strongest for the pull-back into the Merkle tree.
+      const f = s.flight
       const modeKey = `${mode}|${size.width}x${size.height}`
-      if (modeKey !== s.mode) {
+      if (modeKey !== s.mode || s.reframe) {
+        const first = s.mode === ''
         s.mode = modeKey
-        s.flying = true
+        s.reframe = false
+        f.active = true
+        f.t = first ? 1 : 0
+        f.fromT.copy(controls.target)
+        f.from.setFromVector3(tmp.v.copy(camera.position).sub(controls.target))
+        const travel = camera.position.distanceTo(tmp.p) + controls.target.distanceTo(tmp.l)
+        f.swoop = mode === 'wide' ? 1 : mode === 'radar' ? 0.6 : mode === 'vault' ? 0.45 : 0.25
+        f.dur = Math.min(3.4, Math.max(mode === 'wide' ? 2.8 : 1.7, 1.4 + travel * 0.4))
       }
-      if (s.flying) {
-        const kc = 1 - Math.exp(-dt * 1.8)
-        s.cam.pos.copy(camera.position).lerp(tmp.p, kc)
-        s.cam.look.copy(controls.target).lerp(tmp.l, kc)
-        camera.position.copy(s.cam.pos)
-        controls.target.copy(s.cam.look)
-        if (s.cam.pos.distanceTo(tmp.p) < 0.01 && s.cam.look.distanceTo(tmp.l) < 0.01) s.flying = false
+      if (f.active) {
+        f.t = Math.min(1, f.t + dt / f.dur)
+        const e = f.t < 0.5 ? 4 * f.t ** 3 : 1 - (-2 * f.t + 2) ** 3 / 2
+        const arc = Math.sin(Math.PI * e)
+        f.to.setFromVector3(tmp.v.copy(tmp.p).sub(tmp.l))
+        let dTheta = f.to.theta - f.from.theta
+        if (dTheta > Math.PI) dTheta -= Math.PI * 2
+        if (dTheta < -Math.PI) dTheta += Math.PI * 2
+        sph.set(
+          THREE.MathUtils.lerp(f.from.radius, f.to.radius, e) * (1 + 0.18 * f.swoop * arc),
+          THREE.MathUtils.clamp(THREE.MathUtils.lerp(f.from.phi, f.to.phi, e) - 0.32 * f.swoop * arc, 0.08, Math.PI - 0.08),
+          f.from.theta + dTheta * e + 0.28 * f.swoop * arc,
+        )
+        controls.target.copy(f.fromT).lerp(tmp.l, e)
+        camera.position.setFromSpherical(sph).add(controls.target)
+        if (f.t >= 1) f.active = false
       }
       controls.update()
       const fog = scene.fog as THREE.Fog | null
@@ -520,7 +600,7 @@ export function StoryLayer({ story }: { story: Story }) {
     const compressing = stage === 4 && anchored && t - s.anchored.t0 < 1.3
     fade(g.lattice.current, patching || patched ? (compressing ? 0.3 : 1) : 0, dt, 4)
     if (packetMat.current) {
-      packetMat.current.color.copy(patched ? ICE : WHITE)
+      packetMat.current.color.copy(patched ? G_ICE : G_WHITE)
       packetMat.current.visible = active
     }
     const pace = scanning ? 0.55 : 0.22
@@ -567,8 +647,8 @@ export function StoryLayer({ story }: { story: Story }) {
     if ((patching || patched) && !s.shattered && pAge >= 0 && pAge < 0.5) {
       s.shattered = true
       if (results && stage <= 3) {
-        for (let i = 0; i <= 36; i++) burst(shards, CURVE.getPoint(i / 36, tmp.w), 1, 0.35 * R, WHITE, 0.035)
-        if (vulnerable) burst(shards, P_TAP, 14, 0.8 * R, CRIMSON)
+        for (let i = 0; i <= 36; i++) burst(shards, CURVE.getPoint(i / 36, tmp.w), 1, 0.35 * R, G_WHITE, 0.035)
+        if (vulnerable) burst(shards, P_TAP, 14, 0.8 * R, G_CRIMSON)
       }
     }
     const lat = geo.lattice
@@ -584,7 +664,7 @@ export function StoryLayer({ story }: { story: Story }) {
     const done = results && stage === 5 && rescan === 'done'
     cageMat.current.forEach((m) => {
       if (!m) return
-      m.color.copy(done ? EMERALD : CYAN)
+      m.color.copy(done ? G_EMERALD : G_LATTICE)
       m.userData.base = 0.5 + 0.35 * s.flash
     })
 
@@ -595,8 +675,8 @@ export function StoryLayer({ story }: { story: Story }) {
       const ph = (pAge - 2.2) % 3
       probeLen = ph < 0.8 ? ease(ph / 0.8) : 0
       if (s.probePh < 0.8 && ph >= 0.8) {
-        burst(shards, P_CONTACT, 16, 0.6 * R, CRIMSON, 0.025)
-        burst(shards, P_CONTACT, 6, 0.35 * R, CYAN, 0.02)
+        burst(shards, P_CONTACT, 16, 0.6 * R, G_CRIMSON, 0.025)
+        burst(shards, P_CONTACT, 6, 0.35 * R, G_CYAN, 0.02)
         s.flash = 1
       }
       s.probePh = ph
@@ -675,10 +755,15 @@ export function StoryLayer({ story }: { story: Story }) {
     }
     if (la >= 1.6 && !s.snapped) {
       s.snapped = true
-      if (stage === 4) burst(shards, P_BLOCK, 18, 0.5 * R, EMERALD, 0.02)
+      if (stage === 4) burst(shards, P_BLOCK, 18, 0.5 * R, G_EMERALD, 0.02)
     }
     if (la < 0) s.snapped = false
-    if (blockMat.current) blockMat.current.color.copy(la < 1.6 ? ICE : tmp.c.copy(WHITE).lerp(EMERALD, clamp01((la - 1.6) / 0.5)))
+    if (blockMat.current) blockMat.current.color.copy(la < 1.6 ? G_ICE : tmp.c.copy(G_WHITE).lerp(G_EMERALD, clamp01((la - 1.6) / 0.5)))
+    if (blockGlass.current) {
+      const snap = la >= 1.6 ? Math.exp(-(la - 1.6) * 3) : 0
+      blockGlass.current.emissive.copy(la < 1.6 ? ICE : EMERALD)
+      blockGlass.current.emissiveIntensity = blockGlass.current.userData.ei = la < 0.75 ? 0 : la < 1.6 ? 0.9 : 0.55 + 3.2 * snap
+    }
     if (lock.current) {
       const lk = clamp01((la - 1.6) / 0.7)
       lock.current.visible = la > 1.6 && lk < 1
@@ -727,10 +812,64 @@ export function StoryLayer({ story }: { story: Story }) {
     s.frames++
     s.fpsT += dtRaw
     if (s.fpsT >= 0.5) {
-      hudAnchor.stats = { fps: Math.round(s.frames / s.fpsT), calls: gl.info.render.calls, points: gl.info.render.points + gl.info.render.lines, flying: s.flying }
+      hudAnchor.stats = { fps: Math.round(s.frames / s.fpsT), calls: gl.info.render.calls, points: gl.info.render.points + gl.info.render.lines, flying: s.flight.active }
       s.frames = 0
       s.fpsT = 0
     }
+
+    // ── dynamic lights: the crimson tap, the cyan lattice and shields, the emerald block ──
+    const L = (l: THREE.PointLight | null, target: number) => {
+      if (l) l.intensity += (target - l.intensity) * (1 - Math.exp(-dt * 4))
+    }
+    L(light.tap.current, harvesting ? 0.35 + 0.25 * Math.sin(t * 5) : 0)
+    L(light.link.current, patched && stage <= 5 ? 0.6 + 0.9 * s.flash : patching ? 0.4 : 0)
+    L(light.client.current, patched ? 0.35 : 0)
+    L(light.server.current, patched ? 0.35 : 0)
+    L(light.block.current, stage === 4 && la >= 1.6 ? 0.45 + 2.5 * Math.exp(-(la - 1.6) * 3) : 0)
+
+    // ── raycast hover: glow + scale the inspected object, publish it for the HTML tooltip ──
+    let hit: string | null = null
+    const ptr = pointer.current
+    if (ptr.inside && !ptr.dragging && !s.flight.active) {
+      ray.setFromCamera(ptr.ndc, camera)
+      const meshes: THREE.Object3D[] = []
+      for (const id in hov.current) {
+        const h0 = hov.current[id]
+        if (h0 && visibleDeep(h0) && ((h0.parent?.userData.f as number | undefined) ?? 1) > 0.3) h0.traverse((o) => (o as THREE.Mesh).isMesh && meshes.push(o))
+      }
+      for (const h1 of ray.intersectObjects(meshes, false)) {
+        let o: THREE.Object3D | null = h1.object
+        while (o && !o.userData.inspect) o = o.parent
+        if (o) {
+          hit = o.userData.inspect as string
+          break
+        }
+      }
+    }
+    if (hit !== s.hover) {
+      s.hover = hit
+      gl.domElement.style.cursor = hit ? 'crosshair' : ''
+    }
+    for (const id in hov.current) {
+      const h0 = hov.current[id]
+      if (!h0) continue
+      const was = (h0.userData.h as number | undefined) ?? 0
+      const now = was + ((id === hit ? 1 : 0) - was) * (1 - Math.exp(-dt * 14))
+      h0.userData.h = now
+      if (now < 0.002 && was < 0.002) continue
+      h0.scale.setScalar(1 + 0.09 * now)
+      h0.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+        if (m && 'emissiveIntensity' in m) {
+          if (m.userData.ei === undefined) m.userData.ei = m.emissiveIntensity
+          m.emissiveIntensity = (m.userData.ei as number) + 0.9 * now
+        }
+      })
+    }
+    if (hit && hov.current[hit]) {
+      hov.current[hit]!.getWorldPosition(tmp.v).project(camera)
+      hudAnchor.hover = { id: hit, x: (tmp.v.x * 0.5 + 0.5) * size.width, y: (-tmp.v.y * 0.5 + 0.5) * size.height }
+    } else hudAnchor.hover = null
 
     // ── publish story anchors in screen pixels ──
     if (self) {
@@ -743,18 +882,64 @@ export function StoryLayer({ story }: { story: Story }) {
 
   const endCol = story.stage === 5 && story.rescan === 'done' ? EMERALD : WHITE
   const line = (color: THREE.Color, opacity: number) => <lineBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} />
+  // PBR: clear acrylic / glass (clearcoat, low roughness) and brushed titanium (high metalness), lit by the room environment
+  const glass = (color: string, emissive: THREE.Color, opacity = 0.2, ei = 0.12) => (
+    <meshPhysicalMaterial color={color} emissive={emissive} emissiveIntensity={ei} roughness={0.08} metalness={0.05} clearcoat={1} clearcoatRoughness={0.05} ior={1.49} transparent opacity={opacity} depthWrite={false} envMapIntensity={1.5} side={THREE.DoubleSide} />
+  )
+  const metal = (color = '#3a4552', roughness = 0.32) => <meshStandardMaterial color={color} metalness={0.92} roughness={roughness} emissive={ICE} emissiveIntensity={0} transparent opacity={1} envMapIntensity={1.2} />
+  const hitbox = (r: number) => (
+    <mesh>
+      <sphereGeometry args={[r, 12, 8]} />
+      <meshBasicMaterial visible={false} />
+    </mesh>
+  )
 
   return (
     <group ref={g.self}>
+      {/* dynamic lights: they light the PBR bodies and follow the story state */}
+      <pointLight ref={light.tap} position={P_TAP.clone().add(v3(0, 0.12, 0.3))} color={CRIMSON} intensity={0} decay={2} />
+      <pointLight ref={light.link} position={P_TAP.clone().add(v3(0, 0.3, 0.45))} color={CYAN} intensity={0} decay={2} />
+      <pointLight ref={light.client} position={P_CLIENT.clone().add(v3(0.15, 0.1, 0.4))} color={CYAN} intensity={0} decay={2} />
+      <pointLight ref={light.server} position={P_SERVER.clone().add(v3(-0.15, 0.1, 0.4))} color={CYAN} intensity={0} decay={2} />
+      <pointLight ref={light.block} position={P_BLOCK.clone().add(v3(0, 0.05, 0.45))} color={EMERALD} intensity={0} decay={2} />
+
       {/* client + server nodes */}
       <group ref={g.ends} visible={false}>
         <group position={P_CLIENT}>
-          <lineSegments geometry={geo.client}>{line(endCol, 0.85)}</lineSegments>
-          <lineSegments geometry={geo.clientStand}>{line(endCol, 0.6)}</lineSegments>
+          <group ref={H('client')}>
+            <mesh position={[0, 0, 0.004 * R]}>
+              <boxGeometry args={[0.3 * R, 0.18 * R, 0.01 * R]} />
+              {glass('#0b2030', ICE, 0.55, 0.35)}
+            </mesh>
+            <mesh position={[0, 0, -0.008 * R]}>
+              <boxGeometry args={[0.32 * R, 0.2 * R, 0.012 * R]} />
+              {metal('#2b343e', 0.28)}
+            </mesh>
+            <mesh position={[0, -0.135 * R, -0.01 * R]}>
+              <cylinderGeometry args={[0.008 * R, 0.01 * R, 0.07 * R, 12]} />
+              {metal('#5a6672', 0.22)}
+            </mesh>
+            <mesh position={[0, -0.172 * R, 0]}>
+              <boxGeometry args={[0.16 * R, 0.008 * R, 0.06 * R]} />
+              {metal()}
+            </mesh>
+            <lineSegments geometry={geo.client}>{line(endCol, 0.85)}</lineSegments>
+          </group>
         </group>
         <group position={P_SERVER}>
-          <lineSegments geometry={geo.server}>{line(endCol, 0.85)}</lineSegments>
-          <lineSegments geometry={geo.serverSlots}>{line(endCol, 0.5)}</lineSegments>
+          <group ref={H('server')}>
+            <mesh>
+              <boxGeometry args={[0.19 * R, 0.33 * R, 0.19 * R]} />
+              {metal('#222b35', 0.36)}
+            </mesh>
+            {[-0.09, -0.03, 0.03, 0.09].map((y) => (
+              <mesh key={y} position={[0, y * R, 0.0962 * R]}>
+                <boxGeometry args={[0.13 * R, 0.01 * R, 0.002 * R]} />
+                <meshStandardMaterial color="#061218" emissive={story.patched ? CYAN : ICE} emissiveIntensity={1.6} transparent opacity={1} />
+              </mesh>
+            ))}
+            <lineSegments geometry={geo.server}>{line(endCol, 0.85)}</lineSegments>
+          </group>
         </group>
       </group>
 
@@ -762,14 +947,15 @@ export function StoryLayer({ story }: { story: Story }) {
       <group ref={g.cages} visible={false}>
         {[P_CLIENT, P_SERVER].map((p, i) => (
           <group key={i} position={p}>
+            <group ref={H(`cage${i}`)}>{hitbox(CAGE_R)}</group>
             <group ref={(el) => { cageSpin.current[i] = el }}>
               <lineSegments geometry={geo.cage.outer}>
-                <lineBasicMaterial ref={(m) => { cageMat.current[i] = m }} color={CYAN} transparent opacity={0.5} depthWrite={false} />
+                <lineBasicMaterial ref={(m) => { cageMat.current[i] = m }} color={G_LATTICE} transparent opacity={0.5} depthWrite={false} />
               </lineSegments>
               <lineSegments geometry={geo.cage.inner}>{line(ICE, 0.35)}</lineSegments>
               <lineSegments geometry={geo.cage.struts}>{line(CYAN, 0.22)}</lineSegments>
               <points geometry={geo.cage.nodes}>
-                <pointsMaterial color={ICE} size={2.4} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} />
+                <pointsMaterial color={G_ICE} size={2.4} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} />
               </points>
             </group>
           </group>
@@ -787,37 +973,55 @@ export function StoryLayer({ story }: { story: Story }) {
         <bufferGeometry ref={packets}>
           <bufferAttribute attach="attributes-position" args={[pk.link, 3]} />
         </bufferGeometry>
-        <pointsMaterial ref={packetMat} color={WHITE} size={3} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} visible={false} />
+        <pointsMaterial ref={packetMat} color={G_WHITE} size={3} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} visible={false} />
       </points>
 
       {/* lattice tube replacing the link */}
       <group ref={g.lattice} visible={false}>
-        <lineSegments ref={latLines} geometry={geo.lattice.lines}>{line(CYAN, 0.36)}</lineSegments>
+        <lineSegments ref={latLines} geometry={geo.lattice.lines}>{line(G_LATTICE, 0.36)}</lineSegments>
         <points ref={latPoints} geometry={geo.lattice.points}>
-          <pointsMaterial color={ICE} size={2.2} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} />
+          <pointsMaterial color={G_ICE} size={2.2} sizeAttenuation={false} transparent opacity={0.9} depthWrite={false} />
         </points>
       </group>
 
       {/* crimson wiretap: clamp on the link, pulsing siphon into storage */}
       <group ref={g.harvest} visible={false}>
         <group position={P_TAP}>
-          <lineLoop geometry={geo.clampA}>{line(CRIMSON, 0.95)}</lineLoop>
-          <lineLoop geometry={geo.clampB}>{line(CRIMSON, 0.45)}</lineLoop>
+          <group ref={H('tap')}>
+            <mesh rotation={[0, Math.PI / 2, 0]}>
+              <torusGeometry args={[0.07 * R, 0.013 * R, 10, 40]} />
+              <meshStandardMaterial color="#3a1416" metalness={0.85} roughness={0.3} emissive={CRIMSON} emissiveIntensity={0.6} transparent opacity={1} />
+            </mesh>
+            <lineLoop geometry={geo.clampA}>{line(G_CRIMSON, 0.95)}</lineLoop>
+            <lineLoop geometry={geo.clampB}>{line(CRIMSON, 0.45)}</lineLoop>
+            {hitbox(0.12 * R)}
+          </group>
         </group>
         <line>
           <primitive object={geo.siphon} attach="geometry" />
-          <lineBasicMaterial ref={siphonMat} color={CRIMSON} transparent opacity={0.8} depthWrite={false} />
+          <lineBasicMaterial ref={siphonMat} color={G_CRIMSON} transparent opacity={0.8} depthWrite={false} />
         </line>
         <points>
           <bufferGeometry ref={siphonPk}>
             <bufferAttribute attach="attributes-position" args={[pk.siphon, 3]} />
           </bufferGeometry>
-          <pointsMaterial color={CRIMSON} size={3} sizeAttenuation={false} transparent opacity={1} depthWrite={false} />
+          <pointsMaterial color={G_CRIMSON} size={3} sizeAttenuation={false} transparent opacity={1} depthWrite={false} />
         </points>
       </group>
 
       {/* adversary storage node */}
       <group ref={g.vault} visible={false} position={P_VAULT}>
+        <group ref={H('vault')}>
+        <mesh>
+          <cylinderGeometry args={[VAULT_R, VAULT_R, VAULT_H, 48, 1, true]} />
+          {glass('#2a0a0c', CRIMSON, 0.2, 0.1)}
+        </mesh>
+        {[-VAULT_H / 2, VAULT_H / 2].map((y) => (
+          <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[VAULT_R, 0.014 * R, 8, 64]} />
+            {metal('#454f5a', 0.26)}
+          </mesh>
+        ))}
         {[-VAULT_H / 2, 0, VAULT_H / 2].map((y) => (
           <lineLoop key={y} geometry={geo.vaultRing} position={[0, y, 0]}>{line(CRIMSON, y === 0 ? 0.25 : 0.7)}</lineLoop>
         ))}
@@ -827,6 +1031,7 @@ export function StoryLayer({ story }: { story: Story }) {
         <mesh ref={fill} geometry={geo.fill} position={[0, -VAULT_H / 2, 0]}>
           <meshBasicMaterial color={CRIMSON} transparent opacity={0.13} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
+        </group>
       </group>
 
       {/* Q-Day dial + projector beams (amber) */}
@@ -838,7 +1043,7 @@ export function StoryLayer({ story }: { story: Story }) {
             <lineLoop geometry={geo.dialRing}>{line(AMBER, 0.3)}</lineLoop>
             <line>
               <primitive object={geo.dialArc} attach="geometry" />
-              <lineBasicMaterial color={AMBER} transparent opacity={1} depthWrite={false} />
+              <lineBasicMaterial color={G_AMBER} transparent opacity={1} depthWrite={false} />
             </line>
             <group ref={dialHand}>
               <lineSegments geometry={geo.dialHand}>{line(WHITE, 0.7)}</lineSegments>
@@ -853,11 +1058,11 @@ export function StoryLayer({ story }: { story: Story }) {
           <bufferGeometry ref={probeGeo}>
             <bufferAttribute attach="attributes-position" args={[new Float32Array([P_INTAKE.x, P_INTAKE.y, P_INTAKE.z, P_INTAKE.x, P_INTAKE.y, P_INTAKE.z]), 3]} />
           </bufferGeometry>
-          <lineBasicMaterial color={CRIMSON} transparent opacity={0.9} depthWrite={false} />
+          <lineBasicMaterial color={G_CRIMSON} transparent opacity={0.9} depthWrite={false} />
         </line>
       </group>
       <mesh ref={flash} geometry={geo.flashRing} position={P_CONTACT} visible={false}>
-        <meshBasicMaterial color={CYAN} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial color={G_CYAN} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
 
       <lineSegments frustumCulled={false}>
@@ -871,9 +1076,15 @@ export function StoryLayer({ story }: { story: Story }) {
       {/* Merkle tree + block chain */}
       <group ref={g.ledger} visible={false}>
         {LEAVES.map((p, i) => (
-          <lineSegments key={i} geometry={geo.leaf} position={p}>
-            <lineBasicMaterial ref={(m) => { leafMats.current[i] = m }} color={STEEL} transparent opacity={i === 3 ? 0.18 : 0.28} depthWrite={false} />
-          </lineSegments>
+          <group key={i} position={p} ref={i < 3 ? H(`leaf${i}`) : undefined}>
+            <mesh>
+              <boxGeometry args={[0.085 * R, 0.085 * R, 0.085 * R]} />
+              {glass('#0c2a33', CYAN, i === 3 ? 0.06 : 0.16, 0.2)}
+            </mesh>
+            <lineSegments geometry={geo.leaf}>
+              <lineBasicMaterial ref={(m) => { leafMats.current[i] = m }} color={STEEL} transparent opacity={i === 3 ? 0.18 : 0.28} depthWrite={false} />
+            </lineSegments>
+          </group>
         ))}
         <group ref={g.condense} visible={false}>
           <points frustumCulled={false}>
@@ -886,20 +1097,39 @@ export function StoryLayer({ story }: { story: Story }) {
         <group ref={g.tree} visible={false}>
           <lineSegments geometry={geo.treeEdges}>{line(CYAN, 0.45)}</lineSegments>
           {INNER.map((p, i) => (
-            <lineSegments key={i} geometry={geo.inner} position={p}>{line(CYAN, 0.8)}</lineSegments>
+            <group key={i} position={p}>
+              <mesh>
+                <boxGeometry args={[0.1 * R, 0.1 * R, 0.1 * R]} />
+                {glass('#0c2a33', CYAN, 0.18, 0.3)}
+              </mesh>
+              <lineSegments geometry={geo.inner}>{line(CYAN, 0.8)}</lineSegments>
+            </group>
           ))}
         </group>
-        <lineSegments geometry={geo.prev} position={P_PREV}>{line(STEEL, 0.55)}</lineSegments>
+        <group position={P_PREV} ref={H('prev')}>
+          <mesh>
+            <boxGeometry args={[0.2 * R, 0.2 * R, 0.2 * R]} />
+            {glass('#10202a', STEEL, 0.2, 0.08)}
+          </mesh>
+          <lineSegments geometry={geo.prev}>{line(STEEL, 0.55)}</lineSegments>
+        </group>
         <primitive object={geo.nextSlot} />
+        <group position={P_NEXT} ref={H('next')}>{hitbox(0.12 * R)}</group>
         <group position={P_BLOCK}>
           <group ref={g.block} visible={false}>
+            <group ref={H('block')}>
+              <mesh>
+                <boxGeometry args={[0.26 * R, 0.26 * R, 0.26 * R]} />
+                <meshPhysicalMaterial ref={blockGlass} color="#08241c" emissive={ICE} emissiveIntensity={0} roughness={0.06} metalness={0.05} clearcoat={1} clearcoatRoughness={0.04} ior={1.5} transparent opacity={0.3} depthWrite={false} envMapIntensity={1.6} side={THREE.DoubleSide} />
+              </mesh>
+            </group>
             <lineSegments geometry={geo.block}>
               <lineBasicMaterial ref={blockMat} color={ICE} transparent opacity={0.95} depthWrite={false} />
             </lineSegments>
             <lineSegments geometry={geo.root}>{line(EMERALD, 0.9)}</lineSegments>
           </group>
           <mesh ref={lock} geometry={geo.lockRing} visible={false}>
-            <meshBasicMaterial color={EMERALD} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+            <meshBasicMaterial color={G_EMERALD} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
           </mesh>
         </group>
         <group ref={g.chain} visible={false}>
@@ -922,7 +1152,7 @@ export function StoryLayer({ story }: { story: Story }) {
             <lineLoop key={i} geometry={rg}>{line(EMERALD, i === 2 ? 0.55 : 0.22)}</lineLoop>
           ))}
           <lineSegments geometry={geo.planeLines}>{line(EMERALD, 0.18)}</lineSegments>
-          <lineLoop ref={cut} geometry={geo.unit}>{line(EMERALD, 0.9)}</lineLoop>
+          <lineLoop ref={cut} geometry={geo.unit}>{line(G_EMERALD, 0.9)}</lineLoop>
           <group ref={sweep}>
             {[0.18, 0.36, 0.6].map((len, i) => (
               <mesh key={len} rotation={[-Math.PI / 2, 0, 0]}>
@@ -930,7 +1160,7 @@ export function StoryLayer({ story }: { story: Story }) {
                 <meshBasicMaterial color={EMERALD} transparent opacity={0.08 - i * 0.02} depthWrite={false} side={THREE.DoubleSide} />
               </mesh>
             ))}
-            <lineSegments geometry={geo.radarEdge}>{line(EMERALD, 0.9)}</lineSegments>
+            <lineSegments geometry={geo.radarEdge}>{line(G_EMERALD, 0.9)}</lineSegments>
           </group>
         </group>
       </group>
@@ -953,7 +1183,7 @@ export function StoryLayer({ story }: { story: Story }) {
       <group ref={g.halos} visible={false}>
         {[P_CLIENT, P_SERVER, P_TAP].map((p, i) => (
           <mesh key={i} ref={(m) => { halo.current[i] = m }} geometry={geo.halo} position={p}>
-            <meshBasicMaterial color={EMERALD} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+            <meshBasicMaterial color={G_EMERALD} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
           </mesh>
         ))}
       </group>

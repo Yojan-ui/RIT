@@ -21,6 +21,7 @@ export const hudAnchor = {
   points: {} as Record<string, { x: number; y: number; on: boolean }>,
   stats: { fps: 0, calls: 0, points: 0, flying: true },
   userCam: false, // the viewer has orbited the camera at least once
+  hover: null as null | { id: string; x: number; y: number }, // raycast-inspected 3D object
 }
 
 /** What the 3D narrative shows: derived from the real pipeline state. */

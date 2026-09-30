@@ -1,6 +1,7 @@
 // DOM captions registered to the 3D story anchors, the QuantumLedger status banner, and the
 // plain-language narration bar.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { columnCenter, hudAnchor, type Story } from './anchor'
 
@@ -13,6 +14,9 @@ export interface StoryData {
   qDayYear: number
   block: { index: number; hash: string; root: string; prev: string; timestamp: string; leaves: { label: string; hash: string }[] } | null
   rescanStep: number
+  /** live scan facts for the 3D inspector tooltips */
+  net: { ip: string; tls: string; cipher: string; rttMs: number | null; connectMs: number | null; clientHello: number | null; serverShare: number | null; chainBytes: number | null } | null
+  verified: boolean
 }
 
 function useFrameLoop(fn: () => void) {
@@ -158,6 +162,131 @@ function narrate(s: Story, d: StoryData): { chip: string; title: string; text: s
   }
 }
 
+// ── raycast inspector: HTML tooltip locked to the hovered 3D object ──────────
+
+type Row = [string, string, string?]
+
+function inspect(id: string, s: Story, d: StoryData): { title: string; rows: Row[] } | null {
+  const n = d.net
+  const b = d.block
+  const hex = (h: string, k = 12) => `0x${h.slice(0, k).toUpperCase()}…`
+  switch (id) {
+    case 'client':
+      return {
+        title: 'client node',
+        rows: [
+          ['node', 'QuantumLedger probe · this host'],
+          ['clienthello', n?.clientHello ? `${n.clientHello} B · offers X25519MLKEM768` : 'offers X25519MLKEM768'],
+          ['tcp connect', n?.connectMs != null ? `${n.connectMs} ms` : '—'],
+          ['state', s.patched ? 'ML-KEM-768 hybrid active (sim)' : 'classical session keys', s.patched ? 'hud-okc' : 'hud-warn'],
+        ],
+      }
+    case 'server':
+      return {
+        title: 'server node',
+        rows: [
+          ['node', n ? `${n.ip}:443` : d.domain],
+          ['host', d.domain],
+          ['tls', n ? `${n.tls} · ${n.cipher}` : '—'],
+          ['state', s.patched ? 'ML-DSA-65 + X25519MLKEM768 active (sim)' : `${d.sig} + ${d.kex} · Shor-vulnerable`, s.patched ? 'hud-okc' : 'hud-crit'],
+          ['rtt', n?.rttMs != null ? `${n.rttMs.toFixed(1)} ms (ClientHello → ServerHello)` : '—'],
+        ],
+      }
+    case 'tap':
+      return {
+        title: 'adversary wiretap',
+        rows: [
+          ['type', 'passive capture · harvest now, decrypt later'],
+          ['captures', `${d.kex} key share${n?.serverShare ? ` (${n.serverShare} B)` : ''} + ${d.sig} chain${n?.chainBytes ? ` (${n.chainBytes} B)` : ''}`],
+          ['state', 'recording', 'hud-crit'],
+        ],
+      }
+    case 'vault':
+      return {
+        title: 'adversary storage',
+        rows: [
+          ['holds', `recorded ${d.kex ?? 'classical'} handshakes`],
+          ['decryptable', `after Q-Day · est. ${d.qDayYear}`, 'hud-warn'],
+          ['state', s.patched ? 'new sessions unreadable' : 'filling', s.patched ? 'hud-okc' : 'hud-crit'],
+        ],
+      }
+    case 'cage0':
+    case 'cage1':
+      return {
+        title: 'lattice shield',
+        rows: [
+          ['scheme', id === 'cage0' ? 'ML-KEM-768 · NIST FIPS 203' : 'ML-DSA-65 · NIST FIPS 204', 'hud-okc'],
+          ['hardness', 'Module-LWE / Module-SIS'],
+          ['state', s.stage === 5 && s.rescan === 'done' ? 'verified · pqc-ready' : 'active (simulated patch)', 'hud-ok'],
+        ],
+      }
+    case 'block':
+      return b
+        ? {
+            title: `block #${b.index}`,
+            rows: [
+              ['block hash', hex(b.hash, 16), 'hud-ok'],
+              ['merkle root', hex(b.root)],
+              ['prev', hex(b.prev)],
+              ['anchored', `${b.timestamp.replace('T', ' ').slice(0, 19)}Z`],
+              ['verified', d.verified ? 'leaves · root · hash · chain link' : 'no', d.verified ? 'hud-ok' : 'hud-crit'],
+            ],
+          }
+        : { title: 'block', rows: [['state', 'awaiting anchor']] }
+    case 'prev':
+      return {
+        title: b && b.index > 0 ? `block #${b.index - 1}` : 'genesis',
+        rows: [
+          ['block hash', b ? hex(b.prev, 16) : '—'],
+          ['link', b ? `prev_hash of block #${b.index}` : 'chain head'],
+        ],
+      }
+    case 'next':
+      return { title: `block #${b ? b.index + 1 : '·'}`, rows: [['state', 'pending'], ['will chain to', b ? hex(b.hash, 8) : '—']] }
+    case 'leaf0':
+    case 'leaf1':
+    case 'leaf2': {
+      const l = b?.leaves[Number(id.slice(4))]
+      return l ? { title: `merkle leaf ${id.slice(4)} · ${l.label}`, rows: [['sha-256', hex(l.hash, 16), 'hud-okc'], ['record', `${l.label.toLowerCase()} stage record (canonical JSON)`]] } : null
+    }
+  }
+  return null
+}
+
+function Inspector({ s, d }: { s: Story; d: StoryData }) {
+  const [id, setId] = useState<string | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+  useFrameLoop(() => {
+    const h = hudAnchor.hover
+    if ((h?.id ?? null) !== id) setId(h?.id ?? null)
+    if (h && box.current) {
+      box.current.style.transform = `translate(${h.x.toFixed(1)}px, ${h.y.toFixed(1)}px)`
+      // open towards the free column so the card never slides under the side panels
+      box.current.dataset.flip = h.x > columnCenter(innerWidth) ? '1' : '0'
+    }
+  })
+  const info = id ? inspect(id, s, d) : null
+  if (!info) return null
+  // portalled to the HUD root (outside the overlay's stacking context) so it stacks above the dashboard panels
+  return createPortal(
+    <div ref={box} className="group/insp pointer-events-none fixed top-0 left-0 z-[45]">
+      <svg width="15" height="15" viewBox="-7.5 -7.5 15 15" className="absolute -top-[7.5px] -left-[7.5px] overflow-visible text-[var(--ice)]">
+        <path d="M -7 -3 V -7 H -3 M 3 -7 H 7 V -3 M 7 3 V 7 H 3 M -3 7 H -7 V 3" fill="none" stroke="currentColor" strokeWidth="1" />
+      </svg>
+      <motion.div key={id} initial={{ opacity: 0, x: 4 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.14 }} className="hud-glass absolute top-[10px] left-[18px] min-w-[220px] px-2.5 py-2 whitespace-nowrap group-data-[flip=1]/insp:right-[18px] group-data-[flip=1]/insp:left-auto">
+        <div className="hud-ice mb-1 text-[10px] tracking-[0.16em] uppercase">{info.title}</div>
+        {info.rows.map(([k, v, cls]) => (
+          <div key={k} className="grid grid-cols-[78px_1fr] gap-x-2 text-[10px] leading-[15px]">
+            <span className="hud-k">{k}</span>
+            <span className={cls ?? 'text-[#c9d4de]'}>{v}</span>
+          </div>
+        ))}
+      </motion.div>
+    </div>,
+    document.querySelector('.hud-root') ?? document.body,
+  )
+}
+
 // ── overlay ──────────────────────────────────────────────────────────────────
 
 export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryData }) {
@@ -200,7 +329,7 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
         <div className="hud-dim text-[9.5px] tracking-[0.12em] uppercase">
           <span className="hud-okc">● live webgl</span> · <span ref={stats} className="hud-steel" />
         </div>
-        <div className="hud-dim mt-0.5 text-[9.5px] tracking-[0.1em]">drag to orbit · scroll to zoom · right-drag to pan · double-click to re-frame</div>
+        <div className="hud-dim mt-0.5 text-[9.5px] tracking-[0.1em]">hover to inspect · drag to orbit · scroll to zoom · right-drag to pan · double-click to re-frame</div>
       </div>
 
       {s.active && !(s.stage === 2 && results && s.vulnerable) && (
@@ -320,6 +449,8 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
           </motion.div>
         </At>
       )}
+
+      <Inspector s={s} d={d} />
 
       {/* plain-language narration for the non-specialist */}
       <div ref={(el) => { if (el) cols.current[1] = el }} className="absolute bottom-4 w-[min(520px,40vw)] -translate-x-1/2">

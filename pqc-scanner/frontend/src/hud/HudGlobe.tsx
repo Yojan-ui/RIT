@@ -1,6 +1,11 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { hudAnchor, nodeAngles, type HoloNode, type HudMode, type Story } from './anchor'
 import { StoryLayer, fade } from './Story'
 
@@ -250,6 +255,11 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
     <>
       <color attach="background" args={[CARBON]} />
       <fog attach="fog" args={[CARBON, 6.2, 10.5]} />
+      <Environment />
+      <ambientLight intensity={0.18} />
+      <hemisphereLight args={['#9fb4c7', '#080a0f', 0.35]} />
+      <directionalLight position={[3, 5, 4]} intensity={1.4} color="#dbe7f2" />
+      <directionalLight position={[-4, 1.5, -3]} intensity={0.5} color="#577c95" />
       <group ref={root}>
         <group ref={globe} rotation={[0.28, 0, 0]}>
           <points>
@@ -312,9 +322,63 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
   )
 }
 
+/**
+ * HDR post-processing: scene → UnrealBloomPass → OutputPass (tone mapping + sRGB).
+ * Only HDR-bright materials (lattice, shields, packets, siphon, locked block) exceed the threshold and bleed light.
+ * Rendered at ≤1.5× DPR into a 4× MSAA half-float target so 1-px lines stay crisp; bloom runs at half resolution.
+ */
+function Effects() {
+  const { gl, scene, camera, size } = useThree()
+  const fx = useMemo(() => {
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
+    const composer = new EffectComposer(gl, rt)
+    composer.addPass(new RenderPass(scene, camera))
+    const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.42, 0.8)
+    composer.addPass(bloom)
+    composer.addPass(new OutputPass())
+    return { composer, bloom }
+  }, [gl, scene, camera])
+  useEffect(() => {
+    fx.composer.setPixelRatio(Math.min(gl.getPixelRatio(), 1.5))
+    fx.composer.setSize(size.width, size.height)
+    fx.bloom.resolution.set(size.width / 2, size.height / 2)
+  }, [fx, gl, size])
+  useEffect(() => () => fx.composer.dispose(), [fx])
+  // priority 1: R3F hands rendering over to the composer
+  useFrame((_, dt) => {
+    gl.info.reset() // count every pass of the frame, not just the last one
+    fx.composer.render(dt)
+  }, 1)
+  useEffect(() => {
+    gl.info.autoReset = false
+    return () => {
+      gl.info.autoReset = true
+    }
+  }, [gl])
+  return null
+}
+
+/** Image-based lighting for the PBR node bodies: a neutral studio room, pre-filtered once. */
+function Environment() {
+  const { gl, scene } = useThree()
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl)
+    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environment = env
+    scene.environmentIntensity = 0.55
+    return () => {
+      scene.environment = null
+      env.dispose()
+      pmrem.dispose()
+    }
+  }, [gl, scene])
+  return null
+}
+
 export function HudGlobe({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story: Story }) {
   return (
-    <Canvas camera={{ position: [0, 0.9, 7.4], fov: 38 }} dpr={[1, 2]} gl={{ antialias: true }}>
+    <Canvas camera={{ position: [0, 0.9, 7.4], fov: 38 }} dpr={[1, 2]} gl={{ antialias: false, powerPreference: 'high-performance' }}>
+      <Effects />
       <Scene mode={mode} nodes={nodes} story={story} />
     </Canvas>
   )

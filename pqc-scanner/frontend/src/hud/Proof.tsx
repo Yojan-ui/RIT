@@ -1,6 +1,6 @@
 // "Proof" widgets: the live telemetry terminal (backend log stream) and the measured
 // performance impact of the post-quantum patch.
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import type { Bench, ScanResult } from '../api'
 import { computePerf, fmtBytes, fmtUs, INITCWND_BYTES, LEGACY_SIGS } from '../lib/perf'
@@ -21,13 +21,60 @@ export type StreamState = 'idle' | 'connecting' | 'open' | 'closed' | 'error'
 
 const SRC = { api: 'hud-ice', sse: 'hud-steel', ui: 'hud-dim' } as const
 
+const lineLen = (l: TLine) => l.src.length + 1 + Math.max(5, l.tag.length) + 1 + l.text.length
+
+/** Coloured segments of one log line, cut to its first `n` characters. */
+function Segments({ l, n }: { l: TLine; n: number }) {
+  const textCls = l.tone === 'crit' || l.level === 'ERROR' ? 'hud-crit' : l.tone === 'warn' || l.level === 'WARNING' ? 'hud-warn' : l.tone === 'ok' ? 'hud-ok' : l.tone === 'dim' ? 'hud-dim' : 'text-[#c9d4de]'
+  const segs: [string, string][] = [
+    [l.src, SRC[l.src]],
+    [' ', ''],
+    [l.tag.padEnd(5), l.level === 'ERROR' ? 'hud-crit' : l.level === 'WARNING' ? 'hud-warn' : 'hud-steel'],
+    [' ', ''],
+    [l.text, textCls],
+  ]
+  let left = n
+  return (
+    <>
+      {segs.map(([t, cls], i) => {
+        if (left <= 0) return null
+        const part = t.slice(0, left)
+        left -= t.length
+        return (
+          <span key={i} className={cls}>
+            {part}
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
 export function TelemetryTerminal({ lines, state, meta }: { lines: TLine[]; state: StreamState; meta: string }) {
   const box = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
+  // Serial-console playback: lines type out character by character with a jittery baud rate;
+  // the rate rises with the backlog so a burst of events never falls far behind the live stream.
+  const [pos, setPos] = useState({ id: -1, c: 0 })
+  const cur = lines.find((l) => l.id >= pos.id)
+  useEffect(() => {
+    if (!cur) return
+    const backlog = lines.reduce((a, l) => (l.id >= cur.id ? a + lineLen(l) : a), 0) - pos.c
+    const step = 1 + Math.floor(backlog / 160) + (Math.random() < 0.3 ? 1 : 0)
+    const delay = 7 + Math.random() * 20 + (Math.random() < 0.035 ? 70 : 0)
+    const t = setTimeout(() => {
+      setPos((p) => {
+        const id = Math.max(p.id, cur.id)
+        const c = (id === p.id ? p.c : 0) + step
+        return c >= lineLen(cur) ? { id: cur.id + 1, c: 0 } : { id, c }
+      })
+    }, delay)
+    return () => clearTimeout(t)
+  }, [cur, pos, lines])
   useEffect(() => {
     const el = box.current
     if (el && pinned.current) el.scrollTop = el.scrollHeight
-  }, [lines.length])
+  }, [lines.length, pos])
   const chip = {
     idle: ['○ idle', 'hud-dim'],
     connecting: ['◌ connecting', 'hud-ice'],
@@ -59,18 +106,19 @@ export function TelemetryTerminal({ lines, state, meta }: { lines: TLine[]; stat
         aria-live="polite"
       >
         {lines.length === 0 && <div className="hud-dim">$ awaiting target · backend log stream attaches on scan</div>}
-        {lines.map((l) => (
-          <motion.div key={l.id} initial={{ opacity: 0, x: -3 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.18 }} className="grid grid-cols-[80px_1fr] gap-x-1.5 break-words">
-            <span className="hud-dim">{l.t}</span>
-            <span>
-              <span className={SRC[l.src]}>{l.src}</span>{' '}
-              <span className={l.level === 'ERROR' ? 'hud-crit' : l.level === 'WARNING' ? 'hud-warn' : 'hud-steel'}>{l.tag.padEnd(5)}</span>{' '}
-              <span className={l.tone === 'crit' || l.level === 'ERROR' ? 'hud-crit' : l.tone === 'warn' || l.level === 'WARNING' ? 'hud-warn' : l.tone === 'ok' ? 'hud-ok' : l.tone === 'dim' ? 'hud-dim' : 'text-[#c9d4de]'}>
-                {l.text}
+        {lines.map((l) => {
+          if (cur && l.id > cur.id) return null
+          const typing = cur && l.id === cur.id
+          return (
+            <div key={l.id} className="grid grid-cols-[80px_1fr] gap-x-1.5 break-words">
+              <span className="hud-dim">{l.t}</span>
+              <span>
+                <Segments l={l} n={typing ? (pos.id === l.id ? pos.c : 0) : Infinity} />
+                {typing && <span className="hud-caret" />}
               </span>
-            </span>
-          </motion.div>
-        ))}
+            </div>
+          )
+        })}
       </div>
     </section>
   )
