@@ -8,7 +8,6 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { hudAnchor, nodeAngles, type HoloNode, type HudMode, type Story } from './anchor'
 import { StoryLayer, fade } from './Story'
-import { SpatialLayer } from './spatial'
 import { XR_SCALE, setXR, useXR, xrState } from './xr'
 
 const R = 1.5
@@ -204,15 +203,12 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
       root.current.visible = true
       root.current.quaternion.identity()
     }
-    // fit the hologram into the free space between the HUD columns (pixels → world)
+    // fit the hologram to its viewport card (pixels → world); the canvas holds nothing else
     if (root.current && !xrState.presenting) {
-      const wide = W >= 1024
-      const left = wide ? Math.min(560, W * 0.4) : 0
-      const right = wide ? W - 400 : W
-      const cx = wide ? (left + right) / 2 : W / 2
-      const cy = wide ? H * (story.active ? 0.44 : 0.5) : H * 0.23
+      const cx = W / 2
+      const cy = H * (story.active ? 0.47 : 0.5)
       const k0 = story.active ? 0.2 : 0.3
-      const rpx = wide ? Math.min(right - left, H - 160) * k0 : Math.min(W, H * 0.5) * k0
+      const rpx = Math.min(W, H - 120) * k0
       // world units per pixel at the base camera distance (fixed, so camera moves don't refit the scene)
       const px = (2 * Math.tan(THREE.MathUtils.degToRad(19)) * Math.hypot(0.9, 7.4)) / H
       const k = 1 - Math.exp(-dt * 4)
@@ -455,7 +451,7 @@ function XRPlacement() {
   )
 }
 
-export function HudGlobe({ mode, nodes, story, spatialOn }: { mode: HudMode; nodes: HoloNode[]; story: Story; spatialOn: boolean }) {
+export function HudGlobe({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story: Story }) {
   const { presenting } = useXR()
   return (
     <Canvas
@@ -469,7 +465,6 @@ export function HudGlobe({ mode, nodes, story, spatialOn }: { mode: HudMode; nod
       <Effects />
       <Scene mode={mode} nodes={nodes} story={story} xr={presenting} />
       <XRPlacement />
-      <SpatialLayer on={spatialOn && !presenting} />
     </Canvas>
   )
 }

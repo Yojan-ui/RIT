@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
+import { Blocks, Cpu, Crosshair, FileDown, Gauge, Globe, Radar, RotateCcw, ScanLine, ShieldCheck, type LucideIcon } from 'lucide-react'
 import { usePipeline, SCAN_STEPS, type Pipeline } from '../pipeline/usePipeline'
 import type { CoreState } from '../scene/CryptoCore'
-import { TypeTerminal, type TermLine } from '../components/pipeline'
 import { ASSET_TYPES, formulaLine, type AssetType } from '../lib/cwm'
 import { BASE_YEAR, Z_YEARS } from '../lib/mosca'
 import { HudGlobe } from './HudGlobe'
@@ -11,15 +11,21 @@ import { exportComplianceReport } from '../lib/compliance'
 import { computePerf } from '../lib/perf'
 import { Bar, CwmGauge, HudRings, NodeMarkers, TrackingLayer } from './overlays'
 import { PerfImpact, TelemetryTerminal, type StreamState, type TLine } from './Proof'
-import type { HoloNode, HudMode, Story } from './anchor'
+import { hudAnchor, type HoloNode, type HudMode, type Story } from './anchor'
 import { StoryOverlay, type StoryData } from './StoryOverlay'
 import { ArHandoff } from './ArHandoff'
+import { Card } from './bento'
 import { geiger, sfx } from './sfx'
-import { SpatialSlot, spatial } from './spatial'
 import { useXR } from './xr'
 import './hud.css'
 
-const STEPS = ['DETECT', 'SCORE', 'DEFEND', 'PROVE', 'RESCAN'] as const
+const STEPS: [string, LucideIcon][] = [
+  ['Detect', Radar],
+  ['Score', Gauge],
+  ['Defend', ShieldCheck],
+  ['Prove', Blocks],
+  ['Rescan', ScanLine],
+]
 const EXAMPLES = ['github.com', 'microsoft.com', 'nta.ac.in']
 // Operator console location (Bengaluru), not the target's.
 const CONSOLE = '12.9716°N 77.5946°E'
@@ -147,23 +153,14 @@ function useSonification(story: Story, p: Pipeline, heat: MutableRefObject<numbe
 
 // ── small pieces ─────────────────────────────────────────────────────────────
 
-function Panel({ title, right, tone, className = '', children }: { title: string; right?: ReactNode; tone?: 'warn' | 'ok'; className?: string; children: ReactNode }) {
-  return (
-    <section className={`hud-panel ${tone ?? ''} ${className}`}>
-      <header className="hud-panel-head">
-        <span className="hud-k">{title}</span>
-        {right}
-      </header>
-      <div className="hud-panel-body">{children}</div>
-    </section>
-  )
-}
-
-function Row({ k, children, cls = 'hud-white' }: { k: string; children: ReactNode; cls?: string }) {
+/** Label / value row. `mono` is for hashes and IP addresses only. */
+function Row({ k, children, cls = 'hud-white', mono = false, title }: { k: string; children: ReactNode; cls?: string; mono?: boolean; title?: string }) {
   return (
     <div className="hud-row">
       <span className="hud-k">{k}</span>
-      <span className={`truncate text-right ${cls}`}>{children}</span>
+      <span className={`truncate text-right ${mono ? 'hud-mono text-[11px]' : ''} ${cls}`} title={title}>
+        {children}
+      </span>
     </div>
   )
 }
@@ -187,11 +184,11 @@ function NodeRow({ idx, role, name, state, note, lock }: { idx: number; role: st
       </span>
       <span className="min-w-0">
         <span className="hud-k block">{role}</span>
-        <span className="hud-white block truncate text-[12px]">{name}</span>
+        <span className="hud-white block truncate text-[13px] font-medium">{name}</span>
       </span>
       <span className="text-right">
-        <span className={`block text-[10px] tracking-[0.12em] ${col}`}>{state === 'ok' ? 'PQ-SAFE' : 'SHOR-VULN'}</span>
-        <span className="hud-dim block text-[10px]">{note}</span>
+        <span className={`block text-[10px] font-semibold tracking-[0.06em] ${col}`}>{state === 'ok' ? 'PQ-SAFE' : 'SHOR-VULN'}</span>
+        <span className="hud-dim block text-[10.5px]">{note}</span>
       </span>
     </div>
   )
@@ -256,7 +253,6 @@ export default function HudApp() {
   const sfxOn = useSyncExternalStore(sfx.subscribe, () => sfx.enabled)
   const mode = xr.presenting ? 'secure' : MODE[p.core]
   const r = p.result
-  const cwm = p.patched ? p.cwmAfter : p.cwmBefore
   const total = r?.cbom_summary.length ?? 0
   const shorVuln = p.patched ? 0 : r ? r.cbom_summary.filter((a) => !a.quantum_safe).length : 0
 
@@ -289,6 +285,11 @@ export default function HudApp() {
   useEffect(() => {
     document.title = 'QuantumLedger · PQC HUD'
   }, [])
+  // the ledger is shown as rows now (no typing terminal); a verified block counts as read
+  const { verification, setTyped } = p
+  useEffect(() => {
+    if (verification) setTyped(true)
+  }, [verification, setTyped])
 
   // The 3D narrative (harvest → Q-Day → lattice fix → ledger → sweep) follows the real pipeline state.
   const story: Story = useMemo(
@@ -320,7 +321,7 @@ export default function HudApp() {
   )
   const scene = xr.presenting ? arStory : story
   useSonification(scene, p, heat, shorVuln)
-  const spatialOn = wide && !xr.presenting
+
   const storyData: StoryData = {
     domain: r?.domain ?? p.query.trim(),
     kex: p.before?.kex ?? null,
@@ -347,28 +348,16 @@ export default function HudApp() {
 
   return (
     <div className="hud-root">
-      <div className="fixed inset-0 z-[1]" aria-hidden>
-        <HudGlobe mode={mode} nodes={nodes} story={scene} spatialOn={spatialOn} />
-      </div>
-      {/* CSS3D layer: the floating glass panels (telemetry, score) are rendered here, registered to the WebGL camera */}
-      <div ref={(el) => { spatial.mount = el }} className="fixed inset-0 z-[21] pointer-events-none" aria-hidden={!spatialOn} />
-      <div className="hud-vignette" aria-hidden />
-      <HudRings target={story.active ? null : r ? `${r.domain} · ${r.resolved_ip}` : null} index={1} total={Math.max(1, addrs.length)} dim={!story.active ? 1 : story.scanning || story.stage === 1 || story.stage === 3 ? 0.3 : 0} />
-      <StoryOverlay story={story} data={storyData} />
-      <NodeMarkers nodes={r && p.step === 2 && p.vulnerable > 0 ? [] : nodes} />
-      <TrackingLayer nodes={nodes} active={tracking} />
-
       {/* ── header ── */}
       <header className="fixed inset-x-0 top-0 z-30 grid h-9 grid-cols-[1fr_auto] items-center border-b border-[var(--line)] bg-[rgb(8_10_15/0.8)] px-4">
         <button onClick={p.reset} className="flex items-center gap-3 text-left" aria-label="Reset">
           <span className="hud-live" />
-          <span className="hud-h text-[12px] tracking-[0.2em]">QUANTUMLEDGER</span>
-          <span className="hud-k hidden sm:inline">pqc diagnostics · tls quantum-readiness</span>
+          <span className="hud-h text-[12px] tracking-[0.16em]">QUANTUMLEDGER</span>
+          <span className="hud-k hidden sm:inline">PQC diagnostics · TLS quantum-readiness</span>
         </button>
-        <div className="flex items-center gap-2 whitespace-nowrap text-[10px] sm:gap-4">
-          <span className="hud-dim hidden lg:inline">CONSOLE {CONSOLE}</span>
+        <div className="flex items-center gap-2 whitespace-nowrap text-[10.5px] sm:gap-4">
+          <span className="hud-dim hidden lg:inline">Console {CONSOLE}</span>
           <span className="hud-ice hidden sm:inline"><Clock /></span>
-          <span className={`${statusCls} hidden tracking-[0.14em] sm:inline`}>{statusText}</span>
           <ArHandoff domain={r?.domain ?? p.query.trim()} />
           <button className="hud-btn quiet" onClick={() => sfx.setEnabled(!sfxOn)} aria-pressed={sfxOn} title="Cryptographic sonification (Web Audio)">
             ♪<span className="hidden sm:inline"> sfx</span> {sfxOn ? 'on' : 'off'}
@@ -378,313 +367,313 @@ export default function HudApp() {
         </div>
       </header>
 
-      {/* the centre column is left to the WebGL canvas so OrbitControls receive the pointer */}
-      <main className="hud-scroll relative z-20 h-full overflow-y-auto lg:pointer-events-none">
-        <div className="grid min-h-full grid-cols-1 gap-3 px-4 pt-12 pb-6 lg:grid-cols-[minmax(0,520px)_1fr_380px]">
-          {/* ── left ── */}
-          <div className="space-y-3 max-lg:pt-[38vh] lg:pointer-events-auto">
-            <nav className="grid grid-cols-5 gap-px bg-[var(--line)]" aria-label="Pipeline">
-              {STEPS.map((s, i) => {
-                const n = i + 1
-                const on = n === p.step
-                const open = n <= p.reached
-                const done = n < p.reached || (n === 5 && p.complete) || (n === p.reached && n < p.step)
-                return (
-                  <button
-                    key={s}
-                    disabled={!open}
-                    onClick={() => p.setStep(n)}
-                    aria-current={on ? 'step' : undefined}
-                    data-state={on ? 'current' : done ? 'done' : open ? 'open' : 'locked'}
-                    className={`hud-step bg-[rgb(8_10_15/0.9)] px-2 py-1.5 text-left text-[10px] tracking-[0.14em] ${on ? 'hud-white' : open ? 'hud-steel' : 'text-[#2f3742]'}`}
-                  >
-                    <span className="hud-sdot" aria-hidden />
-                    <span className="hud-dim">0{n}</span> {s}
-                  </button>
-                )
-              })}
-            </nav>
+      {/* ── bento grid: data & risk | 3D viewport | network & logs ── */}
+      <main className="bento">
+        <div className="bento-col" aria-label="Data and risk">
+          <VulnTracker p={p} />
+          <Diagnostics p={p} addrs={addrs} />
+          <RiskScore p={p} shorVuln={shorVuln} total={total} />
+        </div>
 
-            <SpatialSlot id="score" side={-1} on={spatialOn}>
-            <Panel title="quantumledger · diagnostics" right={p.scanning ? <span className="hud-live" /> : undefined} tone={mode === 'critical' || mode === 'alert' ? 'warn' : mode === 'secure' ? 'ok' : undefined}>
-              <Row k="scan_spectral_analysis" cls={p.scanning ? 'hud-ice' : 'hud-white'}>{p.scanning ? 'running' : r ? 'complete' : 'idle'}</Row>
-              <Row k="target">{r ? `${r.domain}:443` : p.scanning ? p.query.trim() : '—'}</Row>
-              <Row k="shor_exposure" cls={shorVuln ? 'hud-crit hud-sharp' : r ? 'hud-ok' : 'hud-dim'}>
-                {r ? `${total ? ((shorVuln / total) * 100).toFixed(1) : '0.0'}% · ${shorVuln}/${total} alg` : '—'}
-              </Row>
-              <Row k="decay_rate" cls={cwm?.severity === 'CRITICAL' ? 'hud-crit' : cwm?.severity === 'High' ? 'hud-warn' : cwm ? 'hud-ok' : 'hud-dim'}>
-                {cwm ? (cwm.severity === 'CRITICAL' ? 'high' : cwm.severity === 'High' ? 'elevated' : 'low') : '—'}
-              </Row>
-              <Row k="cwm_risk" cls={cwm?.severity === 'CRITICAL' ? 'hud-crit' : cwm?.severity === 'High' ? 'hud-warn' : cwm ? 'hud-ok' : 'hud-dim'}>
-                {cwm ? `${cwm.score.toFixed(1)} / 100 ${cwm.severity.toLowerCase()}` : '—'}
-              </Row>
-              <Row k="ledger" cls={p.verification?.valid ? 'hud-ok' : 'hud-dim'}>{p.block ? `#${p.block.index} ${p.verification?.valid ? 'verified' : 'unverified'}` : '—'}</Row>
-            </Panel>
-            </SpatialSlot>
-
-            <motion.div key={`${p.step}-${!!r}-${p.scanning}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
-              {p.step === 1 && <Detect p={p} />}
-              {p.step === 2 && <Score p={p} />}
-              {p.step === 3 && <Defend p={p} />}
-              {p.step === 4 && <Prove p={p} />}
-              {p.step === 5 && <Rescan p={p} onReport={exportCompliance} />}
-            </motion.div>
+        <Card icon={Globe} title="Threat Topology" still className="bento-viewport" right={<span className={`text-[10.5px] font-semibold tracking-[0.08em] ${statusCls}`}>{statusText}</span>}>
+          <div ref={(el) => { hudAnchor.viewport = el }} className="absolute inset-0">
+            <div className="absolute inset-0 z-[1]">
+              <HudGlobe mode={mode} nodes={nodes} story={scene} />
+            </div>
+            <div className="hud-vignette" aria-hidden />
+            <HudRings target={story.active ? null : r ? `${r.domain} · ${r.resolved_ip}` : null} index={1} total={Math.max(1, addrs.length)} dim={!story.active ? 1 : story.scanning || story.stage === 1 || story.stage === 3 ? 0.3 : 0} />
+            <StoryOverlay story={story} data={storyData} />
+            <NodeMarkers nodes={r && p.step === 2 && p.vulnerable > 0 ? [] : nodes} />
+            <div className="hud-scan" aria-hidden />
           </div>
+        </Card>
 
-          <div aria-hidden />
-
-          {/* ── right ── */}
-          <aside className="space-y-3 lg:pointer-events-auto">
-            <SpatialSlot id="telemetry" side={1} on={spatialOn}>
-              <TelemetryTerminal lines={lines} state={stream.state} meta={stream.meta} />
-            </SpatialSlot>
-            <PerfImpact r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />
-            <Panel title="link · certificate">
-              <Row k="protocol" cls="hud-white text-[10px]">{r ? `${r.tls.version} · ${r.tls.cipher_suite}` : '—'}</Row>
-              <Row k="kex group" cls={r ? (r.tls.key_exchange.pq_hybrid ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r?.tls.key_exchange.group ?? '—'}</Row>
-              <Row k="cert key" cls={r ? (p.patched ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r ? (p.patched ? 'ML-DSA-65 (sim)' : `${r.certificate.public_key.name} · ${r.certificate.not_after.slice(0, 10)}`) : '—'}</Row>
-              <Row k="scan time">{r ? `${r.duration_ms} ms${r.wire?.hello_rtt_ms ? ` · rtt ${r.wire.hello_rtt_ms.toFixed(0)} ms` : ''}` : '—'}</Row>
-              <div className="py-1">
-                <Bar value={r?.duration_ms ?? 0} max={1500} />
-              </div>
-              {addrs.map((ip, i) => {
-                const skipped = r?.skipped_addresses?.find((s) => s.ip === ip)
-                return (
-                  <Row key={ip} k={`addr ${String(i + 1).padStart(2, '0')}`} cls={skipped ? 'hud-warn' : ip === r?.resolved_ip ? 'hud-ice' : 'hud-dim'}>
-                    {ip}{skipped ? ' · no resp' : ip === r?.resolved_ip ? ' · active' : ''}
-                  </Row>
-                )
-              })}
-            </Panel>
-          </aside>
+        <div className="bento-col" aria-label="Network and logs">
+          <TelemetryTerminal lines={lines} state={stream.state} meta={stream.meta} />
+          <PerfImpact r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />
         </div>
       </main>
+      <TrackingLayer nodes={nodes} active={tracking} />
 
-      <div className="hud-scan" aria-hidden />
+      <PipelineBar p={p} onReport={exportCompliance} />
     </div>
   )
 }
 
-// ── stages ───────────────────────────────────────────────────────────────────
+// ── left column cards ────────────────────────────────────────────────────────
 
-function Head({ n, title, sub }: { n: number; title: string; sub?: string }) {
-  return (
-    <div className="mb-3">
-      <div className="hud-k">stage 0{n}</div>
-      <div className="hud-h mt-0.5">{title}</div>
-      {sub && <p className="mt-1.5 text-[11px] leading-[16px] text-[#9aa7b4]">{sub}</p>}
-    </div>
-  )
-}
-
-function Detect({ p }: { p: Pipeline }) {
-  if (!p.result && !p.scanning) {
-    return (
-      <Panel title="target designation">
-        <Head n={1} title="designate target" sub="Live TLS handshake. The probe offers X25519MLKEM768 and records what the server negotiates and signs with." />
-        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); p.scan(p.query) }}>
-          <input className="hud-input" value={p.query} onChange={(e) => p.setQuery(e.target.value)} placeholder="hostname" aria-label="Domain to scan" autoFocus spellCheck={false} autoCapitalize="none" />
-          <button className="hud-btn" type="submit" disabled={!p.query.trim()}>scan</button>
-        </form>
-        <div className="mt-2 flex flex-wrap gap-x-3 text-[10px]">
-          <span className="hud-k">presets</span>
-          {EXAMPLES.map((d) => (
-            <button key={d} className="hud-steel hover:text-white" onClick={() => { p.setQuery(d); p.scan(d) }}>{d}</button>
-          ))}
-        </div>
-        {p.error && <p className="hud-crit mt-3 text-[11px]" role="alert">{p.error}</p>}
-      </Panel>
-    )
-  }
-  if (p.scanning) {
-    return (
-      <Panel title="acquiring" right={<span className="hud-live" />}>
-        <Head n={1} title={`scanning ${p.query.trim()}`} />
-        <ol className="space-y-0.5 text-[11px]">
-          {SCAN_STEPS.map((s, i) => (
-            <li key={s} className={i < p.scanStep ? 'hud-white' : i === p.scanStep ? 'hud-ice' : 'hud-dim'}>
-              <span className="hud-dim">{i < p.scanStep ? '[✓]' : i === p.scanStep ? '[·]' : '[ ]'}</span> {s.toLowerCase()}
-            </li>
-          ))}
-        </ol>
-      </Panel>
-    )
-  }
+function VulnTracker({ p }: { p: Pipeline }) {
+  const r = p.result
   const crit = p.cwmBefore?.severity === 'CRITICAL'
+  const list = p.patched ? p.upgraded : p.detected
+  const tone = r && !p.scanning ? (p.patched || !p.vulnerable ? 'ok' : 'warn') : undefined
+  const checks = ['Key exchange X25519MLKEM768 · FIPS 203', 'Certificate ML-DSA-65 key + signature · FIPS 204', 'CBOM: 0 Shor-vulnerable algorithms']
   return (
-    <Panel title="detected cryptography" tone={p.vulnerable ? 'warn' : 'ok'}>
-      <Head n={1} title={p.vulnerable ? `${p.vulnerable} legacy lock${p.vulnerable > 1 ? 's' : ''} acquired` : 'no legacy locks'} sub={p.diag?.meaning} />
-      {p.demo && <p className="hud-warn mb-2 text-[10px]">api unreachable · demo dataset</p>}
-      {p.detected.map((a, i) => (
-        <NodeRow key={a.role} idx={i + 1} role={a.role} name={a.name} state={a.safe ? 'ok' : crit ? 'crit' : 'warn'} note={a.role === 'Signature' ? 'cert key' : 'session keys'} lock={a.safe ? undefined : `${a.role === 'Signature' ? 'sig' : 'kex'}:${a.name}`} />
-      ))}
-      {p.otherFailing.length > 0 && <p className="hud-dim mt-2 text-[10px]">chain · {p.otherFailing.map((a) => a.name).join(' · ')}</p>}
-      <div className="mt-3"><button className="hud-btn" onClick={() => p.goto(2)}>analyse »</button></div>
-    </Panel>
+    <Card
+      icon={Crosshair}
+      title="Vulnerability Tracker"
+      tone={tone}
+      right={
+        p.scanning ? (
+          <span className="hud-live" />
+        ) : r ? (
+          <button className="hud-btn quiet" onClick={p.reset}>
+            <RotateCcw size={11} aria-hidden /> new target
+          </button>
+        ) : undefined
+      }
+    >
+      <motion.div key={`${!!r}-${p.scanning}-${p.patched}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
+        {!r && !p.scanning ? (
+          <>
+            <p className="text-[12px] leading-[18px] text-[#9aa7b4]">Live TLS handshake. The probe offers X25519MLKEM768 and records what the server negotiates and signs with.</p>
+            <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); p.scan(p.query) }}>
+              <input className="hud-input" value={p.query} onChange={(e) => p.setQuery(e.target.value)} placeholder="hostname" aria-label="Domain to scan" autoFocus spellCheck={false} autoCapitalize="none" />
+              <button className="hud-btn" type="submit" disabled={!p.query.trim()}>scan</button>
+            </form>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+              <span className="hud-k">Presets</span>
+              {EXAMPLES.map((d) => (
+                <button key={d} className="hud-steel hover:text-white" onClick={() => { p.setQuery(d); p.scan(d) }}>{d}</button>
+              ))}
+            </div>
+            {p.error && <p className="hud-crit mt-3 text-[12px]" role="alert">{p.error}</p>}
+          </>
+        ) : p.scanning ? (
+          <>
+            <div className="hud-h">Scanning {p.query.trim()}</div>
+            <ol className="mt-3 space-y-1.5 text-[12px]">
+              {SCAN_STEPS.map((s, i) => (
+                <li key={s} className={i < p.scanStep ? 'hud-white' : i === p.scanStep ? 'hud-ice' : 'hud-dim'}>
+                  <span className="hud-dim">{i < p.scanStep ? '✓' : i === p.scanStep ? '›' : '·'}</span> {s}
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : (
+          <>
+            <div className="hud-h">{p.patched ? 'Patched · no Shor-vulnerable locks' : p.vulnerable ? `${p.vulnerable} legacy lock${p.vulnerable > 1 ? 's' : ''} acquired` : 'No legacy locks'}</div>
+            {!p.patched && p.diag?.meaning && <p className="mt-1.5 text-[12px] leading-[18px] text-[#9aa7b4]">{p.diag.meaning}</p>}
+            {p.demo && <p className="hud-warn mt-2 text-[11px]">API unreachable · demo dataset</p>}
+            <div className="mt-4">
+              {list.map((a, i) => (
+                <NodeRow
+                  key={`${a.role}${a.name}`}
+                  idx={i + 1}
+                  role={a.role}
+                  name={a.name}
+                  state={a.safe ? 'ok' : crit ? 'crit' : 'warn'}
+                  note={a.safe ? (p.patched ? (a.role === 'Signature' ? 'FIPS 204' : 'FIPS 203') : 'post-quantum') : a.role === 'Signature' ? 'cert key' : 'session keys'}
+                  lock={a.safe ? undefined : `${a.role === 'Signature' ? 'sig' : 'kex'}:${a.name}`}
+                />
+              ))}
+            </div>
+            {!p.patched && p.otherFailing.length > 0 && <p className="hud-dim mt-3 text-[11px]">Chain · {p.otherFailing.map((a) => a.name).join(' · ')}</p>}
+            {p.step === 5 && p.rescan !== 'idle' && (
+              <ol className="mt-4 space-y-1.5 border-t border-[var(--line)] pt-4 text-[12px]">
+                {checks.map((s, i) => (
+                  <li key={s} className={p.rescanStep > i ? 'hud-ok' : p.rescanStep === i ? 'hud-ice' : 'hud-dim'}>
+                    <span className="hud-dim">{p.rescanStep > i ? '✓' : p.rescanStep === i ? '›' : '·'}</span> {s}
+                  </li>
+                ))}
+              </ol>
+            )}
+            {p.complete && p.before && <p className="hud-dim mt-3 text-[11px]">Verified against the simulated patched endpoint; live {r!.domain} still reports {p.before.leafKey}.</p>}
+          </>
+        )}
+      </motion.div>
+    </Card>
   )
 }
 
-function Score({ p }: { p: Pipeline }) {
-  const c = p.cwmBefore
-  const m = p.m
-  if (!c || !m) return null
-  const crit = c.severity === 'CRITICAL'
+function Diagnostics({ p, addrs }: { p: Pipeline; addrs: string[] }) {
+  const r = p.result
+  const b = p.block
+  const v = p.verification
   return (
-    <Panel title="threat analysis · context-weighted mosca" tone={c.severity === 'Low' ? 'ok' : 'warn'}>
-      <Head
-        n={2}
-        title={crit ? 'critical · forgeable by crqc' : c.severity === 'High' ? 'high risk' : 'low risk'}
-        sub={`Must stay trustworthy until ${Math.ceil(BASE_YEAR + m.sum)}; CRQC horizon ${BASE_YEAR + m.z}${m.holds ? ` (${m.exposedYears.toFixed(1).replace('.0', '')} yr exposed)` : ''}.`}
-      />
-      <div className="grid items-center gap-4 sm:grid-cols-[1fr_1fr]">
+    <Card icon={Cpu} title="Cryptographic Diagnostics" right={p.scanning ? <span className="hud-live" /> : undefined}>
+      <Row k="Scan" cls={p.scanning ? 'hud-ice' : r ? 'hud-white' : 'hud-dim'}>{p.scanning ? 'running' : r ? 'complete' : 'idle'}</Row>
+      <Row k="Target">{r ? `${r.domain}:443` : p.scanning ? p.query.trim() : '—'}</Row>
+      <Row k="Protocol" title={r ? `${r.tls.version} · ${r.tls.cipher_suite}` : undefined}>{r ? `${r.tls.version} · ${r.tls.cipher_suite}` : '—'}</Row>
+      <Row k="Key exchange" cls={r ? (r.tls.key_exchange.pq_hybrid ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r?.tls.key_exchange.group ?? '—'}</Row>
+      <Row k="Certificate key" cls={r ? (p.patched ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r ? (p.patched ? 'ML-DSA-65 (sim)' : `${r.certificate.public_key.name} · exp ${r.certificate.not_after.slice(0, 10)}`) : '—'}</Row>
+      <Row k="Scan time">{r ? `${r.duration_ms} ms${r.wire?.hello_rtt_ms ? ` · rtt ${r.wire.hello_rtt_ms.toFixed(0)} ms` : ''}` : '—'}</Row>
+      <div className="py-2">
+        <Bar value={r?.duration_ms ?? 0} max={1500} />
+      </div>
+      {addrs.map((ip, i) => {
+        const skipped = r?.skipped_addresses?.find((s) => s.ip === ip)
+        return (
+          <Row key={ip} k={`Address ${String(i + 1).padStart(2, '0')}`} mono cls={skipped ? 'hud-warn' : ip === r?.resolved_ip ? 'hud-ice' : 'hud-dim'}>
+            {ip}
+            <span className="font-sans">{skipped ? ' · no resp' : ip === r?.resolved_ip ? ' · active' : ''}</span>
+          </Row>
+        )
+      })}
+      {b && (
+        <div className="mt-3 border-t border-[var(--line)] pt-3">
+          <Row k="Ledger block" cls={v?.valid ? 'hud-ok' : 'hud-warn'}>#{b.index} · {v ? (v.valid ? `verified ${v.checks.length}/${v.checks.length}` : 'mismatch') : 'unverified'}</Row>
+          <Row k="Merkle root" mono cls="text-[#c9d4de]" title={b.merkle_root}>{b.merkle_root}</Row>
+          <Row k="Block hash" mono cls="text-[#c9d4de]" title={b.block_hash}>{b.block_hash}</Row>
+          <Row k="Prev hash" mono cls="hud-dim" title={b.prev_hash}>{b.prev_hash}</Row>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function RiskScore({ p, shorVuln, total }: { p: Pipeline; shorVuln: number; total: number }) {
+  const r = p.result
+  const c = p.patched ? p.cwmAfter : p.cwmBefore
+  const m = p.m
+  if (!r || !c || !m) {
+    return (
+      <Card icon={Gauge} title="Risk Score">
+        <p className="hud-dim text-[12px] leading-[18px]">Context-weighted Mosca risk (CWM) appears once a target is scanned.</p>
+      </Card>
+    )
+  }
+  const sev = (s: string) => (s === 'CRITICAL' ? 'hud-crit' : s === 'High' ? 'hud-warn' : 'hud-ok')
+  const before = p.cwmBefore
+  return (
+    <Card icon={Gauge} title="Risk Score" tone={c.severity === 'Low' ? 'ok' : 'warn'} right={<span className={`text-[11px] font-semibold ${sev(c.severity)}`}>{c.severity === 'CRITICAL' ? 'Critical' : c.severity}</span>}>
+      <div className="grid grid-cols-[140px_minmax(0,1fr)] items-center gap-4">
         <CwmGauge score={c.score} severity={c.severity} />
-        <div className="space-y-2 text-[11px]">
+        <div>
+          <Row k="Shor exposure" cls={shorVuln ? 'hud-crit' : 'hud-ok'}>{total ? ((shorVuln / total) * 100).toFixed(0) : '0'}% · {shorVuln}/{total}</Row>
+          <Row k="Trust until">{Math.ceil(BASE_YEAR + m.sum)}</Row>
+          <Row k="CRQC" cls={m.holds && !p.patched ? 'hud-warn' : 'hud-white'}>{BASE_YEAR + m.z}{m.holds && !p.patched ? ` · ${m.exposedYears.toFixed(1).replace('.0', '')} yr gap` : ''}</Row>
+        </div>
+      </div>
+      {!p.patched && (
+        <div className="mt-4 space-y-3 text-[12px]">
           <label className="block">
-            <div className="flex justify-between"><span className="hud-k">x_ml · migration</span><span className="hud-white">{c.xml} yr</span></div>
-            <select className="hud-select mt-1" value={p.assetType} onChange={(e) => p.setAssetType(e.target.value as AssetType)} aria-label="Asset type">
+            <div className="flex justify-between"><span className="hud-k">X · migration time</span><span className="hud-white">{c.xml} yr</span></div>
+            <select className="hud-select mt-1.5" value={p.assetType} onChange={(e) => p.setAssetType(e.target.value as AssetType)} aria-label="Asset type">
               {ASSET_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
           </label>
           <label className="block">
-            <div className="flex justify-between"><span className="hud-k">y · shelf life</span><span className="hud-white">{p.y} yr</span></div>
-            <input type="range" min={0} max={30} value={p.y} onChange={(e) => p.setY(Number(e.target.value))} />
+            <div className="flex justify-between"><span className="hud-k">Y · shelf life</span><span className="hud-white">{p.y} yr</span></div>
+            <input type="range" min={0} max={30} value={p.y} onChange={(e) => p.setY(Number(e.target.value))} aria-label="Data shelf life in years" />
           </label>
-          <div className="flex justify-between"><span className="hud-k">z · crqc</span><span className="hud-white">{Z_YEARS} yr fixed</span></div>
+          <div className="flex justify-between"><span className="hud-k">Z · CRQC arrival</span><span className="hud-white">{Z_YEARS} yr fixed</span></div>
         </div>
+      )}
+      <div className="mt-4 rounded-lg border border-[var(--line-2)] bg-[rgb(0_0_0/0.3)] px-3 py-2.5 text-[11.5px] leading-[17px]">
+        <div className="hud-steel">risk = ((X + Y) / Z) × exposure × fragility × 100</div>
+        <div className={sev(c.severity)}>{formulaLine(c).toLowerCase()}</div>
       </div>
-      <div className="mt-3 border border-[var(--line)] bg-[rgb(0_0_0/0.35)] px-2.5 py-2 text-[10.5px] leading-[15px]">
-        <div className="hud-k">validate</div>
-        <div className="hud-steel">risk = ((x_ml + y) / z) × exp × fragility × 100</div>
-        <div className={crit ? 'hud-crit' : c.severity === 'High' ? 'hud-warn' : 'hud-ok'}>{formulaLine(c).toLowerCase()} · {c.severity.toLowerCase()}</div>
-      </div>
-      <div className="mt-3">
-        {p.detected.filter((a) => !a.safe).map((a, i) => (
-          <NodeRow key={a.role} idx={i + 1} role={`tracked · ${a.role}`} name={a.name} state={crit ? 'crit' : 'warn'} note="remediate" lock={`${a.role === 'Signature' ? 'sig' : 'kex'}:${a.name}`} />
-        ))}
-      </div>
-      <div className="mt-3"><button className="hud-btn warn" onClick={() => p.goto(3)}>countermeasures »</button></div>
-    </Panel>
+      {p.patched && before && (
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          {[
+            ['CWM', before.score.toFixed(1), c.score.toFixed(1)],
+            ...(p.complete
+              ? [
+                  ['PQC score', String(r.assessment.score), '100'],
+                  ['Shor-vuln', String(r.cbom_summary.filter((a) => !a.quantum_safe).length), '0'],
+                ]
+              : []),
+          ].map(([k, a, b]) => (
+            <div key={k} className="rounded-lg border border-[var(--line)] px-2 py-2">
+              <div className="hud-k">{k}</div>
+              <div className="mt-1 text-[13px] font-medium">
+                <span className="hud-crit">{a}</span> <span className="hud-dim">→</span> <span className="hud-ok">{b}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   )
 }
 
-function Defend({ p }: { p: Pipeline }) {
-  const list = p.patched ? p.upgraded : p.detected
-  return (
-    <Panel title="countermeasures" tone={p.patched ? 'ok' : 'warn'}>
-      <Head n={3} title={p.patched ? 'patched · ml-dsa-65 + x25519mlkem768' : 'deploy quantum-safe patch'} sub={p.patched ? 'Signature ML-DSA-65 (NIST FIPS 204) · key exchange X25519MLKEM768 (NIST FIPS 203).' : 'Replace the legacy signature and key exchange with NIST post-quantum standards.'} />
-      {list.map((a, i) => (
-        <NodeRow key={`${a.role}${a.name}`} idx={i + 1} role={a.role} name={a.name} state={a.safe ? 'ok' : 'warn'} note={a.safe ? (a.role === 'Signature' ? 'fips 204' : 'fips 203') : 'legacy'} />
-      ))}
-      <div className="mt-3 flex items-center gap-3">
-        {p.patched ? (
+// ── pipeline control bar ─────────────────────────────────────────────────────
+
+function stageInfo(p: Pipeline): { title: string; sub?: string } {
+  const r = p.result
+  const m = p.m
+  switch (p.step) {
+    case 1:
+      if (p.scanning) return { title: `Scanning ${p.query.trim()}`, sub: SCAN_STEPS[Math.min(p.scanStep, SCAN_STEPS.length - 1)] }
+      if (!r) return { title: 'Designate target', sub: 'Live TLS handshake offering X25519MLKEM768' }
+      return { title: p.vulnerable ? `${p.vulnerable} legacy lock${p.vulnerable > 1 ? 's' : ''} acquired` : 'No legacy locks', sub: `${r.domain} · ${r.tls.version}` }
+    case 2: {
+      const s = p.cwmBefore?.severity
+      return { title: s === 'CRITICAL' ? 'Critical · forgeable by a CRQC' : s === 'High' ? 'High risk' : 'Low risk', sub: m ? `Must stay trustworthy until ${Math.ceil(BASE_YEAR + m.sum)} · CRQC horizon ${BASE_YEAR + m.z}` : undefined }
+    }
+    case 3:
+      return p.patched
+        ? { title: 'Patched · ML-DSA-65 + X25519MLKEM768', sub: 'NIST FIPS 204 / FIPS 203 · simulated, live server unchanged' }
+        : { title: 'Deploy quantum-safe patch', sub: 'Replace the legacy signature and key exchange · simulation' }
+    case 4:
+      return p.verification?.valid && p.block
+        ? { title: 'Proof anchored', sub: `Block #${p.block.index} · leaves, root, block hash and chain link verified` }
+        : { title: 'Anchor proof', sub: 'SHA-256 stage records → Merkle root → chained block' }
+    default:
+      return p.complete ? { title: '100% PQC-ready', sub: 'Every algorithm on the patched configuration is post-quantum' } : { title: 'Verification sweep', sub: 'Re-run the checks against the patched configuration' }
+  }
+}
+
+function PipelineBar({ p, onReport }: { p: Pipeline; onReport: () => void }) {
+  const r = p.result
+  const info = stageInfo(p)
+  const action = (() => {
+    switch (p.step) {
+      case 1:
+        return r && !p.scanning ? <button className="hud-btn" onClick={() => p.goto(2)}>analyse risk »</button> : <span className="hud-dim text-[11.5px]">{p.scanning ? 'Handshake in progress…' : 'Enter a hostname to begin'}</span>
+      case 2:
+        return <button className="hud-btn warn" onClick={() => p.goto(3)}>countermeasures »</button>
+      case 3:
+        return p.patched ? (
           <button className="hud-btn" onClick={() => p.goto(4)}>prove »</button>
         ) : (
-          <>
-            <button className="hud-btn" onClick={p.applyPatch} disabled={p.patching}>{p.patching ? 'deploying…' : 'deploy ML-DSA/ML-KEM patch'}</button>
-            <span className="hud-dim text-[10px]">simulation · live server unchanged</span>
-          </>
-        )}
-      </div>
-    </Panel>
-  )
-}
-
-function Prove({ p }: { p: Pipeline }) {
-  const b = p.block
-  return (
-    <Panel title="quantumledger · merkle ledger" tone={p.typed && p.verification?.valid ? 'ok' : undefined}>
-      <Head n={4} title={p.typed && p.verification?.valid ? 'proof anchored' : 'anchor proof'} sub="Each stage record is hashed (SHA-256), combined into a Merkle root and chained to the previous block." />
-      {!b ? (
-        <button className="hud-btn" onClick={p.anchorProof} disabled={p.anchoring}>{p.anchoring ? 'hashing…' : 'anchor to merkle ledger'}</button>
-      ) : (
-        <>
-          <div className="hud-term">
-            <TypeTerminal
-              title={`ledger · block #${b.index}`}
-              onDone={() => p.setTyped(true)}
-              lines={[
-                { text: `$ ledger anchor --domain ${b.domain}`, tone: 'dim' },
-                ...b.leaves.map((l, i): TermLine => ({ text: `leaf[${i}] ${l.label.toLowerCase().padEnd(7)} ${l.hash}` })),
-                { text: `root     ${b.merkle_root}`, tone: 'strong' },
-                { text: `prev     ${b.prev_hash}`, tone: 'dim' },
-                { text: `block    ${b.block_hash}`, tone: 'strong' },
-                { text: p.verification?.valid ? 'verify   ok · leaves, root, block hash, chain link' : 'verify   FAILED', tone: p.verification?.valid ? 'ok' : 'bad' },
-              ]}
-            />
-          </div>
-          {p.typed && <div className="mt-3"><button className="hud-btn" onClick={() => p.goto(5)}>rescan »</button></div>}
-        </>
-      )}
-    </Panel>
-  )
-}
-
-function Rescan({ p, onReport }: { p: Pipeline; onReport: () => void }) {
-  const r = p.result
-  const before = p.before
-  if (!r || !before) return null
-  const done = p.complete
-  const checks = ['kex X25519MLKEM768 · fips 203', 'cert ML-DSA-65 key + signature · fips 204', 'cbom 0 shor-vulnerable algorithms']
-  return (
-    <div className="space-y-3">
-      <Panel title="verification sweep" tone={done ? 'ok' : undefined}>
-        <Head n={5} title={done ? '100% pqc-ready' : 'verification sweep'} sub={done ? 'Every algorithm on the patched configuration is post-quantum.' : 'Re-run the checks against the patched configuration.'} />
-        {p.rescan === 'idle' ? (
+          <button className="hud-btn" onClick={p.applyPatch} disabled={p.patching}>{p.patching ? 'deploying…' : 'deploy ML-DSA / ML-KEM patch'}</button>
+        )
+      case 4:
+        return !p.block ? (
+          <button className="hud-btn" onClick={p.anchorProof} disabled={p.anchoring}>{p.anchoring ? 'hashing…' : 'anchor to merkle ledger'}</button>
+        ) : p.verification ? (
+          <button className="hud-btn" onClick={() => p.goto(5)}>rescan »</button>
+        ) : null
+      default:
+        return p.rescan === 'idle' ? (
           <button className="hud-btn" onClick={p.runRescan}>run verification sweep</button>
+        ) : p.complete ? (
+          <>
+            <button className="hud-btn quiet" onClick={p.exportJson}>cbom.json</button>
+            <button className="hud-btn" onClick={onReport}><FileDown size={13} aria-hidden /> compliance report</button>
+          </>
         ) : (
-          <ol className="space-y-0.5 text-[11px]">
-            {checks.map((s, i) => (
-              <li key={s} className={p.rescanStep > i ? 'hud-ok' : p.rescanStep === i ? 'hud-ice' : 'hud-dim'}>
-                <span className="hud-dim">{p.rescanStep > i ? '[✓]' : p.rescanStep === i ? '[·]' : '[ ]'}</span> {s}
-              </li>
-            ))}
-          </ol>
-        )}
-        {done && <p className="hud-dim mt-2 text-[10px]">verified against the simulated patched endpoint · live {r.domain} still reports {before.leafKey}</p>}
-      </Panel>
-      {done && p.cwmBefore && p.cwmAfter && (
-        <div className="grid grid-cols-2 gap-3">
-          <Panel title="before · classical" tone="warn">
-            <div className="hud-crit text-[12px]">{before.leafKey} + {before.kex}</div>
-            <p className="mt-1.5 text-[10.5px] leading-[15px] text-[#9aa7b4]">Shor-breakable. A CRQC could forge signatures and impersonate the server{before.kexPq ? '.' : ', and decrypt recorded traffic.'}</p>
-            <div className="mt-2">
-              <Row k="cwm" cls="hud-crit">{p.cwmBefore.score.toFixed(1)}</Row>
-              <Row k="pqc score" cls="hud-crit">{r.assessment.score}/100</Row>
-              <Row k="shor-vuln" cls="hud-crit">{r.cbom_summary.filter((a) => !a.quantum_safe).length}</Row>
-            </div>
-          </Panel>
-          <Panel title="after · post-quantum" tone="ok">
-            <div className="hud-ok text-[12px]">ML-DSA-65 + X25519MLKEM768</div>
-            <p className="mt-1.5 text-[10.5px] leading-[15px] text-[#9aa7b4]">Lattice-based (Module-LWE), no known efficient quantum attack. NIST FIPS 204 / 203.</p>
-            <div className="mt-2">
-              <Row k="cwm" cls="hud-ok">{p.cwmAfter.score.toFixed(1)}</Row>
-              <Row k="pqc score" cls="hud-ok">100/100</Row>
-              <Row k="shor-vuln" cls="hud-ok">0</Row>
-            </div>
-          </Panel>
-        </div>
-      )}
-      {done && (
-        <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.2 }} className="hud-panel ok">
-          <div className="hud-panel-body">
-            <div className="hud-k">deliverable</div>
-            <button className="hud-cta mt-2" onClick={onReport}>
-              <span className="text-[15px] leading-none">⤓</span>
-              <span>quantumledger compliance report</span>
-              <span className="hud-dim ml-auto text-[10px] tracking-[0.12em]">PDF</span>
-            </button>
-            <div className="hud-dim mt-2 grid grid-cols-3 gap-2 text-[10px]">
-              <span>final risk <span className="hud-ok">{p.cwmAfter?.score.toFixed(1)} {p.cwmAfter?.severity.toLowerCase()}</span></span>
-              <span>cwm math <span className="hud-ok">✓</span></span>
-              <span className="truncate">block <span className="hud-ok">{p.block ? `#${p.block.index} ${p.block.block_hash.slice(0, 8)}…` : 'not anchored'}</span></span>
-            </div>
-            <div className="mt-3 flex gap-2">
-              <button className="hud-btn quiet" onClick={p.exportJson}>cbom.json</button>
-              <button className="hud-btn quiet" onClick={p.reset}>new target</button>
-            </div>
-          </div>
-        </motion.section>
-      )}
-    </div>
+          <span className="hud-ice text-[11.5px]">Sweeping…</span>
+        )
+    }
+  })()
+  return (
+    <footer className="bento-bar" aria-label="Pipeline">
+      <div className="bento-stage min-w-0">
+        <div className="hud-k">Stage 0{p.step} · {STEPS[p.step - 1][0]}</div>
+        <div className="hud-h mt-0.5 truncate">{info.title}</div>
+        {info.sub && <div className="hud-dim truncate text-[11px]">{info.sub}</div>}
+      </div>
+      <nav className="bento-steps" aria-label="Pipeline stages">
+        {STEPS.map(([label, Icon], i) => {
+          const n = i + 1
+          const on = n === p.step
+          const open = n <= p.reached
+          const done = n < p.reached || (n === 5 && p.complete) || (n === p.reached && n < p.step)
+          return (
+            <Fragment key={label}>
+              {i > 0 && <span className="bento-link" data-on={n <= p.reached ? '' : undefined} aria-hidden />}
+              <button className="bento-step" disabled={!open} onClick={() => p.setStep(n)} aria-current={on ? 'step' : undefined} data-state={on ? 'current' : done ? 'done' : open ? 'open' : 'locked'}>
+                <span className="ico"><Icon size={14} strokeWidth={1.75} aria-hidden /></span>
+                <span className="lbl"><span className="num">0{n}</span>{label}</span>
+              </button>
+            </Fragment>
+          )
+        })}
+      </nav>
+      <div className="flex items-center gap-2">{action}</div>
+    </footer>
   )
 }

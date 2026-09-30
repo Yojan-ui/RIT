@@ -22,6 +22,13 @@ export const hudAnchor = {
   stats: { fps: 0, calls: 0, points: 0, flying: true },
   userCam: false, // the viewer has orbited the camera at least once
   hover: null as null | { id: string; x: number; y: number }, // raycast-inspected 3D object
+  viewport: null as HTMLElement | null, // the viewport card body holding the canvas; all x / y above are relative to it
+}
+
+/** Page offset of the viewport, for overlays that draw outside it (tracking lines, the inspector card). */
+export function viewportOrigin() {
+  const r = hudAnchor.viewport?.getBoundingClientRect()
+  return { x: r?.left ?? 0, y: r?.top ?? 0, w: r?.width ?? innerWidth }
 }
 
 /** What the 3D narrative shows: derived from the real pipeline state. */
@@ -56,9 +63,4 @@ export function nodeAngles(id: string): { az: number; el: number } {
   const u = ((h >>> 0) % 10000) / 10000
   const v = (((h >>> 0) / 10000) % 10000) / 10000
   return { az: u * 360, el: -35 + v * 70 }
-}
-
-/** Horizontal centre of the free column between the HUD's side panels (matches the hologram fit). */
-export function columnCenter(W: number) {
-  return W >= 1024 ? (Math.min(560, W * 0.4) + W - 400) / 2 : W / 2
 }

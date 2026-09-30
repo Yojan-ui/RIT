@@ -73,10 +73,14 @@ Spatial and sensory layer:
   Shor-vulnerable primitive (RSA / ECDSA / classical ECDHE) the probe reports. DEFEND: a sub-bass sweep while the
   lattice grows, then a resonant chime when it locks. PROVE: a mechanical vault lock on the exact frame the block
   snaps into the chain. Toggle with **♪ SFX** (remembered per browser); audio starts after the first click.
-- **Spatial glass panels**: on wide screens the diagnostics (score) panel and the live telemetry terminal are
-  `CSS3DRenderer` objects on a rig that lazily follows the camera. They sit in their columns, angled inward like a
-  wraparound display, and tilt with the cursor (`src/hud/spatial.tsx`). Narrow screens, AR and reduced motion fall
-  back to flat or still panels.
+- **Bento command center**: a strict CSS grid (`.bento` in `src/hud/hud.css`). Left column (data & risk):
+  Vulnerability Tracker, Cryptographic Diagnostics, Risk Score. Centre: the 3D viewport card, which holds only the
+  WebGL canvas and the overlays registered to it (nothing renders under the text columns). Right column (network &
+  logs): Live Telemetry, Performance Impact. The five-stage pipeline is a fixed control bar at the bottom with the
+  current stage's action. Every card is `src/hud/bento.tsx`: 1px `rgba(255,255,255,0.1)` border, `blur(12px)` glass,
+  24px padding, 16px grid gaps, an icon header, and a hover tilt capped at 1.5° (a transform, so the grid never
+  shifts; off for the viewport and under reduced motion). Inter for headers and labels; JetBrains Mono only for the
+  telemetry log, hashes and IP addresses. Below 1024px the grid collapses to one column with the viewport first.
 
 A caption bar explains each beat in plain language. Side panels show only real scan data (TLS link, certificate serial,
 timestamped event log). The header coordinates are the console's (Bengaluru), not the target's.

@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { columnCenter, hudAnchor, type Story } from './anchor'
+import { hudAnchor, viewportOrigin, type Story } from './anchor'
 
 export interface StoryData {
   domain: string
@@ -260,9 +260,10 @@ function Inspector({ s, d }: { s: Story; d: StoryData }) {
     const h = hudAnchor.hover
     if ((h?.id ?? null) !== id) setId(h?.id ?? null)
     if (h && box.current) {
-      box.current.style.transform = `translate(${h.x.toFixed(1)}px, ${h.y.toFixed(1)}px)`
-      // open towards the free column so the card never slides under the side panels
-      box.current.dataset.flip = h.x > columnCenter(innerWidth) ? '1' : '0'
+      const o = viewportOrigin()
+      box.current.style.transform = `translate(${(h.x + o.x).toFixed(1)}px, ${(h.y + o.y).toFixed(1)}px)`
+      // open towards the viewport's centre so the card stays over the scene
+      box.current.dataset.flip = h.x > o.w / 2 ? '1' : '0'
     }
   })
   const info = id ? inspect(id, s, d) : null
@@ -291,7 +292,6 @@ function Inspector({ s, d }: { s: Story; d: StoryData }) {
 
 export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryData }) {
   const box = useRef<HTMLDivElement>(null)
-  const cols = useRef<HTMLDivElement[]>([])
   const stats = useRef<HTMLSpanElement>(null)
   useFrameLoop(() => {
     box.current?.querySelectorAll<HTMLElement>('[data-at]').forEach((el) => {
@@ -304,8 +304,6 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
       const st = hudAnchor.stats
       stats.current.textContent = `${st.fps} fps · ${st.calls} draw calls · ${st.points.toLocaleString()} prims`
     }
-    const cx = `${columnCenter(innerWidth)}px`
-    cols.current.forEach((el) => el && (el.style.left = cx))
   })
   const results = s.active && !s.scanning
   const harvest = results && s.vulnerable && s.stage <= 3
@@ -316,16 +314,16 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
   const short = (h: string, k = 8) => `${h.slice(0, k)}…`
 
   return (
-    <div ref={box} className="pointer-events-none fixed inset-0 z-[7] hidden text-[10px] leading-[13px] lg:block" aria-hidden>
+    <div ref={box} className="pointer-events-none absolute inset-0 z-[7] hidden text-[10px] leading-[13px] lg:block" aria-hidden>
       {/* QuantumLedger status banner */}
-      <div ref={(el) => { if (el) cols.current[0] = el }} className="absolute top-[50px] -translate-x-1/2">
+      <div className="absolute top-4 left-1/2 -translate-x-1/2">
         <motion.div key={status} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="hud-panel px-4 py-1.5 whitespace-nowrap">
           <span className="hud-white text-[13px] tracking-[0.08em]">QuantumLedger:</span> <span className={`${tone} hud-sharp text-[13px] tracking-[0.16em]`}>{status}</span>
         </motion.div>
       </div>
 
       {/* proof of render: live frame stats + camera controls */}
-      <div ref={(el) => { if (el) cols.current[2] = el }} className="absolute top-[88px] -translate-x-1/2 text-center whitespace-nowrap">
+      <div className="absolute top-[54px] left-1/2 -translate-x-1/2 text-center whitespace-nowrap">
         <div className="hud-dim text-[9.5px] tracking-[0.12em] uppercase">
           <span className="hud-okc">● live webgl</span> · <span ref={stats} className="hud-steel" />
         </div>
@@ -453,7 +451,7 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
       <Inspector s={s} d={d} />
 
       {/* plain-language narration for the non-specialist */}
-      <div ref={(el) => { if (el) cols.current[1] = el }} className="absolute bottom-4 w-[min(520px,40vw)] -translate-x-1/2">
+      <div className="absolute bottom-4 left-1/2 w-[min(520px,calc(100%-48px))] -translate-x-1/2">
         <motion.div key={`${n.chip}|${n.title}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="border-t border-[var(--line-2)] bg-[rgb(8_10_15/0.72)] px-3 pt-2 pb-2.5 text-center">
           <div className={`text-[10px] tracking-[0.2em] uppercase ${n.tone}`}>{n.chip}</div>
           <div className="hud-white mt-0.5 text-[14px] leading-[20px] tracking-[0.04em]">{n.title}</div>

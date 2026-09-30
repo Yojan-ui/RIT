@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { columnCenter, hudAnchor, type Story } from './anchor'
+import { hudAnchor, type Story } from './anchor'
 import { sfx } from './sfx'
 import { xrState } from './xr'
 
@@ -545,13 +545,6 @@ export function StoryLayer({ story }: { story: Story }) {
       } else {
         tmp.p.set(0, 0.9, 7.4)
         tmp.l.set(0, 0, 0)
-      }
-      if (mode !== 'base') {
-        // keep the framed subject in the free column between the side panels
-        const wpp = (2 * tmp.p.distanceTo(tmp.l) * Math.tan(THREE.MathUtils.degToRad(19))) / size.height
-        const dx = (columnCenter(size.width) - size.width / 2) * wpp
-        tmp.p.x -= dx
-        tmp.l.x -= dx
       }
       // Cinematic flight to the stage framing: eased (cubic in-out), spherical about the moving focal point,
       // with a mid-flight rise and orbital sweep ("swoop"), strongest for the pull-back into the Merkle tree.

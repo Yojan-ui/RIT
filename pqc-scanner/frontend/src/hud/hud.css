@@ -15,33 +15,43 @@
   --text: #c9d4de;
   --dim: #6b7785;
   --mono: "JetBrains Mono Variable", "Share Tech Mono", ui-monospace, Consolas, "Courier New", monospace;
+  /* geometric sans for every header and label; monospace only via .hud-mono (logs, hashes, IPs) */
+  --sans: "Inter Variable", "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --card-border: rgb(255 255 255 / 0.1);
+  --gap: 16px;
+  --pad: 24px;
+  --header-h: 36px;
+  --bar-h: 72px;
   position: relative;
   height: 100dvh;
   overflow: hidden;
-  background: var(--carbon);
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgb(103 232 249 / 0.07), transparent 70%),
+    radial-gradient(900px 500px at 100% 110%, rgb(87 124 149 / 0.08), transparent 70%),
+    var(--carbon);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 16px;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
 }
+.hud-mono { font-family: var(--mono); letter-spacing: 0; }
 
-/* Static, very faint scanlines: texture without flicker */
+/* Static, very faint scanlines: texture without flicker (inside the 3D viewport only) */
 .hud-scan {
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 60;
+  z-index: 8;
   background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.16) 0 1px, transparent 1px 3px);
   opacity: 0.5;
 }
 .hud-vignette {
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 3;
-  background: radial-gradient(ellipse at 62% 50%, transparent 45%, rgb(8 10 15 / 0.85) 100%);
+  background: radial-gradient(ellipse at 50% 50%, transparent 50%, rgb(8 10 15 / 0.85) 100%);
 }
 
 /* Panels: paper-thin border, 90° corner brackets drawn with gradients */
@@ -79,8 +89,8 @@
 }
 .hud-panel-body { padding: 10px; }
 
-.hud-k { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
-.hud-h { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--white); font-weight: 600; }
+.hud-k { font-size: 10.5px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.hud-h { font-size: 13px; letter-spacing: 0.02em; color: var(--white); font-weight: 600; }
 .hud-ice { color: var(--ice); }
 .hud-white { color: var(--white); }
 .hud-steel { color: var(--steel); }
@@ -93,7 +103,7 @@
 .hud-sharp { text-shadow: 0 0 2px currentColor; }
 
 /* Key/value rows on a strict grid */
-.hud-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: baseline; height: 18px; border-bottom: 1px solid rgb(255 255 255 / 0.03); }
+.hud-row { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: baseline; min-height: 26px; padding: 4px 0; border-bottom: 1px solid rgb(255 255 255 / 0.03); }
 .hud-row:last-child { border-bottom: 0; }
 
 /* Controls */
@@ -106,8 +116,8 @@
   border: 1px solid rgb(103 232 249 / 0.45);
   background: rgb(103 232 249 / 0.06);
   color: var(--ice);
-  font: 500 10.5px var(--mono);
-  letter-spacing: 0.16em;
+  font: 600 10.5px var(--sans);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
   transition: background 0.14s, border-color 0.14s, color 0.14s, box-shadow 0.18s, transform 0.08s, filter 0.08s;
@@ -130,7 +140,7 @@
   background: rgb(0 0 0 / 0.4);
   color: var(--white);
   padding: 0 8px;
-  font: 12px var(--mono);
+  font: 12px var(--sans);
   outline: none;
 }
 .hud-input:focus { border-color: rgb(103 232 249 / 0.6); }
@@ -141,7 +151,7 @@
   border: 1px solid var(--line-2);
   background: #0b0e14;
   color: var(--text);
-  font: 11px var(--mono);
+  font: 11px var(--sans);
   padding: 0 4px;
 }
 .hud-root input[type="range"] { accent-color: var(--ice); width: 100%; height: 12px; }
@@ -198,8 +208,8 @@
   border: 1px solid var(--ice);
   background: linear-gradient(90deg, rgb(103 232 249 / 0.18), rgb(6 182 212 / 0.06));
   color: var(--white);
-  font: 600 12px var(--mono);
-  letter-spacing: 0.18em;
+  font: 600 12px var(--sans);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   box-shadow: 0 0 0 1px rgb(103 232 249 / 0.12), 0 0 3px rgb(103 232 249 / 0.5);
   cursor: pointer;
@@ -245,35 +255,6 @@
   .hud-track { stroke-dashoffset: 0; }
 }
 
-/* ── Spatial UI: visionOS-style glass panels floating in the 3D scene (CSS3DRenderer) ── */
-.spatial-panel { pointer-events: auto; --gx: 50%; --gy: 30%; }
-.spatial-panel > * {
-  position: relative;
-  border-radius: 14px;
-  border: 1px solid rgb(255 255 255 / 0.12) !important;
-  background: linear-gradient(160deg, rgb(28 38 52 / 0.62), rgb(10 13 19 / 0.5) 55%, rgb(12 18 26 / 0.62)) !important;
-  backdrop-filter: blur(18px) saturate(1.4);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.14),
-    inset 0 0 0 1px rgb(103 232 249 / 0.05),
-    0 24px 60px -18px rgb(0 0 0 / 0.75),
-    0 0 40px -12px rgb(103 232 249 / 0.25);
-  overflow: hidden;
-}
-/* specular sheen that slides with the cursor as the pane tilts */
-.spatial-panel > *::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  background: radial-gradient(420px circle at var(--gx) var(--gy), rgb(255 255 255 / 0.09), transparent 60%);
-  mix-blend-mode: screen;
-}
-.spatial-panel .hud-panel::before { display: none; }
-.spatial-layer { pointer-events: none; }
-.spatial-holder { pointer-events: none; }
-
 /* ── WebXR handoff ── */
 .ar-pop {
   position: fixed;
@@ -305,8 +286,122 @@
   background: rgb(10 13 19 / 0.92);
   box-shadow: 0 0 30px -8px rgb(103 232 249 / 0.6);
 }
-.ar-overlay { position: fixed; inset: 0; pointer-events: none; font-family: var(--mono); }
+.ar-overlay { position: fixed; inset: 0; pointer-events: none; }
 .ar-overlay[hidden] { display: none; }
 .ar-overlay-bar { pointer-events: auto; display: flex; align-items: center; gap: 10px; margin: 12px; padding: 8px 10px; border: 1px solid rgb(255 255 255 / 0.12); border-radius: 12px; background: rgb(10 13 19 / 0.7); backdrop-filter: blur(12px); }
 .ar-overlay-hint { position: absolute; left: 12px; right: 12px; bottom: 24px; padding: 10px 12px; text-align: center; font-size: 12px; letter-spacing: 0.08em; color: var(--white); border-radius: 12px; background: rgb(10 13 19 / 0.6); }
 .ar-pop, .ar-cta, .ar-err, .ar-overlay { white-space: normal; }
+
+/* ── Bento command center: header · [data & risk | 3D viewport | network & logs] · pipeline bar ── */
+.bento {
+  position: absolute;
+  inset: var(--header-h) 0 calc(var(--bar-h) + var(--gap)) 0;
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr) minmax(300px, 400px);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--gap);
+  padding: var(--gap);
+}
+.bento-col { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.bento-col::-webkit-scrollbar { width: 3px; }
+.bento-col::-webkit-scrollbar-thumb { background: var(--line-2); }
+.bento-col > .bento-card { flex: none; }
+.bento-col > .bento-card.grow { flex: 1 1 auto; min-height: 260px; }
+
+.bento-card {
+  --rx: 0deg; --ry: 0deg; --gx: 50%; --gy: 0%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgb(20 26 36 / 0.62), rgb(11 14 20 / 0.55));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 18px 40px -24px rgb(0 0 0 / 0.8);
+  transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1), border-color 0.2s;
+}
+/* spatial hover tilt, capped in bento.tsx; a transform, so the grid cell never moves */
+.bento-card[data-tilt] { transform: perspective(1400px) rotateX(var(--rx)) rotateY(var(--ry)); transition-duration: 0.12s; border-color: rgb(255 255 255 / 0.16); }
+.bento-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(520px circle at var(--gx) var(--gy), rgb(255 255 255 / 0.05), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.bento-card[data-tilt]::after { opacity: 1; }
+.bento-card.warn { --card-border: rgb(249 115 22 / 0.32); }
+.bento-card.ok { --card-border: rgb(16 185 129 / 0.32); }
+
+.bento-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 48px;
+  padding: 0 var(--pad);
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+.bento-title { display: flex; align-items: center; gap: 10px; margin: 0; font: 600 12px/1 var(--sans); letter-spacing: 0.02em; color: var(--white); }
+.bento-title svg { color: var(--ice); flex: none; }
+.bento-card.warn .bento-title svg { color: var(--warn); }
+.bento-card.ok .bento-title svg { color: var(--ok); }
+.bento-body { padding: var(--pad); min-height: 0; }
+
+/* the 3D viewport: the canvas fills the card body edge to edge and nothing else draws under it */
+.bento-viewport { backdrop-filter: none; -webkit-backdrop-filter: none; overflow: hidden; }
+.bento-viewport .bento-body { position: relative; flex: 1; padding: 0; overflow: hidden; border-radius: 0 0 11px 11px; background: var(--carbon); }
+
+/* pipeline control bar */
+.bento-bar {
+  position: absolute;
+  left: var(--gap);
+  right: var(--gap);
+  bottom: var(--gap);
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(220px, 340px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--pad);
+  height: var(--bar-h);
+  padding: 0 var(--pad);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: rgb(12 16 23 / 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.bento-steps { display: flex; align-items: center; min-width: 0; }
+.bento-step { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; color: #3b4552; font: 600 12px/1 var(--sans); white-space: nowrap; transition: color 0.15s, background 0.15s; }
+.bento-step .ico { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid currentColor; transition: box-shadow 0.25s, background 0.25s; }
+.bento-step .num { color: var(--dim); font-weight: 500; margin-right: 4px; }
+.bento-step[data-state="open"] { color: var(--steel); }
+.bento-step[data-state="done"] { color: var(--ok); }
+.bento-step[data-state="current"] { color: var(--ice); }
+.bento-step[data-state="current"] .ico { background: rgb(103 232 249 / 0.1); box-shadow: 0 0 14px -2px rgb(103 232 249 / 0.6); }
+.bento-step[data-state="current"] .lbl { color: var(--white); }
+.bento-step:not(:disabled):hover { background: rgb(103 232 249 / 0.07); color: var(--white); }
+.bento-step:disabled { cursor: not-allowed; }
+.bento-link { flex: 1; min-width: 12px; height: 1px; background: var(--line-2); }
+.bento-link[data-on] { background: linear-gradient(90deg, var(--ok), rgb(16 185 129 / 0.35)); }
+
+/* phones / narrow windows: one scrolling column, viewport first, the bar stays pinned */
+@media (max-width: 1023px) {
+  .hud-root { overflow-y: auto; }
+  .bento { position: relative; inset: auto; margin-top: var(--header-h); padding-bottom: calc(var(--bar-h) + var(--gap) * 2); grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+  .bento-col { overflow: visible; }
+  .bento-viewport { order: -1; height: 56vh; }
+  .bento-bar { position: fixed; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 0 12px; }
+  .bento-bar .bento-stage { display: none; }
+  .bento-step { padding: 6px 4px; }
+  .bento-step .lbl { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bento-card, .bento-card[data-tilt] { transform: none; transition: none; }
+}

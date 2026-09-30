@@ -2,8 +2,10 @@
 // performance impact of the post-quantum patch.
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
+import { Terminal, Zap } from 'lucide-react'
 import type { Bench, ScanResult } from '../api'
 import { computePerf, fmtBytes, fmtUs, INITCWND_BYTES, LEGACY_SIGS } from '../lib/perf'
+import { Card } from './bento'
 
 // ── Live telemetry terminal ──────────────────────────────────────────────────
 
@@ -83,15 +85,19 @@ export function TelemetryTerminal({ lines, state, meta }: { lines: TLine[]; stat
     error: ['× error', 'hud-crit'],
   }[state]
   return (
-    <section className="hud-glass relative">
-      <header className="hud-panel-head">
-        <span className="hud-k">quantumledger · live telemetry</span>
-        <span className={`flex items-center gap-1.5 text-[10px] tracking-[0.12em] uppercase ${chip[1]}`}>
+    <Card
+      icon={Terminal}
+      title="Live Telemetry"
+      className="grow"
+      bodyClassName="flex min-h-0 flex-1 flex-col !p-0"
+      right={
+        <span className={`flex items-center gap-1.5 text-[10px] font-medium tracking-[0.08em] uppercase ${chip[1]}`}>
           {state === 'open' && <span className="hud-live" />}
           {chip[0]}
         </span>
-      </header>
-      <div className="hud-dim flex justify-between border-b border-[var(--line)] px-2.5 py-1 text-[9.5px]">
+      }
+    >
+      <div className="hud-dim hud-mono flex justify-between border-b border-[var(--line)] px-6 py-2 text-[9.5px]">
         <span>GET /api/scan/stream · text/event-stream</span>
         <span>{meta}</span>
       </div>
@@ -101,7 +107,7 @@ export function TelemetryTerminal({ lines, state, meta }: { lines: TLine[]; stat
           const el = e.currentTarget
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
         }}
-        className="hud-scroll h-[228px] overflow-y-auto px-2.5 py-1.5 text-[10px] leading-[14px]"
+        className="hud-scroll hud-mono min-h-0 flex-1 overflow-y-auto px-6 py-3 text-[10px] leading-[14px]"
         role="log"
         aria-live="polite"
       >
@@ -120,7 +126,7 @@ export function TelemetryTerminal({ lines, state, meta }: { lines: TLine[]; stat
           )
         })}
       </div>
-    </section>
+    </Card>
   )
 }
 
@@ -153,12 +159,9 @@ function Pair({ label, a, b, fa, fb, note }: { label: string; a: number; b: numb
 export function PerfImpact({ r, bench, benchError, legacySig, setLegacySig }: { r: ScanResult | null; bench: Bench | null; benchError: boolean; legacySig: string | null; setLegacySig: (s: string | null) => void }) {
   if (!r || !bench) {
     return (
-      <section className="hud-panel">
-        <header className="hud-panel-head">
-          <span className="hud-k">performance impact · legacy vs pqc</span>
-        </header>
-        <div className="hud-panel-body hud-dim text-[10px]">{benchError ? 'benchmark unavailable · backend offline' : !bench ? 'measuring handshake crypto on this host…' : 'awaiting scan'}</div>
-      </section>
+      <Card icon={Zap} title="Performance Impact">
+        <div className="hud-dim text-[11px]">{benchError ? 'Benchmark unavailable · backend offline' : !bench ? 'Measuring handshake crypto on this host…' : 'Legacy vs post-quantum handshake cost appears after a scan.'}</div>
+      </Card>
     )
   }
   const p = computePerf(r, bench, legacySig ?? undefined)
@@ -168,9 +171,10 @@ export function PerfImpact({ r, bench, benchError, legacySig, setLegacySig }: { 
   const serverPqc = p.serverFlight?.pqc ?? null
   const oneRtt = p.extraRtt == null ? null : !p.extraRtt
   return (
-    <section className="hud-panel">
-      <header className="hud-panel-head">
-        <span className="hud-k">performance impact</span>
+    <Card
+      icon={Zap}
+      title="Performance Impact"
+      right={
         <span className="flex gap-1">
           {choices.map((c) => (
             <button key={c} onClick={() => setLegacySig(c === site ? null : c)} className={`px-1.5 text-[9.5px] ${p.legacy.sig === c ? 'hud-white border border-[var(--line-2)]' : 'hud-dim border border-transparent hover:text-white'}`}>
@@ -178,8 +182,9 @@ export function PerfImpact({ r, bench, benchError, legacySig, setLegacySig }: { 
             </button>
           ))}
         </span>
-      </header>
-      <div className="hud-panel-body pt-1.5">
+      }
+    >
+      <div>
         <div className="mb-1 flex justify-between text-[10px]">
           <span className="hud-crit">{p.legacy.kex} + {p.legacy.sig}</span>
           <span className="hud-okc">X25519MLKEM768 + ML-DSA-65</span>
@@ -203,6 +208,6 @@ export function PerfImpact({ r, bench, benchError, legacySig, setLegacySig }: { 
         </div>
         <div className="hud-dim mt-1.5 truncate text-[9px] leading-[12px]" title={bench.library}>per handshake · measured on this host · {bench.library}</div>
       </div>
-    </section>
+    </Card>
   )
 }

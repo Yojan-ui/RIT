@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { hudAnchor, type HoloNode } from './anchor'
+import { hudAnchor, viewportOrigin, type HoloNode } from './anchor'
 
 const NODE_HEX = { warn: '#f97316', crit: '#ef4444', ok: '#10b981' } as const
 
@@ -40,7 +40,7 @@ export function HudRings({ target, index, total, dim = 1 }: { target: string | n
   })
   const ticks = Array.from({ length: 180 }, (_, i) => i * 2)
   return (
-    <div ref={box} className="pointer-events-none fixed top-0 left-0 z-[5] transition-opacity duration-700" style={{ opacity: 0 }} aria-hidden>
+    <div ref={box} className="pointer-events-none absolute top-0 left-0 z-[5] transition-opacity duration-700" style={{ opacity: 0 }} aria-hidden>
       <svg viewBox="-100 -100 200 200" className="absolute inset-0 h-full w-full overflow-visible">
         <g stroke="#577c95" strokeWidth="0.18">
           {ticks.map((d) => {
@@ -52,7 +52,7 @@ export function HudRings({ target, index, total, dim = 1 }: { target: string | n
         {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((d) => {
           const a = ((d - 90) * Math.PI) / 180
           return (
-            <text key={d} x={Math.cos(a) * 98} y={Math.sin(a) * 98 + 1} textAnchor="middle" fontSize="2.4" fill="#6b7785" fontFamily="JetBrains Mono Variable, monospace">
+            <text key={d} x={Math.cos(a) * 98} y={Math.sin(a) * 98 + 1} textAnchor="middle" fontSize="2.4" fill="#6b7785" fontFamily="Inter Variable, system-ui, sans-serif">
               {String(d).padStart(3, '0')}
             </text>
           )
@@ -99,7 +99,7 @@ export function NodeMarkers({ nodes }: { nodes: HoloNode[] }) {
     }
   })
   return (
-    <div className="pointer-events-none fixed inset-0 z-[6]" aria-hidden>
+    <div className="pointer-events-none absolute inset-0 z-[6]" aria-hidden>
       {nodes.map((n, i) => (
         <div key={n.id} ref={(el) => { refs.current[n.id] = el }} className="absolute top-0 left-0" style={{ opacity: 0, color: NODE_HEX[n.state] }}>
           <svg width="15" height="15" viewBox="-7.5 -7.5 15 15" className="absolute -top-[7.5px] -left-[7.5px] overflow-visible">
@@ -142,12 +142,13 @@ export function TrackingLayer({ nodes, active }: { nodes: HoloNode[]; active: bo
       return
     }
     const next: Seg[] = []
+    const o = viewportOrigin() // node positions are viewport-relative; the rows are anywhere on the page
     for (const n of nodes) {
       const el = document.querySelector<HTMLElement>(`[data-lock="${CSS.escape(n.id)}"]`)
       const s = hudAnchor.nodes.find((h) => h.id === n.id)
       if (!el || !s) continue
       const r = el.getBoundingClientRect()
-      next.push({ id: n.id, sx: Math.round(s.x), sy: Math.round(s.y), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), color: NODE_HEX[n.state] })
+      next.push({ id: n.id, sx: Math.round(s.x + o.x), sy: Math.round(s.y + o.y), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), color: NODE_HEX[n.state] })
     }
     const key = JSON.stringify(next)
     if (key !== last.current) {
@@ -241,13 +242,13 @@ export function CwmGauge({ score, severity }: { score: number; severity: 'Low' |
       })}
       {[0, 25, 50, 75, 100].map((v) => {
         const [x, y] = pt(v, r + 10)
-        return <text key={v} x={x} y={y + 2} textAnchor="middle" fontSize="6" fill="#6b7785" fontFamily="JetBrains Mono Variable, monospace">{v}</text>
+        return <text key={v} x={x} y={y + 2} textAnchor="middle" fontSize="6" fill="#6b7785" fontFamily="Inter Variable, system-ui, sans-serif">{v}</text>
       })}
       <motion.path d={arc(0, 99.99)} fill="none" stroke={color} strokeWidth="1.5" initial={{ pathLength: 0 }} animate={{ pathLength: Math.min(1, score / 100) }} transition={{ duration: 0.9, ease: [0.2, 0, 0, 1] }} />
       <line x1="0" y1="0" x2={nx} y2={ny} stroke="#ffffff" strokeWidth="0.8" />
       <circle r="1.8" fill="#ffffff" />
-      <text x="0" y="-18" textAnchor="middle" fontSize="15" fill="#ffffff" fontFamily="JetBrains Mono Variable, monospace">{score.toFixed(1)}</text>
-      <text x="0" y="-8" textAnchor="middle" fontSize="6" letterSpacing="1.2" fill={color} fontFamily="JetBrains Mono Variable, monospace">{severity.toUpperCase()}</text>
+      <text x="0" y="-18" textAnchor="middle" fontSize="15" fill="#ffffff" fontFamily="Inter Variable, system-ui, sans-serif">{score.toFixed(1)}</text>
+      <text x="0" y="-8" textAnchor="middle" fontSize="6" letterSpacing="1.2" fill={color} fontFamily="Inter Variable, system-ui, sans-serif">{severity.toUpperCase()}</text>
     </svg>
   )
 }
