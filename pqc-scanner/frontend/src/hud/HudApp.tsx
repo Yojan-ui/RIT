@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { usePipeline, SCAN_STEPS, type Pipeline } from '../pipeline/usePipeline'
 import type { CoreState } from '../scene/CryptoCore'
@@ -6,7 +6,11 @@ import { TypeTerminal, type TermLine } from '../components/pipeline'
 import { ASSET_TYPES, formulaLine, type AssetType } from '../lib/cwm'
 import { BASE_YEAR, Z_YEARS } from '../lib/mosca'
 import { HudGlobe } from './HudGlobe'
-import { Bar, CwmGauge, EventLog, HudRings, NodeMarkers, TrackingLayer, type HudEvent } from './overlays'
+import { fetchBench, type Bench, type TelemetryEvent } from '../api'
+import { exportComplianceReport } from '../lib/compliance'
+import { computePerf } from '../lib/perf'
+import { Bar, CwmGauge, HudRings, NodeMarkers, TrackingLayer } from './overlays'
+import { PerfImpact, TelemetryTerminal, type StreamState, type TLine } from './Proof'
 import type { HoloNode, HudMode, Story } from './anchor'
 import { StoryOverlay, type StoryData } from './StoryOverlay'
 import './hud.css'
@@ -28,12 +32,12 @@ const STATUS: Record<HudMode, [string, string]> = {
 
 const stamp = () => new Date().toISOString().slice(11, 23)
 
-/** Records one log line per real pipeline state change. */
-function useEventLog(p: Pipeline) {
-  const [events, setEvents] = useState<HudEvent[]>([])
-  const seq = useRef(0)
-  const push = (tag: string, text: string, tone?: HudEvent['tone']) =>
-    setEvents((e) => [...e.slice(-120), { id: seq.current++, t: stamp(), tag, text, tone }])
+type Tone = 'ice' | 'warn' | 'crit' | 'ok' | 'dim'
+
+/** Records one UI log line per real pipeline state change (backend lines arrive over the stream). */
+function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void) {
+  const push = (tag: string, text: string, tone?: Tone) =>
+    add({ t: stamp(), src: 'ui', tag: tag.toLowerCase(), text, level: tone === 'crit' ? 'ERROR' : 'INFO', tone: tone === 'ice' ? undefined : tone })
   const r = p.result
 
   useEffect(() => {
@@ -46,13 +50,8 @@ function useEventLog(p: Pipeline) {
   }, [p.scanStep])
   useEffect(() => {
     if (!r) return
-    push('DNS', `${r.domain} → ${(r.addresses ?? [r.resolved_ip]).join(', ')}`)
-    r.skipped_addresses?.forEach((s) => push('DNS', `skip ${s.ip} (${s.reason})`, 'warn'))
-    push('TLS', `${r.tls.version} ${r.tls.cipher_suite} · ${r.duration_ms} ms${r.cached ? ' cached' : ''}`)
-    push('KEX', `${r.tls.key_exchange.group ?? 'unknown'} · ${r.tls.key_exchange.pq_hybrid ? 'pq-hybrid' : 'classical'}`, r.tls.key_exchange.pq_hybrid ? 'ok' : 'warn')
-    push('CERT', `${r.certificate.subject_cn} · ${r.certificate.public_key.name} · ${r.certificate.signature.name}`, 'warn')
     const vuln = r.cbom_summary.filter((a) => !a.quantum_safe).length
-    push('CBOM', `${r.cbom_summary.length} algorithms · ${vuln} shor-vulnerable`, vuln ? 'crit' : 'ok')
+    push('SCAN', `result parsed · ${r.tls.key_exchange.group ?? 'unknown'} · ${r.certificate.public_key.name} · ${vuln}/${r.cbom_summary.length} shor-vulnerable${r.cached ? ' · cached' : ''}`, vuln ? 'warn' : 'ok')
     if (p.demo) push('SCAN', 'api unreachable · demo dataset', 'warn')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [r])
@@ -101,7 +100,6 @@ function useEventLog(p: Pipeline) {
     if (p.rescan === 'done') push('RESCAN', 'endpoint 100% pqc-ready (simulated config)', 'ok')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.rescanStep, p.rescan])
-  return events
 }
 
 // ── small pieces ─────────────────────────────────────────────────────────────
@@ -159,8 +157,53 @@ function NodeRow({ idx, role, name, state, note, lock }: { idx: number; role: st
 // ── App ──────────────────────────────────────────────────────────────────────
 
 export default function HudApp() {
-  const p = usePipeline()
-  const events = useEventLog(p)
+  // Live telemetry: backend log records streamed over SSE, plus UI pipeline events.
+  const [lines, setLines] = useState<TLine[]>([])
+  const [stream, setStream] = useState<{ state: StreamState; meta: string }>({ state: 'idle', meta: '' })
+  const seq = useRef(0)
+  const received = useRef(0)
+  const add = useCallback((l: Omit<TLine, 'id'>) => setLines((ls) => [...ls.slice(-220), { ...l, id: seq.current++ }]), [])
+  const onTelemetry = useCallback(
+    (e: TelemetryEvent) => {
+      const sse = e.logger === 'client.sse'
+      const state = e.data?.state as StreamState | undefined
+      if (sse && state) {
+        if (state === 'connecting') received.current = 0
+        const meta = state === 'closed' ? `${e.data?.count} ev · ${((e.data?.bytes as number) / 1024).toFixed(1)} KB` : state === 'open' ? 'HTTP 200' : state === 'error' ? 'failed' : '…'
+        setStream({ state, meta })
+      } else if (!sse) {
+        received.current++
+        setStream((s) => (s.state === 'open' ? { ...s, meta: `${received.current} ev` } : s))
+      }
+      add({
+        t: new Date(e.t * 1000).toISOString().slice(11, 23),
+        src: sse ? 'sse' : 'api',
+        tag: e.stage,
+        text: e.msg,
+        level: (['INFO', 'WARNING', 'ERROR'].includes(e.level) ? e.level : 'INFO') as TLine['level'],
+        tone: e.msg.includes('post-quantum hybrid ✓') || e.msg.startsWith('complete') ? 'ok' : e.stage === 'http' ? 'dim' : undefined,
+      })
+    },
+    [add],
+  )
+  const p = usePipeline({ onTelemetry })
+  useEventLog(p, add)
+
+  // Handshake crypto benchmark, measured once on the backend host.
+  const [bench, setBench] = useState<Bench | null>(null)
+  const [benchErr, setBenchErr] = useState(false)
+  const [legacySig, setLegacySig] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    const load = (tries: number) =>
+      fetchBench()
+        .then((b) => alive && setBench(b))
+        .catch(() => (tries > 0 ? setTimeout(() => load(tries - 1), 2500) : alive && setBenchErr(true)))
+    load(3)
+    return () => {
+      alive = false
+    }
+  }, [])
   const mode = MODE[p.core]
   const r = p.result
   const cwm = p.patched ? p.cwmAfter : p.cwmBefore
@@ -185,9 +228,14 @@ export default function HudApp() {
     return () => removeEventListener('resize', f)
   }, [])
   const tracking = wide && !!r && !p.patched && p.step === 1 && !p.scanning
-  const serial = r?.certificate.serial ? (r.certificate.serial.length % 2 ? `0${r.certificate.serial}` : r.certificate.serial).match(/.{2}/g)!.map((b) => b.toUpperCase()) : []
   const addrs = r ? r.addresses ?? [r.resolved_ip] : []
   const [statusText, statusCls] = STATUS[mode]
+  const exportCompliance = () => {
+    if (!r) return
+    const perf = bench ? computePerf(r, bench, legacySig ?? undefined) : null
+    exportComplianceReport({ r, demo: p.demo, patched: p.patched, complete: p.complete, cwmBefore: p.cwmBefore, cwmAfter: p.cwmAfter, mosca: p.m, block: p.block, verification: p.verification, perf })
+    add({ t: stamp(), src: 'ui', tag: 'report', text: `QuantumLedger-Compliance-${r.domain}.pdf generated${p.block ? ` · block ${p.block.block_hash.slice(0, 12)}…` : ''}`, level: 'INFO', tone: 'ok' })
+  }
   useEffect(() => {
     document.title = 'QuantumLedger · PQC HUD'
   }, [])
@@ -240,15 +288,16 @@ export default function HudApp() {
           <span className="hud-dim hidden lg:inline">CONSOLE {CONSOLE}</span>
           <span className="hud-ice"><Clock /></span>
           <span className={`${statusCls} tracking-[0.14em]`}>{statusText}</span>
-          <button className="hud-btn quiet" disabled={!r} onClick={p.exportPdf}>PDF</button>
+          <button className="hud-btn quiet" disabled={!r} onClick={exportCompliance}>REPORT.PDF</button>
           <button className="hud-btn quiet" disabled={!r} onClick={p.exportJson}>CBOM.JSON</button>
         </div>
       </header>
 
-      <main className="hud-scroll relative z-20 h-full overflow-y-auto">
-        <div className="grid min-h-full grid-cols-1 gap-3 px-4 pt-12 pb-6 lg:grid-cols-[minmax(0,520px)_1fr_330px]">
+      {/* the centre column is left to the WebGL canvas so OrbitControls receive the pointer */}
+      <main className="hud-scroll relative z-20 h-full overflow-y-auto lg:pointer-events-none">
+        <div className="grid min-h-full grid-cols-1 gap-3 px-4 pt-12 pb-6 lg:grid-cols-[minmax(0,520px)_1fr_380px]">
           {/* ── left ── */}
-          <div className="space-y-3 max-lg:pt-[38vh]">
+          <div className="space-y-3 max-lg:pt-[38vh] lg:pointer-events-auto">
             <nav className="grid grid-cols-5 gap-px bg-[var(--line)]" aria-label="Pipeline">
               {STEPS.map((s, i) => {
                 const n = i + 1
@@ -289,25 +338,23 @@ export default function HudApp() {
               {p.step === 2 && <Score p={p} />}
               {p.step === 3 && <Defend p={p} />}
               {p.step === 4 && <Prove p={p} />}
-              {p.step === 5 && <Rescan p={p} />}
+              {p.step === 5 && <Rescan p={p} onReport={exportCompliance} />}
             </motion.div>
           </div>
 
           <div aria-hidden />
 
           {/* ── right ── */}
-          <aside className="space-y-3">
-            <Panel title="quantumledger · event log" right={<span className="hud-dim text-[10px]">{events.length} ev</span>}>
-              <EventLog events={events} />
-            </Panel>
-            <Panel title="link">
-              <Row k="protocol">{r ? r.tls.version : '—'}</Row>
-              <Row k="cipher" cls="hud-white text-[10px]">{r ? r.tls.cipher_suite : '—'}</Row>
+          <aside className="space-y-3 lg:pointer-events-auto">
+            <TelemetryTerminal lines={lines} state={stream.state} meta={stream.meta} />
+            <PerfImpact r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />
+            <Panel title="link · certificate">
+              <Row k="protocol" cls="hud-white text-[10px]">{r ? `${r.tls.version} · ${r.tls.cipher_suite}` : '—'}</Row>
               <Row k="kex group" cls={r ? (r.tls.key_exchange.pq_hybrid ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r?.tls.key_exchange.group ?? '—'}</Row>
-              <Row k="handshake">{r ? `${r.duration_ms} ms` : '—'}</Row>
-              <div className="py-1.5">
+              <Row k="cert key" cls={r ? (p.patched ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r ? (p.patched ? 'ML-DSA-65 (sim)' : `${r.certificate.public_key.name} · ${r.certificate.not_after.slice(0, 10)}`) : '—'}</Row>
+              <Row k="scan time">{r ? `${r.duration_ms} ms${r.wire?.hello_rtt_ms ? ` · rtt ${r.wire.hello_rtt_ms.toFixed(0)} ms` : ''}` : '—'}</Row>
+              <div className="py-1">
                 <Bar value={r?.duration_ms ?? 0} max={1500} />
-                <div className="hud-dim mt-1 flex justify-between text-[9px]"><span>0</span><span>750</span><span>1500 ms</span></div>
               </div>
               {addrs.map((ip, i) => {
                 const skipped = r?.skipped_addresses?.find((s) => s.ip === ip)
@@ -317,20 +364,6 @@ export default function HudApp() {
                   </Row>
                 )
               })}
-            </Panel>
-            <Panel title="certificate">
-              <Row k="subject">{r?.certificate.subject_cn ?? '—'}</Row>
-              <Row k="issuer" cls="hud-white text-[10px]">{r?.certificate.issuer_cn ?? '—'}</Row>
-              <Row k="key" cls={r ? (p.patched ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r ? (p.patched ? 'ML-DSA-65 (sim)' : r.certificate.public_key.name) : '—'}</Row>
-              <Row k="expires">{r ? `${r.certificate.not_after.slice(0, 10)} · ${r.certificate.days_remaining}d` : '—'}</Row>
-              {serial.length > 0 && (
-                <div className="pt-2">
-                  <div className="hud-k mb-1">serial</div>
-                  <div className="hud-steel grid grid-cols-8 gap-x-1 text-[10px] leading-[14px]">
-                    {serial.slice(0, 24).map((b, i) => <span key={i}>{b}</span>)}
-                  </div>
-                </div>
-              )}
             </Panel>
           </aside>
         </div>
@@ -495,7 +528,7 @@ function Prove({ p }: { p: Pipeline }) {
   )
 }
 
-function Rescan({ p }: { p: Pipeline }) {
+function Rescan({ p, onReport }: { p: Pipeline; onReport: () => void }) {
   const r = p.result
   const before = p.before
   if (!r || !before) return null
@@ -541,11 +574,25 @@ function Rescan({ p }: { p: Pipeline }) {
         </div>
       )}
       {done && (
-        <div className="flex gap-2">
-          <button className="hud-btn" onClick={p.exportPdf}>report pdf</button>
-          <button className="hud-btn" onClick={p.exportJson}>cbom json</button>
-          <button className="hud-btn quiet" onClick={p.reset}>new target</button>
-        </div>
+        <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.2 }} className="hud-panel ok">
+          <div className="hud-panel-body">
+            <div className="hud-k">deliverable</div>
+            <button className="hud-cta mt-2" onClick={onReport}>
+              <span className="text-[15px] leading-none">⤓</span>
+              <span>quantumledger compliance report</span>
+              <span className="hud-dim ml-auto text-[10px] tracking-[0.12em]">PDF</span>
+            </button>
+            <div className="hud-dim mt-2 grid grid-cols-3 gap-2 text-[10px]">
+              <span>final risk <span className="hud-ok">{p.cwmAfter?.score.toFixed(1)} {p.cwmAfter?.severity.toLowerCase()}</span></span>
+              <span>cwm math <span className="hud-ok">✓</span></span>
+              <span className="truncate">block <span className="hud-ok">{p.block ? `#${p.block.index} ${p.block.block_hash.slice(0, 8)}…` : 'not anchored'}</span></span>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button className="hud-btn quiet" onClick={p.exportJson}>cbom.json</button>
+              <button className="hud-btn quiet" onClick={p.reset}>new target</button>
+            </div>
+          </div>
+        </motion.section>
       )}
     </div>
   )

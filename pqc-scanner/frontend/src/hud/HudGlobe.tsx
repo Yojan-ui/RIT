@@ -190,7 +190,7 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
     if (root.current) {
       const wide = W >= 1024
       const left = wide ? Math.min(560, W * 0.4) : 0
-      const right = wide ? W - 350 : W
+      const right = wide ? W - 400 : W
       const cx = wide ? (left + right) / 2 : W / 2
       const cy = wide ? H * (story.active ? 0.44 : 0.5) : H * 0.23
       const k0 = story.active ? 0.2 : 0.3

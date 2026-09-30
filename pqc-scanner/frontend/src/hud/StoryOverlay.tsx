@@ -163,6 +163,7 @@ function narrate(s: Story, d: StoryData): { chip: string; title: string; text: s
 export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryData }) {
   const box = useRef<HTMLDivElement>(null)
   const cols = useRef<HTMLDivElement[]>([])
+  const stats = useRef<HTMLSpanElement>(null)
   useFrameLoop(() => {
     box.current?.querySelectorAll<HTMLElement>('[data-at]').forEach((el) => {
       const p = hudAnchor.points[el.dataset.at!]
@@ -170,6 +171,10 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
       el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`
       el.style.opacity = p.on ? '1' : '0'
     })
+    if (stats.current) {
+      const st = hudAnchor.stats
+      stats.current.textContent = `${st.fps} fps · ${st.calls} draw calls · ${st.points.toLocaleString()} prims`
+    }
     const cx = `${columnCenter(innerWidth)}px`
     cols.current.forEach((el) => el && (el.style.left = cx))
   })
@@ -188,6 +193,14 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
         <motion.div key={status} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="hud-panel px-4 py-1.5 whitespace-nowrap">
           <span className="hud-white text-[13px] tracking-[0.08em]">QuantumLedger:</span> <span className={`${tone} hud-sharp text-[13px] tracking-[0.16em]`}>{status}</span>
         </motion.div>
+      </div>
+
+      {/* proof of render: live frame stats + camera controls */}
+      <div ref={(el) => { if (el) cols.current[2] = el }} className="absolute top-[88px] -translate-x-1/2 text-center whitespace-nowrap">
+        <div className="hud-dim text-[9.5px] tracking-[0.12em] uppercase">
+          <span className="hud-okc">● live webgl</span> · <span ref={stats} className="hud-steel" />
+        </div>
+        <div className="hud-dim mt-0.5 text-[9.5px] tracking-[0.1em]">drag to orbit · scroll to zoom · right-drag to pan · double-click to re-frame</div>
       </div>
 
       {s.active && !(s.stage === 2 && results && s.vulnerable) && (

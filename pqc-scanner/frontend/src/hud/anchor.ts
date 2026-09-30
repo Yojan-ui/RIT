@@ -19,6 +19,8 @@ export const hudAnchor = {
   nodes: [] as NodeScreen[],
   // named story anchors (client, server, tap, vault, …) projected to screen pixels
   points: {} as Record<string, { x: number; y: number; on: boolean }>,
+  stats: { fps: 0, calls: 0, points: 0, flying: true },
+  userCam: false, // the viewer has orbited the camera at least once
 }
 
 /** What the 3D narrative shows: derived from the real pipeline state. */
@@ -57,5 +59,5 @@ export function nodeAngles(id: string): { az: number; el: number } {
 
 /** Horizontal centre of the free column between the HUD's side panels (matches the hologram fit). */
 export function columnCenter(W: number) {
-  return W >= 1024 ? (Math.min(560, W * 0.4) + W - 350) / 2 : W / 2
+  return W >= 1024 ? (Math.min(560, W * 0.4) + W - 400) / 2 : W / 2
 }

@@ -43,6 +43,21 @@ QuantumLedger holographic HUD where the 3D scene (`src/hud/Story.tsx`) narrates 
    the chain, labelled with the real block hash and root (`QuantumLedger: STATE ANCHORED TO BLOCKCHAIN`).
 5. **Rescan**: a radar plane drops over the network topology and every node locks to pulsing emerald.
 
+Proof features around the scene:
+
+- **Live telemetry**: the HUD scans through `GET /api/scan/stream` (Server-Sent Events). Every probe step (DNS vetting,
+  TCP connect, the ClientHello and its ML-KEM-768 key share, the ServerHello bytes and selected group, the certificate
+  chain) is a `pqc.scan` log record streamed to a glass terminal as it happens, alongside the stream's own status.
+- **Interactive WebGL**: OrbitControls on the scene (drag to orbit, scroll to zoom, right-drag to pan, double-click to
+  re-frame the stage), with a live fps / draw-call readout.
+- **Performance impact**: `GET /api/bench` times ECDHE, RSA / ECDSA, ML-KEM-768 and ML-DSA-65 on the host with
+  `cryptography` (OpenSSL) and reports real encoded sizes; combined with the probe's measured round trip and
+  certificate chain, the widget shows bytes, CPU and latency added per handshake, and whether the server flight
+  still fits TCP's initial window.
+- **QuantumLedger Compliance Report**: the primary action at the end of Rescan, a branded PDF with the final risk
+  score, the full CWM arithmetic, Mosca's inequality, the CBOM, the performance impact and the ledger block hash,
+  Merkle root and verification checks.
+
 A caption bar explains each beat in plain language. Side panels show only real scan data (TLS link, certificate serial,
 timestamped event log). The header coordinates are the console's (Bengaluru), not the target's.
 

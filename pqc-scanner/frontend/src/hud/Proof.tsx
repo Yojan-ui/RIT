@@ -1,0 +1,160 @@
+// "Proof" widgets: the live telemetry terminal (backend log stream) and the measured
+// performance impact of the post-quantum patch.
+import { useEffect, useRef } from 'react'
+import { motion } from 'framer-motion'
+import type { Bench, ScanResult } from '../api'
+import { computePerf, fmtBytes, fmtUs, INITCWND_BYTES, LEGACY_SIGS } from '../lib/perf'
+
+// ── Live telemetry terminal ──────────────────────────────────────────────────
+
+export interface TLine {
+  id: number
+  t: string // HH:MM:SS.mmm
+  src: 'api' | 'sse' | 'ui'
+  tag: string
+  text: string
+  level: 'INFO' | 'WARNING' | 'ERROR'
+  tone?: 'ok' | 'warn' | 'crit' | 'dim'
+}
+
+export type StreamState = 'idle' | 'connecting' | 'open' | 'closed' | 'error'
+
+const SRC = { api: 'hud-ice', sse: 'hud-steel', ui: 'hud-dim' } as const
+
+export function TelemetryTerminal({ lines, state, meta }: { lines: TLine[]; state: StreamState; meta: string }) {
+  const box = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
+  useEffect(() => {
+    const el = box.current
+    if (el && pinned.current) el.scrollTop = el.scrollHeight
+  }, [lines.length])
+  const chip = {
+    idle: ['○ idle', 'hud-dim'],
+    connecting: ['◌ connecting', 'hud-ice'],
+    open: ['● streaming', 'hud-ice'],
+    closed: ['✓ closed', 'hud-ok'],
+    error: ['× error', 'hud-crit'],
+  }[state]
+  return (
+    <section className="hud-glass relative">
+      <header className="hud-panel-head">
+        <span className="hud-k">quantumledger · live telemetry</span>
+        <span className={`flex items-center gap-1.5 text-[10px] tracking-[0.12em] uppercase ${chip[1]}`}>
+          {state === 'open' && <span className="hud-live" />}
+          {chip[0]}
+        </span>
+      </header>
+      <div className="hud-dim flex justify-between border-b border-[var(--line)] px-2.5 py-1 text-[9.5px]">
+        <span>GET /api/scan/stream · text/event-stream</span>
+        <span>{meta}</span>
+      </div>
+      <div
+        ref={box}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+        }}
+        className="hud-scroll h-[228px] overflow-y-auto px-2.5 py-1.5 text-[10px] leading-[14px]"
+        role="log"
+        aria-live="polite"
+      >
+        {lines.length === 0 && <div className="hud-dim">$ awaiting target · backend log stream attaches on scan</div>}
+        {lines.map((l) => (
+          <motion.div key={l.id} initial={{ opacity: 0, x: -3 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.18 }} className="grid grid-cols-[80px_1fr] gap-x-1.5 break-words">
+            <span className="hud-dim">{l.t}</span>
+            <span>
+              <span className={SRC[l.src]}>{l.src}</span>{' '}
+              <span className={l.level === 'ERROR' ? 'hud-crit' : l.level === 'WARNING' ? 'hud-warn' : 'hud-steel'}>{l.tag.padEnd(5)}</span>{' '}
+              <span className={l.tone === 'crit' || l.level === 'ERROR' ? 'hud-crit' : l.tone === 'warn' || l.level === 'WARNING' ? 'hud-warn' : l.tone === 'ok' ? 'hud-ok' : l.tone === 'dim' ? 'hud-dim' : 'text-[#c9d4de]'}>
+                {l.text}
+              </span>
+            </span>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ── Performance impact ───────────────────────────────────────────────────────
+
+function Pair({ label, a, b, fa, fb, note }: { label: string; a: number; b: number; fa: string; fb: string; note?: string }) {
+  const max = Math.max(a, b) || 1
+  return (
+    <div className="py-1">
+      <div className="flex justify-between">
+        <span className="hud-k">{label}</span>
+        {note && <span className="hud-dim text-[10px]">{note}</span>}
+      </div>
+      {[
+        [a, fa, 'legacy', '#ef4444'],
+        [b, fb, 'pqc', '#06b6d4'],
+      ].map(([v, f, k, c]) => (
+        <div key={k as string} className="mt-1 grid grid-cols-[40px_1fr_66px] items-center gap-2 text-[10px]">
+          <span className="hud-dim">{k}</span>
+          <div className="relative h-[3px] bg-[rgb(255_255_255/0.06)]">
+            <motion.div className="absolute inset-y-0 left-0" style={{ background: c as string }} initial={{ width: 0 }} animate={{ width: `${Math.max(1.5, ((v as number) / max) * 100)}%` }} transition={{ duration: 0.8, ease: [0.2, 0, 0, 1] }} />
+          </div>
+          <span className="text-right text-[#c9d4de]">{f}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function PerfImpact({ r, bench, benchError, legacySig, setLegacySig }: { r: ScanResult | null; bench: Bench | null; benchError: boolean; legacySig: string | null; setLegacySig: (s: string | null) => void }) {
+  if (!r || !bench) {
+    return (
+      <section className="hud-panel">
+        <header className="hud-panel-head">
+          <span className="hud-k">performance impact · legacy vs pqc</span>
+        </header>
+        <div className="hud-panel-body hud-dim text-[10px]">{benchError ? 'benchmark unavailable · backend offline' : !bench ? 'measuring handshake crypto on this host…' : 'awaiting scan'}</div>
+      </section>
+    )
+  }
+  const p = computePerf(r, bench, legacySig ?? undefined)
+  const site = r.certificate.public_key.name
+  const choices = Array.from(new Set([LEGACY_SIGS.includes(site) ? site : 'RSA-2048', 'RSA-2048']))
+  const serverLegacy = p.serverFlight?.legacy ?? null
+  const serverPqc = p.serverFlight?.pqc ?? null
+  const oneRtt = p.extraRtt == null ? null : !p.extraRtt
+  return (
+    <section className="hud-panel">
+      <header className="hud-panel-head">
+        <span className="hud-k">performance impact</span>
+        <span className="flex gap-1">
+          {choices.map((c) => (
+            <button key={c} onClick={() => setLegacySig(c === site ? null : c)} className={`px-1.5 text-[9.5px] ${p.legacy.sig === c ? 'hud-white border border-[var(--line-2)]' : 'hud-dim border border-transparent hover:text-white'}`}>
+              {c}
+            </button>
+          ))}
+        </span>
+      </header>
+      <div className="hud-panel-body pt-1.5">
+        <div className="mb-1 flex justify-between text-[10px]">
+          <span className="hud-crit">{p.legacy.kex} + {p.legacy.sig}</span>
+          <span className="hud-okc">X25519MLKEM768 + ML-DSA-65</span>
+        </div>
+        <Pair label="crypto bytes on wire" a={p.legacy.wireBytes} b={p.pqc.wireBytes} fa={fmtBytes(p.legacy.wireBytes)} fb={fmtBytes(p.pqc.wireBytes)} note={`+${fmtBytes(p.deltaBytes)}`} />
+        <Pair label="cpu · server + client" a={p.legacy.serverUs + p.legacy.clientUs} b={p.pqc.serverUs + p.pqc.clientUs} fa={fmtUs(p.legacy.serverUs + p.legacy.clientUs)} fb={fmtUs(p.pqc.serverUs + p.pqc.clientUs)} note={`${p.deltaMs >= 0 ? '+' : ''}${p.deltaMs.toFixed(2)} ms`} />
+        {p.rttMs != null && (
+          <Pair label="handshake latency" a={p.rttMs} b={p.rttMs + p.deltaMs} fa={`${p.rttMs.toFixed(0)} ms`} fb={`${(p.rttMs + p.deltaMs).toFixed(1)} ms`} note={`+${p.pctOfRtt!.toFixed(1)}% of live rtt`} />
+        )}
+        <div className="mt-1.5 grid grid-cols-2 gap-x-3 border-t border-[var(--line)] pt-1.5 text-[10px]">
+          <span className="hud-k">round trips added</span>
+          <span className={`text-right ${oneRtt === false ? 'hud-warn' : 'hud-ok'}`}>{oneRtt === false ? '+1 possible' : '0'}</span>
+          {serverLegacy != null && serverPqc != null && (
+            <>
+              <span className="hud-k">server flight (est.)</span>
+              <span className="text-right text-[#c9d4de]">
+                {fmtBytes(serverLegacy)} → {fmtBytes(serverPqc)} <span className="hud-dim">/ {fmtBytes(INITCWND_BYTES)} cwnd</span>
+              </span>
+            </>
+          )}
+        </div>
+        <div className="hud-dim mt-1.5 truncate text-[9px] leading-[12px]" title={bench.library}>per handshake · measured on this host · {bench.library}</div>
+      </div>
+    </section>
+  )
+}

@@ -1,7 +1,7 @@
 // The five-stage pipeline (Detect, Score, Defend, Prove, Rescan) as one hook, so every UI
 // variant (the default dashboard and the QuantumLedger HUD) runs exactly the same logic.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { scanDomain, type ScanResult } from '../api'
+import { scanDomain, scanDomainStream, type ScanResult, type TelemetryEvent } from '../api'
 import type { CoreState } from '../scene/CryptoCore'
 import type { Algo } from '../components/pipeline'
 import { cryptoFromScan, mosca, MIGRATED, Z_YEARS } from '../lib/mosca'
@@ -15,7 +15,9 @@ import { demoScan } from '../lib/demo'
 export const SCAN_STEPS = ['Resolving and vetting the address', 'TLS handshake offering X25519MLKEM768', 'Reading the certificate chain', 'Building the CBOM']
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-export function usePipeline() {
+export function usePipeline(opts: { onTelemetry?: (e: TelemetryEvent) => void } = {}) {
+  const telemetry = useRef(opts.onTelemetry)
+  telemetry.current = opts.onTelemetry
   const [query, setQuery] = useState(() => new URLSearchParams(location.search).get('domain') ?? '')
   const [result, setResult] = useState<ScanResult | null>(null)
   const [demo, setDemo] = useState(false)
@@ -79,7 +81,9 @@ export function usePipeline() {
     url.searchParams.set('domain', domain)
     history.replaceState(null, '', url)
     try {
-      const [res] = await Promise.all([scanDomain(domain, ctrl.signal), sleep(1600)])
+      const sink = telemetry.current
+      const req = sink ? scanDomainStream(domain, sink, ctrl.signal) : scanDomain(domain, ctrl.signal)
+      const [res] = await Promise.all([req, sleep(1600)])
       if (ctrl.signal.aborted) return
       setResult(res)
     } catch (e) {

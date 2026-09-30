@@ -1,6 +1,8 @@
 """Public PQC domain scanner API.
 
-    GET /api/scan?domain=example.com   live TLS handshake + PQC assessment + CBOM
+    GET /api/scan?domain=example.com          live TLS handshake + PQC assessment + CBOM
+    GET /api/scan/stream?domain=example.com   same scan as Server-Sent Events: live probe telemetry, then the result
+    GET /api/bench                            handshake crypto benchmark on this host (classical vs ML-KEM / ML-DSA)
     GET /api/health
 
 Environment:
@@ -17,16 +19,19 @@ so one Uvicorn process runs the whole demo. API routes under /api keep priority.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import threading
 import time
 from collections import OrderedDict, defaultdict, deque
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import analysis, netguard, tlsprobe
+from . import analysis, bench, netguard, telemetry, tlsprobe
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "12"))
@@ -114,7 +119,12 @@ def _probe(target: netguard.Target) -> tuple[tlsprobe.KeyExchangeResult, tlsprob
 
 def run_scan(raw_domain: str) -> dict:
     started = time.perf_counter()
+    telemetry.emit("dns", f"getaddrinfo({raw_domain!r}, 443) · vetting every address is public")
     target = netguard.validate(raw_domain)
+    telemetry.emit(
+        "dns",
+        f"{target.hostname} → {', '.join(ip for _, ip in target.addresses) or target.ip} in {(time.perf_counter() - started) * 1000:.1f} ms · all public",
+    )
 
     # Fall back through the host's vetted addresses: skip ones that don't accept TCP,
     # and ones that accept TCP but fail the TLS handshake (e.g. a strict WAF edge).
@@ -141,13 +151,26 @@ def run_scan(raw_domain: str) -> dict:
 
     assessment = analysis.assess(target.hostname, kx, cert)
     cbom = analysis.build_cbom(target.hostname, kx, cert)
+    rows = analysis.cbom_rows(cbom)
+    vulnerable = sum(1 for r in rows if not r.get("quantum_safe"))
+    telemetry.emit("cbom", f"CycloneDX 1.6 CBOM · {len(rows)} algorithm(s) · {vulnerable} Shor-vulnerable · pqc score {assessment.get('score')}/100", 30 if vulnerable else 20)
+    duration = round((time.perf_counter() - started) * 1000)
+    telemetry.emit("scan", f"complete in {duration} ms")
     return {
         "domain": target.hostname,
         "resolved_ip": target.ip,
         "addresses": [ip for _, ip in target.addresses] or [target.ip],
         "skipped_addresses": [{"ip": f.ip, "reason": f.reason} for f in failures],
         "scanned_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "duration_ms": round((time.perf_counter() - started) * 1000),
+        "duration_ms": duration,
+        "wire": {
+            "client_hello_bytes": kx.client_hello_bytes,
+            "server_flight_bytes": kx.server_flight_bytes,
+            "server_share_bytes": kx.server_share_bytes,
+            "connect_ms": kx.connect_ms,
+            "hello_rtt_ms": kx.hello_rtt_ms,
+            "cert_chain_bytes": cert.chain_bytes,
+        },
         "tls": {
             "version": kx.tls_version or cert.tls_version,
             "cipher_suite": kx.cipher_suite or cert.cipher_suite,
@@ -163,7 +186,7 @@ def run_scan(raw_domain: str) -> dict:
         },
         "certificate": {**cert.leaf, "trusted": cert.trusted, "verify_error": cert.verify_error, "chain": cert.chain},
         "assessment": assessment,
-        "cbom_summary": analysis.cbom_rows(cbom),
+        "cbom_summary": rows,
         "cbom": cbom,
     }
 
@@ -187,6 +210,80 @@ async def scan(request: Request, domain: str = Query(..., min_length=1, max_leng
             raise HTTPException(504, f"Scan of {host} timed out.") from e
     cache_put(host, result)
     return {**result, "cached": False}
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+
+@app.get("/api/scan/stream")
+async def scan_stream(request: Request, domain: str = Query(..., min_length=1, max_length=2048)):
+    """The same scan, streamed: one `log` event per probe step (the `pqc.scan` log records), then `result` or `error`."""
+    try:
+        host = netguard.normalise_hostname(domain)
+    except netguard.TargetError as e:
+        raise HTTPException(400, str(e)) from e
+    cached = cache_get(host)
+    ip = client_ip(request)
+    if not cached:
+        check_rate(ip)
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def sink(ev: dict) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, ev)
+
+    def work() -> dict:
+        token = telemetry.bind(sink)
+        try:
+            return run_scan(host)
+        finally:
+            telemetry.unbind(token)
+
+    def line(stage: str, msg: str, level: str = "INFO") -> str:
+        return _sse("log", {"t": time.time(), "level": level, "logger": "uvicorn.access" if stage == "http" else "pqc.scan", "stage": stage, "msg": msg})
+
+    async def events():
+        yield line("http", f"{ip} GET /api/scan/stream?domain={host} · text/event-stream open")
+        if cached:
+            yield line("cache", f"{host} served from cache (TTL {CACHE_TTL}s) · scanned {cached.get('scanned_at')}")
+            yield _sse("result", {**cached, "cached": True})
+            return
+        async with _slots:
+            task = asyncio.ensure_future(asyncio.wait_for(asyncio.to_thread(work), SCAN_TIMEOUT))
+            while True:
+                try:
+                    ev = await asyncio.wait_for(queue.get(), 0.05)
+                    yield _sse("log", ev)
+                except asyncio.TimeoutError:
+                    if task.done() and queue.empty():
+                        break
+            try:
+                result = task.result()
+            except netguard.TargetError as e:
+                yield _sse("error", {"status": 400, "detail": str(e)})
+                return
+            except HTTPException as e:
+                yield _sse("error", {"status": e.status_code, "detail": e.detail})
+                return
+            except asyncio.TimeoutError:
+                yield _sse("error", {"status": 504, "detail": f"Scan of {host} timed out."})
+                return
+        cache_put(host, result)
+        yield line("http", f"200 · result {len(json.dumps(result))} B · stream closed")
+        yield _sse("result", {**result, "cached": False})
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/bench")
+async def bench_endpoint():
+    return await asyncio.to_thread(bench.run)
+
+
+# Measure once in the background at start-up so the first request is instant.
+threading.Thread(target=bench.run, daemon=True).start()
 
 
 @app.get("/api/health")

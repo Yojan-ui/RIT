@@ -7,9 +7,10 @@
 //   3 DEFEND  white link shatters, lattice cages wrap client + server, wiretap snaps on contact
 //   4 PROVE   camera pulls back to the Merkle tree; secured link compresses into a block that snaps into the chain
 //   5 RESCAN  radar plane drops over the whole topology; every node locks to pulsing emerald
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { columnCenter, hudAnchor, type Story } from './anchor'
 
 const R = 1.5 // globe radius, same as HudGlobe
@@ -210,7 +211,7 @@ function burst(sh: Shards, origin: THREE.Vector3, n: number, speed: number, colo
 type CamMode = 'base' | 'vault' | 'wide' | 'radar'
 
 export function StoryLayer({ story }: { story: Story }) {
-  const { camera, size, scene } = useThree()
+  const { camera, size, scene, gl } = useThree()
   const g = {
     self: useRef<THREE.Group>(null),
     ends: useRef<THREE.Group>(null),
@@ -268,7 +269,40 @@ export function StoryLayer({ story }: { story: Story }) {
     probePh: 0,
     sweepA: 0,
     cam: { pos: new THREE.Vector3(0, 0.9, 7.4), look: new THREE.Vector3(0, 0, 0) },
+    flying: true,
+    mode: '' as string,
+    frames: 0,
+    fpsT: 0,
   })
+
+  // User camera: orbit / zoom / pan anywhere; each stage change (or a double-click) flies back to the stage framing.
+  const controls = useMemo(() => {
+    const c = new OrbitControls(camera, gl.domElement)
+    c.enableDamping = true
+    c.dampingFactor = 0.08
+    c.rotateSpeed = 0.55
+    c.zoomSpeed = 0.8
+    c.minDistance = 1.2
+    c.maxDistance = 22
+    return c
+  }, [camera, gl])
+  useEffect(() => {
+    const s = st.current
+    const grab = () => {
+      s.flying = false
+      hudAnchor.userCam = true
+    }
+    const reframe = () => {
+      s.flying = true
+    }
+    controls.addEventListener('start', grab)
+    gl.domElement.addEventListener('dblclick', reframe)
+    return () => {
+      controls.removeEventListener('start', grab)
+      gl.domElement.removeEventListener('dblclick', reframe)
+      controls.dispose()
+    }
+  }, [controls, gl])
 
   const geo = useMemo(() => {
     const vault: number[] = []
@@ -455,14 +489,23 @@ export function StoryLayer({ story }: { story: Story }) {
         tmp.p.x -= dx
         tmp.l.x -= dx
       }
-      const kc = 1 - Math.exp(-dt * 1.8)
-      s.cam.pos.lerp(tmp.p, kc)
-      s.cam.look.lerp(tmp.l, kc)
-      camera.position.copy(s.cam.pos)
-      camera.lookAt(s.cam.look)
+      const modeKey = `${mode}|${size.width}x${size.height}`
+      if (modeKey !== s.mode) {
+        s.mode = modeKey
+        s.flying = true
+      }
+      if (s.flying) {
+        const kc = 1 - Math.exp(-dt * 1.8)
+        s.cam.pos.copy(camera.position).lerp(tmp.p, kc)
+        s.cam.look.copy(controls.target).lerp(tmp.l, kc)
+        camera.position.copy(s.cam.pos)
+        controls.target.copy(s.cam.look)
+        if (s.cam.pos.distanceTo(tmp.p) < 0.01 && s.cam.look.distanceTo(tmp.l) < 0.01) s.flying = false
+      }
+      controls.update()
       const fog = scene.fog as THREE.Fog | null
       if (fog) {
-        const d = s.cam.pos.distanceTo(s.cam.look)
+        const d = camera.position.distanceTo(controls.target)
         fog.near = d - 1.25
         fog.far = d + 3.1
       }
@@ -679,6 +722,15 @@ export function StoryLayer({ story }: { story: Story }) {
       h.quaternion.copy(camera.quaternion)
       ;(h.material as THREE.MeshBasicMaterial).opacity = (1 - ph) * 0.8 * fH
     })
+
+    // ── render stats (proof this is a live WebGL scene) ──
+    s.frames++
+    s.fpsT += dtRaw
+    if (s.fpsT >= 0.5) {
+      hudAnchor.stats = { fps: Math.round(s.frames / s.fpsT), calls: gl.info.render.calls, points: gl.info.render.points + gl.info.render.lines, flying: s.flying }
+      s.frames = 0
+      s.fpsT = 0
+    }
 
     // ── publish story anchors in screen pixels ──
     if (self) {

@@ -23,6 +23,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
+import time
+
 import certifi
 from cryptography import x509
 from cryptography.exceptions import UnsupportedAlgorithm
@@ -30,6 +32,7 @@ from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, r
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.x509.oid import ExtensionOID, NameOID
 
+from . import telemetry
 from .netguard import Target
 
 TIMEOUT = 6.0
@@ -122,12 +125,16 @@ def reachable_targets(target: Target, failures: list[AddressFailure], *, port: i
     """
     candidates = target.addresses or ((target.family, target.ip),)
     for family, ip in candidates[:MAX_ADDRESSES]:
+        telemetry.emit("tcp", f"connect {ip}:{port} (timeout {timeout:.0f}s)")
+        t0 = time.perf_counter()
         try:
             with socket.create_connection((ip, port), timeout=timeout):
                 pass
         except OSError as e:
             failures.append(AddressFailure(ip, _describe(e), isinstance(e, TimeoutError | socket.timeout)))
+            telemetry.emit("tcp", f"{ip}:{port} {_describe(e)} after {(time.perf_counter() - t0) * 1000:.0f} ms, skipping", 30)
             continue
+        telemetry.emit("tcp", f"{ip}:{port} ESTABLISHED in {(time.perf_counter() - t0) * 1000:.1f} ms", connect_ms=round((time.perf_counter() - t0) * 1000, 1))
         yield replace(target, ip=ip, family=family)
 
 
@@ -165,6 +172,11 @@ def build_client_hello(hostname: str) -> bytes:
     hybrid_share = mlkem768_encapsulation_key() + x25519_pub  # draft-ietf-tls-ecdhe-mlkem: ML-KEM first, then X25519
 
     groups = [0x11EC, 0x001D, 0x0017, 0x0018, 0x0019]
+    telemetry.emit(
+        "kex",
+        f"key_share X25519MLKEM768 (0x11EC) {len(hybrid_share)} B = ML-KEM-768 ek {len(hybrid_share) - 32} B + X25519 32 B; x25519 (0x001D) 32 B",
+        client_share_bytes=len(hybrid_share) + len(x25519_pub),
+    )
     extensions = b"".join([
         _ext(0x0000, _u16(b"\x00" + _u16(hostname.encode()))),  # server_name
         _ext(0x000A, _u16(b"".join(struct.pack("!H", g) for g in groups))),  # supported_groups
@@ -205,6 +217,11 @@ class KeyExchangeResult:
     kex_method: str | None = None  # "(EC)DHE", "RSA key transport", ...
     alert: str | None = None
     notes: list[str] = field(default_factory=list)
+    server_share_bytes: int | None = None
+    client_hello_bytes: int | None = None
+    server_flight_bytes: int | None = None
+    connect_ms: float | None = None
+    hello_rtt_ms: float | None = None
 
 
 class _Reader:
@@ -276,6 +293,8 @@ def parse_server_flight(records: bytes) -> KeyExchangeResult:
                         version = e.u16()
                     elif etype == 0x0033:  # key_share: group (+ key in ServerHello; bare group in HRR)
                         res.group_code = e.u16()
+                        if e.remaining() >= 2:
+                            res.server_share_bytes = e.u16()
             res.tls_version = VERSIONS.get(version, f"0x{version:04X}")
             if version == 0x0304:
                 res.kex_method = "(EC)DHE / KEM"
@@ -322,12 +341,39 @@ def _recv_flight(sock: socket.socket) -> bytes:
 def probe_key_exchange(target: Target) -> KeyExchangeResult:
     with socket.socket(target.family, socket.SOCK_STREAM) as sock:
         sock.settimeout(TIMEOUT)
+        t0 = time.perf_counter()
         sock.connect((target.ip, 443))
-        sock.sendall(build_client_hello(target.hostname))
+        connect_ms = (time.perf_counter() - t0) * 1000
+        hello = build_client_hello(target.hostname)
+        telemetry.emit(
+            "tls",
+            f"ClientHello → {target.ip}:443 {len(hello)} B · record {telemetry.hexdump(hello, 5)} · SNI {target.hostname} · versions 1.3/1.2 · groups X25519MLKEM768,x25519,secp256r1,secp384r1,secp521r1",
+            client_hello_bytes=len(hello),
+        )
+        t1 = time.perf_counter()
+        sock.sendall(hello)
         data = _recv_flight(sock)
+        rtt_ms = (time.perf_counter() - t1) * 1000
     if not data:
+        telemetry.emit("tls", "peer closed the connection without a ServerHello", 30)
         raise ConnectionError("Server closed the connection without responding to the ClientHello.")
-    return parse_server_flight(data)
+    res = parse_server_flight(data)
+    res.client_hello_bytes, res.server_flight_bytes = len(hello), len(data)
+    res.connect_ms, res.hello_rtt_ms = round(connect_ms, 1), round(rtt_ms, 1)
+    if res.alert:
+        telemetry.emit("tls", f"← alert {res.alert} ({len(data)} B, {rtt_ms:.1f} ms)", 30)
+    else:
+        telemetry.emit(
+            "tls",
+            f"ServerHello ← {len(data)} B in {rtt_ms:.1f} ms · record {telemetry.hexdump(data, 5)} · {res.tls_version} · {res.cipher_suite}",
+            server_flight_bytes=len(data),
+            hello_rtt_ms=round(rtt_ms, 1),
+        )
+        kind = "HelloRetryRequest selects" if res.hello_retry else "selected"
+        share = f" · server key_share {res.server_share_bytes} B" if res.server_share_bytes else ""
+        pq = "post-quantum hybrid ✓" if res.pq_hybrid else "classical, Shor-breakable"
+        telemetry.emit("kex", f"{kind} {res.group} ({f'0x{res.group_code:04X}' if res.group_code is not None else 'n/a'}){share} → {pq}", 20 if res.pq_hybrid else 30)
+    return res
 
 
 # ── Certificates ────────────────────────────────────────────────────────────
@@ -433,6 +479,7 @@ class CertificateResult:
     cipher_suite: str | None
     leaf: dict
     chain: list[dict]
+    chain_bytes: int = 0
 
 
 def _chain_der(sock: ssl.SSLSocket) -> list[bytes]:
@@ -457,10 +504,13 @@ def probe_certificate(target: Target) -> CertificateResult:
             tls.close()
 
     verified = ssl.create_default_context(cafile=certifi.where())
+    telemetry.emit("cert", f"verified handshake via {ssl.OPENSSL_VERSION} to fetch the chain")
+    t0 = time.perf_counter()
     try:
         version, cipher, leaf_der, chain = handshake(verified)
         trusted, err = True, None
     except ssl.SSLCertVerificationError as e:
+        telemetry.emit("cert", f"chain verification failed: {e.verify_message or e}; re-reading unverified", 30)
         insecure = ssl.create_default_context(cafile=certifi.where())
         insecure.check_hostname = False
         insecure.verify_mode = ssl.CERT_NONE
@@ -476,11 +526,24 @@ def probe_certificate(target: Target) -> CertificateResult:
             chain_desc.append({k: d[k] for k in ("subject_cn", "issuer_cn", "not_after", "public_key", "signature")})
         except ValueError:
             continue
+    leaf = describe_certificate(leaf_der)
+    chain_bytes = sum(len(d) for d in chain) or len(leaf_der)
+    telemetry.emit(
+        "cert",
+        f"{version} {cipher[0] if cipher else ''} in {(time.perf_counter() - t0) * 1000:.0f} ms · chain {max(1, len(chain))} cert(s) {chain_bytes} B · {'trusted' if trusted else 'UNTRUSTED'}",
+        chain_bytes=chain_bytes,
+    )
+    telemetry.emit(
+        "cert",
+        f"leaf CN={leaf.get('subject_cn')} · key {leaf['public_key']['name']} · sig {leaf['signature']['name']} · expires {str(leaf.get('not_after'))[:10]}",
+        20 if leaf["public_key"]["family"] in ("ML-DSA", "SLH-DSA") else 30,
+    )
     return CertificateResult(
         trusted=trusted,
         verify_error=err,
         tls_version={"TLSv1.3": "TLS 1.3", "TLSv1.2": "TLS 1.2", "TLSv1.1": "TLS 1.1", "TLSv1": "TLS 1.0"}.get(version or "", version),
         cipher_suite=cipher[0] if cipher else None,
-        leaf=describe_certificate(leaf_der),
+        leaf=leaf,
         chain=chain_desc,
+        chain_bytes=chain_bytes,
     )
