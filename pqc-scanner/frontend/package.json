@@ -19,6 +19,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^1.48.0",
     "postprocessing": "^6.39.5",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "three": "^0.186.1"

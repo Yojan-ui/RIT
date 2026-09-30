@@ -8,6 +8,8 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { hudAnchor, nodeAngles, type HoloNode, type HudMode, type Story } from './anchor'
 import { StoryLayer, fade } from './Story'
+import { SpatialLayer } from './spatial'
+import { XR_SCALE, setXR, useXR, xrState } from './xr'
 
 const R = 1.5
 const CARBON = '#080a0f'
@@ -124,7 +126,7 @@ function OrbitRing({ radius, tilt, speed, color, opacity, markerSpeed }: { radiu
   )
 }
 
-function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story: Story }) {
+function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; story: Story; xr: boolean }) {
   const root = useRef<THREE.Group>(null)
   const globe = useRef<THREE.Group>(null)
   const scan = useRef<THREE.Group>(null)
@@ -191,8 +193,19 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
   useFrame(({ clock }, dt) => {
     const W = size.width
     const H = size.height
+    // AR: the hologram stands where the viewer tapped, at tabletop scale, facing them
+    if (root.current && xrState.presenting) {
+      const r0 = root.current
+      r0.visible = xrState.placed
+      r0.position.copy(xrState.position).add(tmp.e.set(0, 1.5 * R * XR_SCALE, 0))
+      r0.quaternion.copy(xrState.quaternion)
+      r0.scale.setScalar(XR_SCALE)
+    } else if (root.current) {
+      root.current.visible = true
+      root.current.quaternion.identity()
+    }
     // fit the hologram into the free space between the HUD columns (pixels → world)
-    if (root.current) {
+    if (root.current && !xrState.presenting) {
       const wide = W >= 1024
       const left = wide ? Math.min(560, W * 0.4) : 0
       const right = wide ? W - 400 : W
@@ -230,8 +243,8 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
       nodeMat.current.size = pulse ? 5 + 3 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 3.9)) : 5
     }
 
-    // publish screen-space anchor + node positions for the DOM overlays
-    if (root.current && globe.current) {
+    // publish screen-space anchor + node positions for the DOM overlays (not drawn in AR)
+    if (root.current && globe.current && !xrState.presenting) {
       root.current.updateMatrixWorld()
       root.current.getWorldPosition(tmp.c)
       const scale = root.current.scale.x
@@ -253,8 +266,9 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
 
   return (
     <>
-      <color attach="background" args={[CARBON]} />
-      <fog attach="fog" args={[CARBON, 6.2, 10.5]} />
+      {/* AR shows the camera feed behind the hologram: no backdrop, fog or room grids */}
+      {!xr && <color attach="background" args={[CARBON]} />}
+      {!xr && <fog attach="fog" args={[CARBON, 6.2, 10.5]} />}
       <Environment />
       <ambientLight intensity={0.18} />
       <hemisphereLight args={['#9fb4c7', '#080a0f', 0.35]} />
@@ -308,15 +322,17 @@ function Scene({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story
 
         <StoryLayer story={story} />
 
-        <lineSegments geometry={floor.minor} position={[0, -R * 2.35, 0]}>
-          <lineBasicMaterial color={TITANIUM} transparent opacity={0.1} depthWrite={false} />
-        </lineSegments>
-        <lineSegments geometry={floor.major} position={[0, -R * 2.35, 0]}>
-          <lineBasicMaterial color={STEEL} transparent opacity={0.18} depthWrite={false} />
-        </lineSegments>
-        <lineSegments geometry={wall} position={[0, -R * 2.35, -R * 2.4]}>
-          <lineBasicMaterial color={TITANIUM} transparent opacity={0.07} depthWrite={false} />
-        </lineSegments>
+        <group visible={!xr}>
+          <lineSegments geometry={floor.minor} position={[0, -R * 2.35, 0]}>
+            <lineBasicMaterial color={TITANIUM} transparent opacity={0.1} depthWrite={false} />
+          </lineSegments>
+          <lineSegments geometry={floor.major} position={[0, -R * 2.35, 0]}>
+            <lineBasicMaterial color={STEEL} transparent opacity={0.18} depthWrite={false} />
+          </lineSegments>
+          <lineSegments geometry={wall} position={[0, -R * 2.35, -R * 2.4]}>
+            <lineBasicMaterial color={TITANIUM} transparent opacity={0.07} depthWrite={false} />
+          </lineSegments>
+        </group>
       </group>
     </>
   )
@@ -344,10 +360,12 @@ function Effects() {
     fx.bloom.resolution.set(size.width / 2, size.height / 2)
   }, [fx, gl, size])
   useEffect(() => () => fx.composer.dispose(), [fx])
-  // priority 1: R3F hands rendering over to the composer
+  // priority 1: R3F hands rendering over to the composer. An XR session renders straight into the
+  // headset / phone framebuffer (the composer can't target it); HDR colours are still tone-mapped there.
   useFrame((_, dt) => {
     gl.info.reset() // count every pass of the frame, not just the last one
-    fx.composer.render(dt)
+    if (gl.xr.isPresenting) gl.render(scene, camera)
+    else fx.composer.render(dt)
   }, 1)
   useEffect(() => {
     gl.info.autoReset = false
@@ -375,11 +393,83 @@ function Environment() {
   return null
 }
 
-export function HudGlobe({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story: Story }) {
+/**
+ * AR placement: a hit-test reticle tracks real surfaces; a tap (XR "select") stands the hologram there,
+ * turned to face the viewer. Tapping again moves it.
+ */
+function XRPlacement() {
+  const { gl, camera } = useThree()
+  const reticle = useRef<THREE.Group>(null)
+  const source = useRef<XRHitTestSource | null>(null)
+  useEffect(() => {
+    const select = () => {
+      const r = reticle.current
+      if (!xrState.hasHit || !r) return
+      const p = xrState.position.setFromMatrixPosition(r.matrix)
+      xrState.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(camera.position.x - p.x, camera.position.z - p.z))
+      setXR({ placed: true })
+    }
+    const start = async () => {
+      const session = gl.xr.getSession()
+      if (!session) return
+      session.addEventListener('select', select)
+      try {
+        const viewer = await session.requestReferenceSpace('viewer')
+        source.current = (await session.requestHitTestSource?.({ space: viewer })) ?? null
+      } catch {
+        source.current = null
+      }
+    }
+    const end = () => {
+      source.current?.cancel()
+      source.current = null
+    }
+    gl.xr.addEventListener('sessionstart', start)
+    gl.xr.addEventListener('sessionend', end)
+    return () => {
+      gl.xr.removeEventListener('sessionstart', start)
+      gl.xr.removeEventListener('sessionend', end)
+    }
+  }, [gl, camera])
+  const ring = useMemo(() => new THREE.RingGeometry(0.06, 0.075, 48).rotateX(-Math.PI / 2), [])
+  const dot = useMemo(() => new THREE.CircleGeometry(0.008, 16).rotateX(-Math.PI / 2), [])
+  useFrame(({ clock }, _dt, frame?: XRFrame) => {
+    const r = reticle.current
+    if (!r) return
+    const space = gl.xr.getReferenceSpace()
+    const pose = frame && source.current && space ? frame.getHitTestResults(source.current)[0]?.getPose(space) : undefined
+    if (pose) r.matrix.fromArray(pose.transform.matrix)
+    r.visible = !!pose && !xrState.placed
+    r.children[0].scale.setScalar(1 + 0.08 * Math.sin(clock.elapsedTime * 4))
+    setXR({ hasHit: !!pose })
+  })
   return (
-    <Canvas camera={{ position: [0, 0.9, 7.4], fov: 38 }} dpr={[1, 2]} gl={{ antialias: false, powerPreference: 'high-performance' }}>
+    <group ref={reticle} matrixAutoUpdate={false} visible={false}>
+      <mesh geometry={ring}>
+        <meshBasicMaterial color={ICE} transparent opacity={0.9} toneMapped={false} />
+      </mesh>
+      <mesh geometry={dot}>
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </mesh>
+    </group>
+  )
+}
+
+export function HudGlobe({ mode, nodes, story, spatialOn }: { mode: HudMode; nodes: HoloNode[]; story: Story; spatialOn: boolean }) {
+  const { presenting } = useXR()
+  return (
+    <Canvas
+      camera={{ position: [0, 0.9, 7.4], fov: 38 }}
+      dpr={[1, 2]}
+      gl={{ antialias: false, powerPreference: 'high-performance' }}
+      onCreated={({ gl }) => {
+        xrState.gl = gl
+      }}
+    >
       <Effects />
-      <Scene mode={mode} nodes={nodes} story={story} />
+      <Scene mode={mode} nodes={nodes} story={story} xr={presenting} />
+      <XRPlacement />
+      <SpatialLayer on={spatialOn && !presenting} />
     </Canvas>
   )
 }

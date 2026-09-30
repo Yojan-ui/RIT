@@ -221,3 +221,10 @@ export async function fetchBench(): Promise<Bench> {
   if (!res.ok) throw new Error(`bench ${res.status}`)
   return (await res.json()) as Bench
 }
+
+/** AR handoff: the LAN HTTPS address a phone can open (set when the demo runs with AR=1), else null. */
+export async function fetchXrHandoff(): Promise<string | null> {
+  const res = await fetch(`${BASE}/api/xr`)
+  if (!res.ok) return null
+  return ((await res.json()) as { handoff_url: string | null }).handoff_url
+}

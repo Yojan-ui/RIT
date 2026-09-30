@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { usePipeline, SCAN_STEPS, type Pipeline } from '../pipeline/usePipeline'
 import type { CoreState } from '../scene/CryptoCore'
@@ -13,6 +13,10 @@ import { Bar, CwmGauge, HudRings, NodeMarkers, TrackingLayer } from './overlays'
 import { PerfImpact, TelemetryTerminal, type StreamState, type TLine } from './Proof'
 import type { HoloNode, HudMode, Story } from './anchor'
 import { StoryOverlay, type StoryData } from './StoryOverlay'
+import { ArHandoff } from './ArHandoff'
+import { geiger, sfx } from './sfx'
+import { SpatialSlot, spatial } from './spatial'
+import { useXR } from './xr'
 import './hud.css'
 
 const STEPS = ['DETECT', 'SCORE', 'DEFEND', 'PROVE', 'RESCAN'] as const
@@ -102,6 +106,45 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void) {
   }, [p.rescanStep, p.rescan])
 }
 
+// A kex / cert / CBOM warning naming a Shor-breakable primitive: one more "particle" for the Geiger counter.
+const SHOR_HIT = /shor|\brsa\b|ecdsa|ecdhe|secp\d|p-?256|p-?384|x25519(?!mlkem)/i
+
+/**
+ * Sound follows the same state as the 3D story: Geiger clicks through DETECT (faster with every
+ * Shor-vulnerable primitive parsed), a bass sweep while the lattice deploys and a chime when it locks.
+ * The PROVE vault lock is fired by the 3D scene at the frame the block snaps into the chain.
+ */
+function useSonification(story: Story, p: Pipeline, heat: MutableRefObject<number>, shorVuln: number) {
+  const prev = useRef(story)
+  useEffect(() => {
+    const was = prev.current
+    prev.current = story
+    if (story.patching && !was.patching) sfx.latticeSweep(1.8)
+    if (story.patched && !was.patched) sfx.latticeChime()
+  }, [story])
+
+  useEffect(() => {
+    if (p.scanning) heat.current = 0
+  }, [p.scanning, heat])
+  const live = useRef({ scanning: false, detect: 0 })
+  live.current = { scanning: p.scanning, detect: !!p.result && p.step === 1 && !p.patched ? shorVuln : 0 }
+  useEffect(() => {
+    const g = geiger()
+    let rate = 0
+    // ramp toward the target so the counter audibly accelerates rather than jumping
+    const id = setInterval(() => {
+      const s = live.current
+      const target = s.scanning ? 1.2 + heat.current * 2.4 : s.detect ? 0.7 + s.detect * 1.3 : 0
+      rate = target ? rate + (target - rate) * 0.3 : 0
+      g.set(Math.min(rate, 14))
+    }, 200)
+    return () => {
+      clearInterval(id)
+      g.stop()
+    }
+  }, [heat])
+}
+
 // ── small pieces ─────────────────────────────────────────────────────────────
 
 function Panel({ title, right, tone, className = '', children }: { title: string; right?: ReactNode; tone?: 'warn' | 'ok'; className?: string; children: ReactNode }) {
@@ -163,9 +206,14 @@ export default function HudApp() {
   const seq = useRef(0)
   const received = useRef(0)
   const add = useCallback((l: Omit<TLine, 'id'>) => setLines((ls) => [...ls.slice(-220), { ...l, id: seq.current++ }]), [])
+  const heat = useRef(0) // Shor-vulnerable primitives seen in this scan's telemetry
   const onTelemetry = useCallback(
     (e: TelemetryEvent) => {
       const sse = e.logger === 'client.sse'
+      if (!sse) {
+        sfx.click(0.5) // every parsed record ticks the counter once
+        if (e.level === 'WARNING' && SHOR_HIT.test(e.msg)) heat.current++
+      }
       const state = e.data?.state as StreamState | undefined
       if (sse && state) {
         if (state === 'connecting') received.current = 0
@@ -204,7 +252,9 @@ export default function HudApp() {
       alive = false
     }
   }, [])
-  const mode = MODE[p.core]
+  const xr = useXR()
+  const sfxOn = useSyncExternalStore(sfx.subscribe, () => sfx.enabled)
+  const mode = xr.presenting ? 'secure' : MODE[p.core]
   const r = p.result
   const cwm = p.patched ? p.cwmAfter : p.cwmBefore
   const total = r?.cbom_summary.length ?? 0
@@ -213,13 +263,13 @@ export default function HudApp() {
   // One hologram node per signature / key-exchange algorithm, coloured only by its own state.
   const nodes: HoloNode[] = useMemo(() => {
     if (!r || !p.before) return []
-    const list = p.patched ? p.upgraded : p.detected
+    const list = p.patched || xr.presenting ? p.upgraded : p.detected
     return list.map((a) => ({
       id: `${a.role === 'Signature' ? 'sig' : 'kex'}:${a.name}`,
       label: a.name,
       state: a.safe ? 'ok' : p.cwmBefore?.severity === 'CRITICAL' ? 'crit' : 'warn',
     }))
-  }, [r, p.before, p.patched, p.detected, p.upgraded, p.cwmBefore])
+  }, [r, p.before, p.patched, p.detected, p.upgraded, p.cwmBefore, xr.presenting])
 
   const [wide, setWide] = useState(() => innerWidth >= 1024)
   useEffect(() => {
@@ -255,6 +305,22 @@ export default function HudApp() {
     }),
     [r, p.scanning, p.step, p.vulnerable, p.patching, p.patched, p.block, p.rescan],
   )
+  // AR tabletop: once placed, the lattice shield locks around the link, then the ledger block snaps into
+  // the Merkle chain. A composite of stages 3 + 4 so all three structures stand on the table together.
+  const [arBeat, setArBeat] = useState(0)
+  useEffect(() => {
+    if (!xr.placed) return setArBeat(0)
+    setArBeat(1)
+    const t = setTimeout(() => setArBeat(2), 1600)
+    return () => clearTimeout(t)
+  }, [xr.placed])
+  const arStory: Story = useMemo(
+    () => ({ active: true, scanning: false, stage: 4, vulnerable: true, patching: false, patched: arBeat >= 1, anchored: arBeat >= 2, chainIndex: p.block?.index ?? 1, rescan: 'idle' }),
+    [arBeat, p.block],
+  )
+  const scene = xr.presenting ? arStory : story
+  useSonification(scene, p, heat, shorVuln)
+  const spatialOn = wide && !xr.presenting
   const storyData: StoryData = {
     domain: r?.domain ?? p.query.trim(),
     kex: p.before?.kex ?? null,
@@ -282,8 +348,10 @@ export default function HudApp() {
   return (
     <div className="hud-root">
       <div className="fixed inset-0 z-[1]" aria-hidden>
-        <HudGlobe mode={mode} nodes={nodes} story={story} />
+        <HudGlobe mode={mode} nodes={nodes} story={scene} spatialOn={spatialOn} />
       </div>
+      {/* CSS3D layer: the floating glass panels (telemetry, score) are rendered here, registered to the WebGL camera */}
+      <div ref={(el) => { spatial.mount = el }} className="fixed inset-0 z-[21] pointer-events-none" aria-hidden={!spatialOn} />
       <div className="hud-vignette" aria-hidden />
       <HudRings target={story.active ? null : r ? `${r.domain} · ${r.resolved_ip}` : null} index={1} total={Math.max(1, addrs.length)} dim={!story.active ? 1 : story.scanning || story.stage === 1 || story.stage === 3 ? 0.3 : 0} />
       <StoryOverlay story={story} data={storyData} />
@@ -297,12 +365,16 @@ export default function HudApp() {
           <span className="hud-h text-[12px] tracking-[0.2em]">QUANTUMLEDGER</span>
           <span className="hud-k hidden sm:inline">pqc diagnostics · tls quantum-readiness</span>
         </button>
-        <div className="flex items-center gap-4 text-[10px]">
+        <div className="flex items-center gap-2 whitespace-nowrap text-[10px] sm:gap-4">
           <span className="hud-dim hidden lg:inline">CONSOLE {CONSOLE}</span>
-          <span className="hud-ice"><Clock /></span>
-          <span className={`${statusCls} tracking-[0.14em]`}>{statusText}</span>
-          <button className="hud-btn quiet" disabled={!r} onClick={exportCompliance}>REPORT.PDF</button>
-          <button className="hud-btn quiet" disabled={!r} onClick={p.exportJson}>CBOM.JSON</button>
+          <span className="hud-ice hidden sm:inline"><Clock /></span>
+          <span className={`${statusCls} hidden tracking-[0.14em] sm:inline`}>{statusText}</span>
+          <ArHandoff domain={r?.domain ?? p.query.trim()} />
+          <button className="hud-btn quiet" onClick={() => sfx.setEnabled(!sfxOn)} aria-pressed={sfxOn} title="Cryptographic sonification (Web Audio)">
+            ♪<span className="hidden sm:inline"> sfx</span> {sfxOn ? 'on' : 'off'}
+          </button>
+          <button className="hud-btn quiet" disabled={!r} onClick={exportCompliance}><span>REPORT<span className="hidden sm:inline">.PDF</span></span></button>
+          <button className="hud-btn quiet" disabled={!r} onClick={p.exportJson}><span>CBOM<span className="hidden sm:inline">.JSON</span></span></button>
         </div>
       </header>
 
@@ -333,6 +405,7 @@ export default function HudApp() {
               })}
             </nav>
 
+            <SpatialSlot id="score" side={-1} on={spatialOn}>
             <Panel title="quantumledger · diagnostics" right={p.scanning ? <span className="hud-live" /> : undefined} tone={mode === 'critical' || mode === 'alert' ? 'warn' : mode === 'secure' ? 'ok' : undefined}>
               <Row k="scan_spectral_analysis" cls={p.scanning ? 'hud-ice' : 'hud-white'}>{p.scanning ? 'running' : r ? 'complete' : 'idle'}</Row>
               <Row k="target">{r ? `${r.domain}:443` : p.scanning ? p.query.trim() : '—'}</Row>
@@ -347,6 +420,7 @@ export default function HudApp() {
               </Row>
               <Row k="ledger" cls={p.verification?.valid ? 'hud-ok' : 'hud-dim'}>{p.block ? `#${p.block.index} ${p.verification?.valid ? 'verified' : 'unverified'}` : '—'}</Row>
             </Panel>
+            </SpatialSlot>
 
             <motion.div key={`${p.step}-${!!r}-${p.scanning}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
               {p.step === 1 && <Detect p={p} />}
@@ -361,7 +435,9 @@ export default function HudApp() {
 
           {/* ── right ── */}
           <aside className="space-y-3 lg:pointer-events-auto">
-            <TelemetryTerminal lines={lines} state={stream.state} meta={stream.meta} />
+            <SpatialSlot id="telemetry" side={1} on={spatialOn}>
+              <TelemetryTerminal lines={lines} state={stream.state} meta={stream.meta} />
+            </SpatialSlot>
             <PerfImpact r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />
             <Panel title="link · certificate">
               <Row k="protocol" cls="hud-white text-[10px]">{r ? `${r.tls.version} · ${r.tls.cipher_suite}` : '—'}</Row>

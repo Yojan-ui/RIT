@@ -1,0 +1,3 @@
+
+# Self-signed certificates for the AR=1 LAN handoff
+backend/.certs/

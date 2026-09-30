@@ -4,6 +4,7 @@
     GET /api/scan/stream?domain=example.com   same scan as Server-Sent Events: live probe telemetry, then the result
     GET /api/bench                            handshake crypto benchmark on this host (classical vs ML-KEM / ML-DSA)
     GET /api/health
+    GET /api/xr                               LAN HTTPS address for the WebXR phone handoff, or null
 
 Environment:
     ALLOWED_ORIGINS   comma-separated CORS origins (default "*"; e.g. https://pqc.example.vercel.app)
@@ -11,6 +12,7 @@ Environment:
     TRUST_PROXY       "1" to take the client IP from the last X-Forwarded-For hop (set behind Render/Railway/Fly proxies)
     CACHE_TTL         seconds to cache a domain's result (default 300)
     FRONTEND_DIST     built frontend to serve at / (default: ../frontend/dist next to this backend)
+    XR_HANDOFF_URL    address a phone can open for AR (set by `AR=1 ./run_cyber_demo.sh`; unset = localhost only)
 
 When the frontend has been built (`npm run build` in frontend/), this app also serves it at `/`,
 so one Uvicorn process runs the whole demo. API routes under /api keep priority.
@@ -289,6 +291,12 @@ threading.Thread(target=bench.run, daemon=True).start()
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/xr")
+async def xr_handoff():
+    # WebXR needs a secure context, so the phone gets the LAN HTTPS listener, never this one.
+    return {"handoff_url": os.environ.get("XR_HANDOFF_URL") or None}
 
 
 # Serve the built React app at / (registered last, so /api and /docs keep priority).

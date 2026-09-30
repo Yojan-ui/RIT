@@ -244,3 +244,69 @@
   .hud-cta::after { display: none; }
   .hud-track { stroke-dashoffset: 0; }
 }
+
+/* ── Spatial UI: visionOS-style glass panels floating in the 3D scene (CSS3DRenderer) ── */
+.spatial-panel { pointer-events: auto; --gx: 50%; --gy: 30%; }
+.spatial-panel > * {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid rgb(255 255 255 / 0.12) !important;
+  background: linear-gradient(160deg, rgb(28 38 52 / 0.62), rgb(10 13 19 / 0.5) 55%, rgb(12 18 26 / 0.62)) !important;
+  backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    inset 0 0 0 1px rgb(103 232 249 / 0.05),
+    0 24px 60px -18px rgb(0 0 0 / 0.75),
+    0 0 40px -12px rgb(103 232 249 / 0.25);
+  overflow: hidden;
+}
+/* specular sheen that slides with the cursor as the pane tilts */
+.spatial-panel > *::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(420px circle at var(--gx) var(--gy), rgb(255 255 255 / 0.09), transparent 60%);
+  mix-blend-mode: screen;
+}
+.spatial-panel .hud-panel::before { display: none; }
+.spatial-layer { pointer-events: none; }
+.spatial-holder { pointer-events: none; }
+
+/* ── WebXR handoff ── */
+.ar-pop {
+  position: fixed;
+  top: 44px;
+  right: 16px;
+  z-index: 40;
+  width: min(320px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid rgb(103 232 249 / 0.3);
+  border-radius: 14px;
+  background: rgb(10 13 19 / 0.92);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 24px 60px -18px rgb(0 0 0 / 0.8), 0 0 30px -10px rgb(103 232 249 / 0.35);
+}
+.ar-qr { display: block; width: 100%; max-width: 220px; margin: 12px auto 0; border-radius: 8px; image-rendering: pixelated; }
+.ar-err { position: fixed; top: 44px; right: 16px; z-index: 40; max-width: calc(100vw - 32px); padding: 8px 10px; border: 1px solid rgb(239 68 68 / 0.5); background: rgb(10 13 19 / 0.92); color: var(--crit); font-size: 11px; cursor: pointer; }
+.ar-cta {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  text-align: left;
+  border: 1px solid var(--ice);
+  border-radius: 14px;
+  background: rgb(10 13 19 / 0.92);
+  box-shadow: 0 0 30px -8px rgb(103 232 249 / 0.6);
+}
+.ar-overlay { position: fixed; inset: 0; pointer-events: none; font-family: var(--mono); }
+.ar-overlay[hidden] { display: none; }
+.ar-overlay-bar { pointer-events: auto; display: flex; align-items: center; gap: 10px; margin: 12px; padding: 8px 10px; border: 1px solid rgb(255 255 255 / 0.12); border-radius: 12px; background: rgb(10 13 19 / 0.7); backdrop-filter: blur(12px); }
+.ar-overlay-hint { position: absolute; left: 12px; right: 12px; bottom: 24px; padding: 10px 12px; text-align: center; font-size: 12px; letter-spacing: 0.08em; color: var(--white); border-radius: 12px; background: rgb(10 13 19 / 0.6); }
+.ar-pop, .ar-cta, .ar-err, .ar-overlay { white-space: normal; }

@@ -58,6 +58,26 @@ Proof features around the scene:
   score, the full CWM arithmetic, Mosca's inequality, the CBOM, the performance impact and the ledger block hash,
   Merkle root and verification checks.
 
+Spatial and sensory layer:
+
+- **Tabletop hologram (WebXR)**: **◈ Project to AR** in the header. On an AR-capable phone (Android Chrome with
+  ARCore) it starts an `immersive-ar` session: a hit-test reticle finds the table, a tap stands the globe there at
+  ~22 cm across, and the ML-KEM lattice shield and then the Merkle ledger block lock into place so the viewer can walk
+  around them. On a desktop it shows a QR code for the phone. WebXR needs HTTPS, so the handoff is opt-in:
+  `AR=1 ./run_cyber_demo.sh` also serves the demo at `https://<lan-ip>:8003` with a self-signed certificate
+  (kept in `backend/.certs/`), and `GET /api/xr` tells the desktop page that address. Without `AR=1` the demo stays on
+  localhost and the button explains how to enable it. iOS Safari has no WebXR AR. Outside a session nothing changes:
+  the browser view keeps its post-processing, camera flights and overlays (`src/hud/xr.ts`, `ArHandoff.tsx`).
+- **Cryptographic sonification (Web Audio)**: synthesised, no audio files, and fired by the same state as the 3D
+  scene (`src/hud/sfx.ts`). DETECT: Geiger-counter clicks, one per parsed telemetry record, accelerating with each
+  Shor-vulnerable primitive (RSA / ECDSA / classical ECDHE) the probe reports. DEFEND: a sub-bass sweep while the
+  lattice grows, then a resonant chime when it locks. PROVE: a mechanical vault lock on the exact frame the block
+  snaps into the chain. Toggle with **♪ SFX** (remembered per browser); audio starts after the first click.
+- **Spatial glass panels**: on wide screens the diagnostics (score) panel and the live telemetry terminal are
+  `CSS3DRenderer` objects on a rig that lazily follows the camera. They sit in their columns, angled inward like a
+  wraparound display, and tilt with the cursor (`src/hud/spatial.tsx`). Narrow screens, AR and reduced motion fall
+  back to flat or still panels.
+
 A caption bar explains each beat in plain language. Side panels show only real scan data (TLS link, certificate serial,
 timestamped event log). The header coordinates are the console's (Bengaluru), not the target's.
 

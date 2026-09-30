@@ -12,6 +12,8 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { columnCenter, hudAnchor, type Story } from './anchor'
+import { sfx } from './sfx'
+import { xrState } from './xr'
 
 const R = 1.5 // globe radius, same as HudGlobe
 
@@ -525,8 +527,10 @@ export function StoryLayer({ story }: { story: Story }) {
     if (self) self.updateMatrixWorld()
 
     // ── camera framing per stage (world space; the root group has no rotation) ──
+    // In AR the viewer's own head / phone is the camera, so no framing or flights.
     const mode: CamMode = !results ? 'base' : stage === 2 && vulnerable ? 'vault' : stage === 4 ? 'wide' : stage === 5 ? 'radar' : 'base'
-    if (self) {
+    if (xrState.presenting) s.mode = ''
+    else if (self) {
       const toWorld = (x: number, y: number, z: number, out: THREE.Vector3) => out.set(x, y, z).applyMatrix4(self.matrixWorld)
       const k = self.getWorldScale(tmp.w).x * R // one globe radius in world units
       if (mode === 'vault') {
@@ -755,7 +759,10 @@ export function StoryLayer({ story }: { story: Story }) {
     }
     if (la >= 1.6 && !s.snapped) {
       s.snapped = true
-      if (stage === 4) burst(shards, P_BLOCK, 18, 0.5 * R, G_EMERALD, 0.02)
+      if (stage === 4) {
+        burst(shards, P_BLOCK, 18, 0.5 * R, G_EMERALD, 0.02)
+        sfx.vaultLock()
+      }
     }
     if (la < 0) s.snapped = false
     if (blockMat.current) blockMat.current.color.copy(la < 1.6 ? G_ICE : tmp.c.copy(G_WHITE).lerp(G_EMERALD, clamp01((la - 1.6) / 0.5)))

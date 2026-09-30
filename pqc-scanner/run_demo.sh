@@ -7,6 +7,7 @@
 #   PORT=8080 ./run_demo.sh    another port
 #   REBUILD=1 ./run_demo.sh    force a fresh frontend build
 #   UI=hud ./run_demo.sh       QuantumLedger HUD variant (see run_cyber_demo.sh)
+#   AR=1 ./run_demo.sh         also serve over HTTPS on the LAN (PORT+1, self-signed) for the WebXR phone handoff
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,6 +64,27 @@ if ! "$BACKEND/.venv/bin/python" -c "import socket; s=socket.socket(); s.setsock
   die "Port $PORT is already in use. Stop the other process or run with PORT=<free port>."
 fi
 
+# ── Optional LAN HTTPS listener for the WebXR phone handoff ─────────────────
+# WebXR only runs in a secure context, so a phone needs HTTPS. Off by default: the demo stays on localhost.
+if [ "${AR:-0}" = "1" ]; then
+  AR_PORT="${AR_PORT:-$((PORT + 1))}"
+  LAN_IP="${LAN_IP:-$("$BACKEND/.venv/bin/python" -c 'import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("10.255.255.255", 1)); print(s.getsockname()[0])' 2>/dev/null || true)}"
+  { [ -n "$LAN_IP" ] && [ "$LAN_IP" != "127.0.0.1" ]; } || die "AR=1: no LAN address found. Join a Wi-Fi network or set LAN_IP=<address>."
+  CERTS="$BACKEND/.certs"
+  if [ ! -f "$CERTS/$LAN_IP.pem" ]; then
+    command -v openssl >/dev/null || die "AR=1 needs openssl to create a self-signed certificate."
+    mkdir -p "$CERTS"
+    say "Creating a self-signed certificate for $LAN_IP"
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 30 -subj "/CN=QuantumLedger AR" \
+      -addext "subjectAltName=IP:$LAN_IP,DNS:localhost" -keyout "$CERTS/$LAN_IP.key" -out "$CERTS/$LAN_IP.pem" 2>/dev/null \
+      || die "Could not create the certificate."
+  fi
+  if ! "$BACKEND/.venv/bin/python" -c "import socket; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(('0.0.0.0', $AR_PORT)); s.listen()" 2>/dev/null; then
+    die "Port $AR_PORT (AR handoff) is already in use. Set AR_PORT=<free port>."
+  fi
+  export XR_HANDOFF_URL="https://$LAN_IP:$AR_PORT"
+fi
+
 # ── Start ───────────────────────────────────────────────────────────────────
 URL="http://localhost:$PORT"
 say "Starting server on $URL (Ctrl+C to stop)"
@@ -81,4 +103,13 @@ say "Starting server on $URL (Ctrl+C to stop)"
 
 cd "$BACKEND"
 export FRONTEND_DIST="$DIST"
-exec "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning
+if [ -n "${XR_HANDOFF_URL:-}" ]; then
+  say "AR handoff on the LAN: $XR_HANDOFF_URL (self-signed; accept the warning on the phone)"
+  "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 0.0.0.0 --port "$AR_PORT" \
+    --ssl-keyfile "$CERTS/$LAN_IP.key" --ssl-certfile "$CERTS/$LAN_IP.pem" --log-level warning &
+  AR_PID=$!
+  trap 'kill "$AR_PID" 2>/dev/null' EXIT INT TERM
+  "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning
+else
+  exec "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning
+fi
