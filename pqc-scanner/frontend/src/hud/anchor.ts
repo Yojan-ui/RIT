@@ -22,13 +22,13 @@ export const hudAnchor = {
   stats: { fps: 0, calls: 0, points: 0, flying: true },
   userCam: false, // the viewer has orbited the camera at least once
   hover: null as null | { id: string; x: number; y: number }, // raycast-inspected 3D object
-  viewport: null as HTMLElement | null, // the viewport card body holding the canvas; all x / y above are relative to it
+  zoneEl: null as HTMLElement | null, // the free page region between the floating panes that the hologram fits into
 }
 
-/** Page offset of the viewport, for overlays that draw outside it (tracking lines, the inspector card). */
-export function viewportOrigin() {
-  const r = hudAnchor.viewport?.getBoundingClientRect()
-  return { x: r?.left ?? 0, y: r?.top ?? 0, w: r?.width ?? innerWidth }
+/** The core zone in page pixels (the whole window before layout). */
+export function coreZone() {
+  const r = hudAnchor.zoneEl?.getBoundingClientRect()
+  return r && r.width > 0 ? { x: r.left, y: r.top, w: r.width, h: r.height } : { x: 0, y: 0, w: innerWidth, h: innerHeight }
 }
 
 /** What the 3D narrative shows: derived from the real pipeline state. */

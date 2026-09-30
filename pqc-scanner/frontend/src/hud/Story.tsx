@@ -11,7 +11,8 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { hudAnchor, type Story } from './anchor'
+import gsap from 'gsap'
+import { coreZone, hudAnchor, type Story } from './anchor'
 import { sfx } from './sfx'
 import { xrState } from './xr'
 
@@ -329,6 +330,7 @@ export function StoryLayer({ story }: { story: Story }) {
     const ptr = pointer.current
     // grabbing the scene hands the camera to OrbitControls mid-flight
     const grab = () => {
+      gsap.killTweensOf(s.flight)
       s.flight.active = false
       hudAnchor.userCam = true
     }
@@ -356,6 +358,7 @@ export function StoryLayer({ story }: { story: Story }) {
     el.addEventListener('pointerdown', down)
     addEventListener('pointerup', up)
     return () => {
+      gsap.killTweensOf(s.flight)
       controls.removeEventListener('start', grab)
       el.removeEventListener('dblclick', reframe)
       el.removeEventListener('pointermove', move)
@@ -537,17 +540,26 @@ export function StoryLayer({ story }: { story: Story }) {
         toWorld(0.47 * R, -1.62 * R, 0.8 * R, tmp.l)
         tmp.p.copy(tmp.l).add(tmp.v.set(0, 0.5 * k, 4.6 * k))
       } else if (mode === 'wide') {
-        toWorld(0, 0.35 * R, 0, tmp.l)
-        tmp.p.copy(tmp.l).add(tmp.v.set(0, 2.3 * k, 11.6 * k))
+        toWorld(0, 0.7 * R, 0, tmp.l)
+        tmp.p.copy(tmp.l).add(tmp.v.set(0, 2.3 * k, 13.4 * k))
       } else if (mode === 'radar') {
-        toWorld(0, -0.35 * R, 0, tmp.l)
-        tmp.p.copy(tmp.l).add(tmp.v.set(0, 3.6 * k, 9.2 * k))
+        toWorld(0, 0.05 * R, 0, tmp.l)
+        tmp.p.copy(tmp.l).add(tmp.v.set(0, 3.6 * k, 10.4 * k))
       } else {
         tmp.p.set(0, 0.9, 7.4)
         tmp.l.set(0, 0, 0)
       }
-      // Cinematic flight to the stage framing: eased (cubic in-out), spherical about the moving focal point,
-      // with a mid-flight rise and orbital sweep ("swoop"), strongest for the pull-back into the Merkle tree.
+      if (mode !== 'base') {
+        // keep the framed subject centred in the core zone between the floating panes
+        const z = coreZone()
+        const wpp = (2 * tmp.p.distanceTo(tmp.l) * Math.tan(THREE.MathUtils.degToRad(19))) / size.height
+        tmp.v.set(-(z.x + z.w / 2 - size.width / 2) * wpp, (z.y + z.h / 2 - size.height / 2) * wpp, 0)
+        tmp.p.add(tmp.v)
+        tmp.l.add(tmp.v)
+      }
+      // Cinematic flight to the stage framing: a GSAP expo in-out tween drives the progress; the path is
+      // spherical about the moving focal point with a mid-flight rise and orbital sweep ("swoop"),
+      // strongest for the pull-back into the Merkle tree.
       const f = s.flight
       const modeKey = `${mode}|${size.width}x${size.height}`
       if (modeKey !== s.mode || s.reframe) {
@@ -555,25 +567,29 @@ export function StoryLayer({ story }: { story: Story }) {
         s.mode = modeKey
         s.reframe = false
         f.active = true
-        f.t = first ? 1 : 0
         f.fromT.copy(controls.target)
         f.from.setFromVector3(tmp.v.copy(camera.position).sub(controls.target))
         const travel = camera.position.distanceTo(tmp.p) + controls.target.distanceTo(tmp.l)
-        f.swoop = mode === 'wide' ? 1 : mode === 'radar' ? 0.6 : mode === 'vault' ? 0.45 : 0.25
-        f.dur = Math.min(3.4, Math.max(mode === 'wide' ? 2.8 : 1.7, 1.4 + travel * 0.4))
+        f.swoop = mode === 'wide' ? 1.25 : mode === 'radar' ? 0.8 : mode === 'vault' ? 0.6 : 0.35
+        f.dur = Math.min(3.6, Math.max(mode === 'wide' ? 3 : 1.9, 1.5 + travel * 0.4))
+        gsap.killTweensOf(f)
+        if (first) f.t = 1
+        else {
+          f.t = 0
+          gsap.to(f, { t: 1, duration: f.dur, ease: 'expo.inOut' })
+        }
       }
       if (f.active) {
-        f.t = Math.min(1, f.t + dt / f.dur)
-        const e = f.t < 0.5 ? 4 * f.t ** 3 : 1 - (-2 * f.t + 2) ** 3 / 2
+        const e = f.t // already eased by GSAP
         const arc = Math.sin(Math.PI * e)
         f.to.setFromVector3(tmp.v.copy(tmp.p).sub(tmp.l))
         let dTheta = f.to.theta - f.from.theta
         if (dTheta > Math.PI) dTheta -= Math.PI * 2
         if (dTheta < -Math.PI) dTheta += Math.PI * 2
         sph.set(
-          THREE.MathUtils.lerp(f.from.radius, f.to.radius, e) * (1 + 0.18 * f.swoop * arc),
-          THREE.MathUtils.clamp(THREE.MathUtils.lerp(f.from.phi, f.to.phi, e) - 0.32 * f.swoop * arc, 0.08, Math.PI - 0.08),
-          f.from.theta + dTheta * e + 0.28 * f.swoop * arc,
+          THREE.MathUtils.lerp(f.from.radius, f.to.radius, e) * (1 + 0.22 * f.swoop * arc),
+          THREE.MathUtils.clamp(THREE.MathUtils.lerp(f.from.phi, f.to.phi, e) - 0.36 * f.swoop * arc, 0.08, Math.PI - 0.08),
+          f.from.theta + dTheta * e + 0.34 * f.swoop * arc,
         )
         controls.target.copy(f.fromT).lerp(tmp.l, e)
         camera.position.setFromSpherical(sph).add(controls.target)
@@ -583,8 +599,9 @@ export function StoryLayer({ story }: { story: Story }) {
       const fog = scene.fog as THREE.Fog | null
       if (fog) {
         const d = camera.position.distanceTo(controls.target)
+        // a long falloff: the deck and rack ring recede into the dark instead of stopping at the core
         fog.near = d - 1.25
-        fog.far = d + 3.1
+        fog.far = d + 9
       }
     }
 

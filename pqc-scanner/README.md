@@ -73,14 +73,19 @@ Spatial and sensory layer:
   Shor-vulnerable primitive (RSA / ECDSA / classical ECDHE) the probe reports. DEFEND: a sub-bass sweep while the
   lattice grows, then a resonant chime when it locks. PROVE: a mechanical vault lock on the exact frame the block
   snaps into the chain. Toggle with **♪ SFX** (remembered per browser); audio starts after the first click.
-- **Bento command center**: a strict CSS grid (`.bento` in `src/hud/hud.css`). Left column (data & risk):
-  Vulnerability Tracker, Cryptographic Diagnostics, Risk Score. Centre: the 3D viewport card, which holds only the
-  WebGL canvas and the overlays registered to it (nothing renders under the text columns). Right column (network &
-  logs): Live Telemetry, Performance Impact. The five-stage pipeline is a fixed control bar at the bottom with the
-  current stage's action. Every card is `src/hud/bento.tsx`: 1px `rgba(255,255,255,0.1)` border, `blur(12px)` glass,
-  24px padding, 16px grid gaps, an icon header, and a hover tilt capped at 1.5° (a transform, so the grid never
-  shifts; off for the viewport and under reduced motion). Inter for headers and labels; JetBrains Mono only for the
-  telemetry log, hashes and IP addresses. Below 1024px the grid collapses to one column with the viewport first.
+- **Immersive spatial UI**: one full-screen WebGL command deck (long floor grid, a ring of server racks fading
+  into fog, dust motes that brighten near the core). The Diagnostics, Terminal (zsh-style), Risk Score and
+  Verification Sweep panes are `CSS3DRenderer` glass panes with 1px glowing cyan edges and curved scanlines, on a
+  rig that lazily follows the camera (`src/hud/spatial.tsx`). A layout grid of placeholders keeps them from
+  overlapping and leaves a core zone the hologram fits into. Hover is a raycast against each pane's plane: the pane
+  eases (GSAP) into a small tilt and scale toward the cursor, its sheen tracks the hit point, and a cyan light moves
+  there in the scene. Stage changes swoop the camera with a GSAP `expo.inOut` tween. Below 1024px and in AR the
+  panes render flat in one column under the hologram.
+- **Quantum lattice core** (`src/hud/Core.tsx`): a skewed 3D lattice (the Module-LWE picture behind ML-KEM /
+  ML-DSA) inside the globe, animated on the GPU. It is a scattered amber cloud while the handshake is classical,
+  consolidates site by site as the patch deploys, then pulses HDR cyan through the `UnrealBloomPass`. A `GlitchPass`
+  tears the frame only while the patch is deploying. Particle streams flow from the Diagnostics and Terminal panes
+  into the core, faster with each log line and new result.
 
 A caption bar explains each beat in plain language. Side panels show only real scan data (TLS link, certificate serial,
 timestamped event log). The header coordinates are the console's (Bengaluru), not the target's.

@@ -5,9 +5,12 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { GlitchPass } from 'three/examples/jsm/postprocessing/GlitchPass.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { hudAnchor, nodeAngles, type HoloNode, type HudMode, type Story } from './anchor'
 import { StoryLayer, fade } from './Story'
+import { CommandDeck, DataStreams, DustMotes, LatticeCore } from './Core'
+import { SpatialLayer, spatial } from './spatial'
 import { XR_SCALE, setXR, useXR, xrState } from './xr'
 
 const R = 1.5
@@ -139,6 +142,7 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
   const phase = useRef(0)
   const rot = useRef(0)
   const { camera, size } = useThree()
+  const hoverLight = useRef<THREE.PointLight>(null)
   const tmp = useMemo(() => ({ v: new THREE.Vector3(), n: new THREE.Vector3(), c: new THREE.Vector3(), q: new THREE.Vector3(), e: new THREE.Vector3() }), [])
   const unitCircle = useMemo(() => new THREE.BufferGeometry().setFromPoints(circle(1, 0, Math.PI * 2, 192)), [])
   const equator = useMemo(() => new THREE.BufferGeometry().setFromPoints(circle(R * 1.001, 0, Math.PI * 2, 256)), [])
@@ -147,8 +151,8 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
   const floor = useMemo(() => {
     const minor: number[] = []
     const major: number[] = []
-    const s = 6
-    for (let i = -24; i <= 24; i++) {
+    const s = 16 // a vast deck: the grid runs out into the fog
+    for (let i = -64; i <= 64; i++) {
       const v = i * 0.25
       const tgt = i % 4 === 0 ? major : minor
       tgt.push(-s, 0, v, s, 0, v, v, 0, -s, v, 0, s)
@@ -159,7 +163,7 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
     const p: number[] = []
     for (let i = -12; i <= 12; i++) {
       const v = i * 0.5
-      p.push(-6, v + 0.5, 0, 6, v + 0.5, 0, v, -2.5, 0, v, 6.5, 0)
+      p.push(-16, v + 0.5, 0, 16, v + 0.5, 0, v, -2.5, 0, v, 6.5, 0)
     }
     return segments(p)
   }, [])
@@ -203,12 +207,14 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
       root.current.visible = true
       root.current.quaternion.identity()
     }
-    // fit the hologram to its viewport card (pixels → world); the canvas holds nothing else
+    // fit the hologram into the free core zone between the floating panes (pixels → world)
     if (root.current && !xrState.presenting) {
-      const cx = W / 2
-      const cy = H * (story.active ? 0.47 : 0.5)
-      const k0 = story.active ? 0.2 : 0.3
-      const rpx = Math.min(W, H - 120) * k0
+      const z = hudAnchor.zoneEl?.getBoundingClientRect()
+      const cx = z ? z.left + z.width / 2 : W / 2
+      // sits a little high in the zone: the vault and link hang below the globe, the caption sits under them
+      const cy = z ? z.top + z.height * (story.active ? 0.42 : 0.5) : H / 2
+      const k0 = story.active ? 0.17 : 0.28
+      const rpx = (z ? Math.min(z.width, z.height) : Math.min(W, H)) * k0
       // world units per pixel at the base camera distance (fixed, so camera moves don't refit the scene)
       const px = (2 * Math.tan(THREE.MathUtils.degToRad(19)) * Math.hypot(0.9, 7.4)) / H
       const k = 1 - Math.exp(-dt * 4)
@@ -237,6 +243,12 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
     if (nodeMat.current) {
       const pulse = story.stage === 5 && story.rescan === 'done'
       nodeMat.current.size = pulse ? 5 + 3 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 3.9)) : 5
+    }
+
+    if (hoverLight.current) {
+      const l = hoverLight.current
+      l.position.lerp(spatial.hoverPoint, 1 - Math.exp(-dt * 10))
+      l.intensity += (spatial.hoverAmt * 3.5 - l.intensity) * (1 - Math.exp(-dt * 6))
     }
 
     // publish screen-space anchor + node positions for the DOM overlays (not drawn in AR)
@@ -317,6 +329,9 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
         </group>
 
         <StoryLayer story={story} />
+        <LatticeCore story={story} />
+        <DustMotes />
+        {!xr && <CommandDeck floorY={-R * 2.35} />}
 
         <group visible={!xr}>
           <lineSegments geometry={floor.minor} position={[0, -R * 2.35, 0]}>
@@ -330,6 +345,9 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
           </lineSegments>
         </group>
       </group>
+      {/* a pane under the cursor casts cyan light into the room */}
+      <pointLight ref={hoverLight} color={ICE} intensity={0} distance={7} decay={1.6} />
+      <DataStreams core={root} />
     </>
   )
 }
@@ -339,7 +357,7 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
  * Only HDR-bright materials (lattice, shields, packets, siphon, locked block) exceed the threshold and bleed light.
  * Rendered at ≤1.5× DPR into a 4× MSAA half-float target so 1-px lines stay crisp; bloom runs at half resolution.
  */
-function Effects() {
+function Effects({ glitch }: { glitch: boolean }) {
   const { gl, scene, camera, size } = useThree()
   const fx = useMemo(() => {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
@@ -347,9 +365,17 @@ function Effects() {
     composer.addPass(new RenderPass(scene, camera))
     const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.42, 0.8)
     composer.addPass(bloom)
+    // digital tearing while the post-quantum patch deploys, and never otherwise
+    const glitchPass = new GlitchPass()
+    glitchPass.enabled = false
+    composer.addPass(glitchPass)
     composer.addPass(new OutputPass())
-    return { composer, bloom }
+    return { composer, bloom, glitchPass }
   }, [gl, scene, camera])
+  useEffect(() => {
+    fx.glitchPass.enabled = glitch
+    fx.glitchPass.curF = 0 // start the deploy on a hard tear
+  }, [fx, glitch])
   useEffect(() => {
     fx.composer.setPixelRatio(Math.min(gl.getPixelRatio(), 1.5))
     fx.composer.setSize(size.width, size.height)
@@ -360,6 +386,8 @@ function Effects() {
   // headset / phone framebuffer (the composer can't target it); HDR colours are still tone-mapped there.
   useFrame((_, dt) => {
     gl.info.reset() // count every pass of the frame, not just the last one
+    // GlitchPass alone tears once every 2-4 s, longer than the deploy: burst it for the whole deployment
+    if (fx.glitchPass.enabled) fx.glitchPass.goWild = Math.random() < 0.28
     if (gl.xr.isPresenting) gl.render(scene, camera)
     else fx.composer.render(dt)
   }, 1)
@@ -451,7 +479,7 @@ function XRPlacement() {
   )
 }
 
-export function HudGlobe({ mode, nodes, story }: { mode: HudMode; nodes: HoloNode[]; story: Story }) {
+export function HudGlobe({ mode, nodes, story, spatialOn }: { mode: HudMode; nodes: HoloNode[]; story: Story; spatialOn: boolean }) {
   const { presenting } = useXR()
   return (
     <Canvas
@@ -462,9 +490,10 @@ export function HudGlobe({ mode, nodes, story }: { mode: HudMode; nodes: HoloNod
         xrState.gl = gl
       }}
     >
-      <Effects />
+      <Effects glitch={story.patching} />
       <Scene mode={mode} nodes={nodes} story={story} xr={presenting} />
       <XRPlacement />
+      <SpatialLayer on={spatialOn && !presenting} />
     </Canvas>
   )
 }

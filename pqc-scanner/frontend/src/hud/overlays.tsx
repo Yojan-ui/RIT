@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { hudAnchor, viewportOrigin, type HoloNode } from './anchor'
+import { hudAnchor, type HoloNode } from './anchor'
 
 const NODE_HEX = { warn: '#f97316', crit: '#ef4444', ok: '#10b981' } as const
 
@@ -68,7 +68,7 @@ export function HudRings({ target, index, total, dim = 1 }: { target: string | n
         <line x1="-100" y1="0" x2="-95" y2="0" stroke="#ffffff" strokeWidth="0.2" opacity="0.5" />
         <line x1="95" y1="0" x2="100" y2="0" stroke="#ffffff" strokeWidth="0.2" opacity="0.5" />
       </svg>
-      <div className={`hud-k absolute top-[8.5%] left-1/2 -translate-x-1/2 whitespace-nowrap ${dim < 1 ? 'hidden' : 'hidden lg:block'}`}>
+      <div className={`hud-k absolute bottom-[9%] left-1/2 -translate-x-1/2 whitespace-nowrap ${dim < 1 ? 'hidden' : 'hidden lg:block'}`}>
         ROT <span ref={brg} className="hud-ice">000.0</span>°
       </div>
       {target && (
@@ -142,13 +142,12 @@ export function TrackingLayer({ nodes, active }: { nodes: HoloNode[]; active: bo
       return
     }
     const next: Seg[] = []
-    const o = viewportOrigin() // node positions are viewport-relative; the rows are anywhere on the page
     for (const n of nodes) {
       const el = document.querySelector<HTMLElement>(`[data-lock="${CSS.escape(n.id)}"]`)
       const s = hudAnchor.nodes.find((h) => h.id === n.id)
       if (!el || !s) continue
       const r = el.getBoundingClientRect()
-      next.push({ id: n.id, sx: Math.round(s.x + o.x), sy: Math.round(s.y + o.y), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), color: NODE_HEX[n.state] })
+      next.push({ id: n.id, sx: Math.round(s.x), sy: Math.round(s.y), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), color: NODE_HEX[n.state] })
     }
     const key = JSON.stringify(next)
     if (key !== last.current) {
