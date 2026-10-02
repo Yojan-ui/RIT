@@ -67,9 +67,9 @@ function Section({ id, eyebrow, title, children }: { id: string; eyebrow: string
   )
 }
 
-export function LandingPage({ onLaunch, onIntent }: { onLaunch: () => void; onIntent?: () => void }) {
+export function LandingPage({ onLaunch }: { onLaunch: () => void }) {
   return (
-    <div className="min-h-dvh bg-[#09090B] font-sans text-[#FAFAFA] antialiased selection:bg-white/15">
+    <div className="min-h-dvh font-sans text-[#FAFAFA] antialiased selection:bg-white/15">
       <header className="sticky top-0 z-10 border-b border-neutral-800 bg-[#09090B]/90 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-8">
           <a href="#top" className="flex items-center gap-2.5" aria-label="QuantumLedger home">
@@ -82,7 +82,7 @@ export function LandingPage({ onLaunch, onIntent }: { onLaunch: () => void; onIn
           <nav className="flex items-center gap-6 text-[13px] text-neutral-400">
             <a href="#threat" className="hidden transition-colors hover:text-[#FAFAFA] sm:inline">Threat</a>
             <a href="#approach" className="hidden transition-colors hover:text-[#FAFAFA] sm:inline">Approach</a>
-            <button onClick={onLaunch} onPointerEnter={onIntent} onFocus={onIntent} className="transition-colors hover:text-[#FAFAFA]">
+            <button onClick={onLaunch} className="transition-colors hover:text-[#FAFAFA]">
               Open console
             </button>
           </nav>
@@ -105,8 +105,6 @@ export function LandingPage({ onLaunch, onIntent }: { onLaunch: () => void; onIn
           <motion.div variants={rise} className="mt-12 flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-8">
             <button
               onClick={onLaunch}
-              onPointerEnter={onIntent}
-              onFocus={onIntent}
               className="group inline-flex h-12 items-center gap-3 rounded-[3px] bg-[#059669] px-6 text-[14px] font-medium text-[#FAFAFA] transition-colors hover:bg-[#047857] focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[#FAFAFA] active:translate-y-px"
             >
               Initialize Network Diagnostics
@@ -178,8 +176,6 @@ export function LandingPage({ onLaunch, onIntent }: { onLaunch: () => void; onIn
           <motion.button
             variants={rise}
             onClick={onLaunch}
-            onPointerEnter={onIntent}
-            onFocus={onIntent}
             className="inline-flex h-12 shrink-0 items-center gap-3 rounded-[3px] border border-neutral-700 px-6 text-[14px] font-medium transition-colors hover:border-neutral-500 hover:bg-white/[0.03] focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[#FAFAFA]"
           >
             Open the console

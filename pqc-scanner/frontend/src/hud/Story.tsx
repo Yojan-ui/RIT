@@ -100,7 +100,7 @@ const N_PK = 12
 const ZOOM_BAND = [0.45, 1.6] as const // user zoom limits, as fractions of the current stage framing distance
 // Wake-up: while the landing page covers the console the camera waits pulled back, raised and swung off-axis,
 // then flies into its interactive framing as the landing dissolves (radius ×, polar rise rad, orbit rad, seconds).
-// The flight waits until the landing's ground starts to clear (QuantumLedger's curtain), so it's seen whole.
+// The flight waits until the landing's 0.8 s dissolve (QuantumLedger) is about half clear, so it's seen whole.
 const WAKE = { dist: 1.65, rise: 0.42, orbit: -0.62, dur: 1.5, delay: 0.35 } as const
 const REDUCED_MOTION = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
