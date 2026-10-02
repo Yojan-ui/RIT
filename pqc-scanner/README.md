@@ -156,7 +156,8 @@ A stepper over the WebGL core walks through **Detect → Score → Defend → Pr
    High (40–69) and CRITICAL (70–100); **Validate Math** shows the formula with this endpoint's values.
 3. **Defend**: *Deploy ML-DSA/ML-KEM Patch* morphs the chips to **ML-DSA-65** (FIPS 204) and **X25519MLKEM768**
    (FIPS 203) and shifts the core from red/amber to cyan/green. Simulated and labelled as such; the OpenSSL runbook is behind a disclosure.
-4. **Prove**: anchors a real Web Crypto SHA-256 Merkle block and types it out as terminal output; tamper test behind a
+4. **Prove**: anchors a real Web Crypto SHA-256 Merkle block, hybrid-signs its block hash with Ed25519 and ML-DSA-65
+   (both must verify; the signer key is pinned per browser), and types it out as terminal output; tamper test behind a
    disclosure.
 5. **Rescan**: a verification pass against the patched configuration; the score ring goes to 100 (PQC-ready). It states
    that the live server is unchanged.

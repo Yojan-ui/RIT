@@ -14,7 +14,7 @@ const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } }
 const FACTS: [string, string][] = [
   ['FIPS 203 · 204', 'ML-KEM and ML-DSA, the NIST post-quantum standards we test against'],
   ['2029', 'DST task-force deadline for critical information infrastructure'],
-  ['0', 'Network calls outside your perimeter'],
+  ['0', 'Cloud dependencies'],
 ]
 
 const TIMELINE: [string, string, string][] = [
@@ -44,7 +44,7 @@ const PILLARS: { n: string; title: string; body: string; detail: ReactNode }[] =
     n: '03',
     title: 'Verifiable proof',
     body: 'Each assessment is sealed into a hash-chained Merkle ledger with hybrid classical and post-quantum signatures, so auditors can independently verify that findings and remediations have not been altered.',
-    detail: <>SHA-256 Merkle root · ML-DSA + classical</>,
+    detail: <>SHA-256 Merkle root · Ed25519 + ML-DSA-65</>,
   },
 ]
 

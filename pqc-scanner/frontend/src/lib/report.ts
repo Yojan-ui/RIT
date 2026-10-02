@@ -140,11 +140,12 @@ export function exportPdfReport(r: ScanResult, s: ReportState) {
     kv('Previous hash', s.block.prev_hash, true)
     kv('Merkle root', s.block.merkle_root, true)
     kv('Block hash', s.block.block_hash, true)
-    kv('Verified', s.verification ? (s.verification.valid ? 'Yes: all leaves, root, block hash and chain link match' : 'NO: record altered') : 'not checked')
+    kv('Signature', s.block.signature ? `${s.block.signature.alg} · signer ${s.block.signature.signer}` : 'unsigned', true)
+    kv('Verified', s.verification ? (s.verification.valid ? 'Yes: leaves, root, block hash, both signatures and chain link match' : 'NO: record altered or signature invalid') : 'not checked')
   }
 
   gap(18)
-  text('Detection is a live TLS handshake. The remediation shown is a simulation; no changes were made to the server. Ledger hashes are real SHA-256 and stored in the issuing browser.', 8, { color: [140, 140, 150] })
+  text('Detection is a live TLS handshake. The remediation shown is a simulation; no changes were made to the server. Ledger hashes are real SHA-256, hybrid-signed with Ed25519 + ML-DSA-65, and stored in the issuing browser.', 8, { color: [140, 140, 150] })
 
   const pages = doc.getNumberOfPages()
   for (let i = 1; i <= pages; i++) {

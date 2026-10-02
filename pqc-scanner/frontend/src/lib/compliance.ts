@@ -215,7 +215,7 @@ export function exportComplianceReport(c: ComplianceInput) {
   }
 
   // ── 5 ledger ──
-  section(c.perf ? 5 : 4, 'Ledger proof (SHA-256 Merkle chain)')
+  section(c.perf ? 5 : 4, 'Ledger proof (SHA-256 Merkle chain, Ed25519 + ML-DSA-65 signed)')
   if (c.block) {
     const b = c.block
     kv('Block', `#${b.index} · ${b.timestamp}`, { mono: true })
@@ -223,6 +223,11 @@ export function exportComplianceReport(c: ComplianceInput) {
     kv('Merkle root', b.merkle_root, { mono: true })
     kv('Previous block hash', b.prev_hash, { mono: true })
     kv('Block hash', b.block_hash, { mono: true, color: CYAN })
+    if (b.signature) {
+      kv('Signer', b.signature.signer, { mono: true })
+      kv('Ed25519 signature', b.signature.ed25519_sig, { mono: true })
+      kv('ML-DSA-65 signature', `${b.signature.mldsa_sig.slice(0, 64)}… (${b.signature.mldsa_sig.length / 2} B, full value in the CBOM export)`, { mono: true })
+    } else kv('Signature', 'unsigned', { mono: true, color: CRIM })
     if (c.verification) {
       gap(2)
       c.verification.checks.forEach((ch) => text(`[${ch.ok ? 'OK' : 'FAIL'}] ${ch.name}: ${ch.detail}`, 8.5, { mono: true, color: ch.ok ? OK : CRIM, x: M + 150 }))
@@ -231,7 +236,7 @@ export function exportComplianceReport(c: ComplianceInput) {
 
   gap(18)
   text(
-    'Detection is a live TLS 1.3 handshake from the QuantumLedger host. The remediation and the re-verification are simulated against the patched configuration; no change was made to the live server. Ledger hashes are real SHA-256 over canonical JSON of each stage record; recompute them to verify this report.',
+    'Detection is a live TLS 1.3 handshake from the QuantumLedger host. The remediation and the re-verification are simulated against the patched configuration; no change was made to the live server. Ledger hashes are real SHA-256 over canonical JSON of each stage record, and the block hash is signed with both Ed25519 and ML-DSA-65; recompute and verify them to check this report.',
     7.5,
     { color: DIM },
   )

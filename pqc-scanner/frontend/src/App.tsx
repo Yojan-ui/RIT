@@ -361,8 +361,9 @@ export default function App() {
                             { text: `merkle_root          ${block.merkle_root}`, tone: 'strong' },
                             { text: `prev_hash            ${block.prev_hash}`, tone: 'dim' },
                             { text: `block_hash           ${block.block_hash}`, tone: 'strong' },
+                            ...(block.signature ? [{ text: `sig ${block.signature.alg.padEnd(17)} signer ${block.signature.signer.slice(0, 16)}…`, tone: 'dim' as const }] : []),
                             { text: `$ ledger verify #${block.index}`, tone: 'dim' },
-                            { text: verification?.valid ? '✓ leaves, root, block hash and chain link match' : '✗ verification failed', tone: verification?.valid ? 'ok' : 'bad' },
+                            { text: verification?.valid ? '✓ leaves, root, block hash, Ed25519 + ML-DSA-65 signatures and chain link match' : '✗ verification failed', tone: verification?.valid ? 'ok' : 'bad' },
                           ]}
                         />
                         {typed && (

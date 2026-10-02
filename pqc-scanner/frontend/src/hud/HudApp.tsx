@@ -478,6 +478,7 @@ function DiagnosticsPane({ p, addrs, shorVuln, total }: { p: Pipeline; addrs: st
         <>
           <Row k="MERKLE_ROOT" mono cls="text-[#d4d4d8]" title={b.merkle_root}>{b.merkle_root}</Row>
           <Row k="BLOCK_HASH" mono cls="text-[#d4d4d8]" title={b.block_hash}>{b.block_hash}</Row>
+          <Row k="SIGNATURE" cls={b.signature ? (v?.valid ? 'hud-ok' : 'hud-warn') : 'hud-crit'} title={b.signature ? `signer ${b.signature.signer}` : undefined}>{b.signature ? `${b.signature.alg} · ${b.signature.signer.slice(0, 12)}` : 'unsigned'}</Row>
         </>
       )}
 

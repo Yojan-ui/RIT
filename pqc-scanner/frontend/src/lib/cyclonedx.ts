@@ -117,6 +117,16 @@ export function buildCbom(s: CbomState) {
           { name: 'pqc:ledger:block', value: String(s.block.index) },
           { name: 'pqc:ledger:block-hash', value: s.block.block_hash },
           { name: 'pqc:ledger:merkle-root', value: s.block.merkle_root },
+          ...(s.block.signature
+            ? [
+                { name: 'pqc:ledger:signature-alg', value: s.block.signature.alg },
+                { name: 'pqc:ledger:signer', value: s.block.signature.signer },
+                { name: 'pqc:ledger:ed25519-pk', value: s.block.signature.ed25519_pk },
+                { name: 'pqc:ledger:ed25519-sig', value: s.block.signature.ed25519_sig },
+                { name: 'pqc:ledger:mldsa65-pk', value: s.block.signature.mldsa_pk },
+                { name: 'pqc:ledger:mldsa65-sig', value: s.block.signature.mldsa_sig },
+              ]
+            : []),
           { name: 'pqc:ledger:verified', value: String(!!s.verification?.valid) },
         ]
       : []),
