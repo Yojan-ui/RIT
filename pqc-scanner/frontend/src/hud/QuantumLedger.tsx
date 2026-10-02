@@ -8,8 +8,11 @@ import { LandingPage } from './LandingPage'
 const loadDashboard = () => import('./HudApp')
 const HudApp = lazy(loadDashboard)
 
-// the curtain: the landing pushes toward the viewer and fades while its onyx ground clears to the console
+// The curtain (0.8 s): the landing pushes toward the viewer throughout, but its text clears in the first
+// 0.3 s and the onyx ground only starts to lift at 0.2 s, so landing copy and console panes never overlap.
 const CURTAIN = { duration: 0.8, ease: 'easeInOut' } as const
+const TEXT_OUT = { opacity: { duration: 0.3, ease: 'easeOut' }, scale: CURTAIN } as const
+const GROUND_OUT = { duration: 0.6, delay: 0.2, ease: 'easeInOut' } as const
 
 export default function QuantumLedger() {
   const [mounted, setMounted] = useState(false) // console in the tree, dormant behind the landing
@@ -44,9 +47,9 @@ export default function QuantumLedger() {
         )}
         <AnimatePresence>
           {!awake && (
-            <motion.div key="landing" className="fixed inset-0 z-50 overflow-hidden bg-[#09090B]" exit={{ backgroundColor: 'rgba(9, 9, 11, 0)' }} transition={CURTAIN}>
+            <motion.div key="landing" className="fixed inset-0 z-50 overflow-hidden bg-[#09090B]" exit={{ backgroundColor: 'rgba(9, 9, 11, 0)', transition: GROUND_OUT }}>
               {/* the landing scrolls inside this viewport-sized box, so the exit scales about the visible centre */}
-              <motion.div className="h-full overflow-y-auto overscroll-contain" exit={{ opacity: 0, scale: 1.05 }} transition={CURTAIN}>
+              <motion.div className="h-full overflow-y-auto overscroll-contain" exit={{ opacity: 0, scale: 1.05, transition: TEXT_OUT }}>
                 <LandingPage onLaunch={launch} onIntent={warm} />
               </motion.div>
             </motion.div>
