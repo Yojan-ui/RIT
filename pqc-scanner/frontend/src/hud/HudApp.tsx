@@ -199,7 +199,8 @@ function NodeRow({ idx, role, name, state, note, lock }: { idx: number; role: st
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
-export default function HudApp() {
+/** `awake` false: mounted dormant behind the landing page so the scene is already running when it dissolves. */
+export default function HudApp({ awake = true }: { awake?: boolean }) {
   // Live telemetry: backend log records streamed over SSE, plus UI pipeline events.
   const [lines, setLines] = useState<TLine[]>([])
   const [stream, setStream] = useState<{ state: StreamState; meta: string }>({ state: 'idle', meta: '' })
@@ -291,8 +292,11 @@ export default function HudApp() {
     add({ t: stamp(), src: 'ui', tag: 'report', text: `QuantumLedger-Compliance-${r.domain}.pdf generated${p.block ? ` · block ${p.block.block_hash.slice(0, 12)}…` : ''}`, level: 'INFO', tone: 'ok' })
   }
   useEffect(() => {
+    if (!awake) return
     document.title = 'QuantumLedger · PQC HUD'
-  }, [])
+    // the target field can't take focus while the console is inert behind the landing page
+    focusQuietly(document.querySelector<HTMLInputElement>('.hud-root .hud-input'))
+  }, [awake])
   // the ledger is shown as rows (no typing terminal); a verified block counts as read
   const { verification, setTyped } = p
   useEffect(() => {
@@ -362,7 +366,7 @@ export default function HudApp() {
     <div className="hud-root">
       {/* the immersive core: one full-screen WebGL command deck */}
       <div className="fixed inset-0 z-[1]">
-        <HudGlobe mode={mode} nodes={nodes} story={scene} spatialOn={spatialOn} />
+        <HudGlobe mode={mode} nodes={nodes} story={scene} spatialOn={spatialOn} awake={awake} />
       </div>
       <div className="pointer-events-none fixed inset-0 z-[4]">
         <div className="hud-vignette" aria-hidden />

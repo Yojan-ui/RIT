@@ -150,7 +150,7 @@ function OrbitRing({ radius, tilt, speed, color, opacity, markerSpeed }: { radiu
   )
 }
 
-function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; story: Story; xr: boolean }) {
+function Scene({ mode, nodes, story, xr, awake }: { mode: HudMode; nodes: HoloNode[]; story: Story; xr: boolean; awake: boolean }) {
   const root = useRef<THREE.Group>(null)
   const globe = useRef<THREE.Group>(null)
   const scan = useRef<THREE.Group>(null)
@@ -364,7 +364,7 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
         <OrbitRing radius={R * 1.56} tilt={[1.45, 0.55, -0.2]} speed={0.05} color={TEAL} opacity={0.22} markerSpeed={0.22} />
         </group>
 
-        <StoryLayer story={story} />
+        <StoryLayer story={story} awake={awake} />
         <LatticeCore story={story} />
         {!xr && <CommandDeck floorY={-R * 2.35} />}
 
@@ -525,19 +525,22 @@ function XRPlacement() {
   )
 }
 
-export function HudGlobe({ mode, nodes, story, spatialOn }: { mode: HudMode; nodes: HoloNode[]; story: Story; spatialOn: boolean }) {
+/** `awake` false: pre-mounted behind the landing page. One frame is drawn (shaders compiled, camera held at
+ * its wake-up pose), then the loop idles until the landing is dismissed. */
+export function HudGlobe({ mode, nodes, story, spatialOn, awake = true }: { mode: HudMode; nodes: HoloNode[]; story: Story; spatialOn: boolean; awake?: boolean }) {
   const { presenting } = useXR()
   return (
     <Canvas
       camera={{ position: [0, 0.9, 7.4], fov: 38 }}
       dpr={[1, 1.5]}
+      frameloop={awake ? 'always' : 'demand'}
       gl={{ antialias: false, powerPreference: 'high-performance', toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}
       onCreated={({ gl }) => {
         xrState.gl = gl
       }}
     >
       {presenting ? <DirectRender /> : <Effects glitch={story.patching} />}
-      <Scene mode={mode} nodes={nodes} story={story} xr={presenting} />
+      <Scene mode={mode} nodes={nodes} story={story} xr={presenting} awake={awake} />
       <XRPlacement />
       <SpatialLayer on={spatialOn && !presenting} />
     </Canvas>

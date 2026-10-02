@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { motion } from 'framer-motion'
+import { motion, type Variants } from 'framer-motion'
 import { ArrowRight } from 'lucide-react'
 import '@fontsource-variable/geist'
 import { BASE_YEAR, Z_YEARS } from '../lib/mosca'
@@ -7,9 +7,14 @@ import { BASE_YEAR, Z_YEARS } from '../lib/mosca'
 // The QuantumLedger gateway: an austere briefing page in front of the 3D console.
 // Onyx ground, off-white type, hairline neutral borders; emerald (#059669) is reserved for the one primary action.
 
+// Entrance: each block fades in and rises 20px on a soft spring, 150 ms apart. The hero plays on load;
+// the sections below the fold play the same sequence the first time they scroll into view.
 const ease = [0.2, 0, 0, 1] as const
-const rise = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.6, ease } } }
-const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } }
+const rise: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { y: { type: 'spring', visualDuration: 0.7, bounce: 0.12 }, opacity: { duration: 0.6, ease } } },
+}
+const stagger: Variants = { hidden: {}, show: { transition: { staggerChildren: 0.15 } } }
 
 const FACTS: [string, string][] = [
   ['FIPS 203 · 204', 'ML-KEM and ML-DSA, the NIST post-quantum standards we test against'],

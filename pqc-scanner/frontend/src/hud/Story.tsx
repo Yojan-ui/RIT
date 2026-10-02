@@ -98,6 +98,10 @@ const MERKLE_IDS = new Set(['block', 'leaf0', 'leaf1', 'leaf2', 'prev', 'next'])
 const NO_SCALE = new Set(['link', 'core'])
 const N_PK = 12
 const ZOOM_BAND = [0.45, 1.6] as const // user zoom limits, as fractions of the current stage framing distance
+// Wake-up: while the landing page covers the console the camera waits pulled back, raised and swung off-axis,
+// then flies into its interactive framing as the landing dissolves (radius ×, polar rise rad, orbit rad, seconds).
+const WAKE = { dist: 1.65, rise: 0.42, orbit: -0.62, dur: 1.5 } as const
+const REDUCED_MOTION = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const ease = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t))
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t))
@@ -238,7 +242,7 @@ function burst(sh: Shards, origin: THREE.Vector3, n: number, speed: number, colo
 
 type CamMode = 'base' | 'vault' | 'wide' | 'radar' | 'xkem' | 'xmerkle'
 
-export function StoryLayer({ story }: { story: Story }) {
+export function StoryLayer({ story, awake = true }: { story: Story; awake?: boolean }) {
   const { camera, size, scene, gl } = useThree()
   const g = {
     self: useRef<THREE.Group>(null),
@@ -317,6 +321,7 @@ export function StoryLayer({ story }: { story: Story }) {
     sweepA: 0,
     flight: { active: false, t: 0, dur: 2, swoop: 0, fromT: new THREE.Vector3(), from: new THREE.Spherical(), to: new THREE.Spherical() },
     reframe: false,
+    woke: REDUCED_MOTION, // false while the console sits dormant behind the landing page
     hover: null as string | null,
     hitPoint: new THREE.Vector3(),
     pkT: 0, // packet clock; stops while the link is hovered (freeze-frame)
@@ -594,9 +599,19 @@ export function StoryLayer({ story }: { story: Story }) {
       // spherical about the moving focal point with a mid-flight rise and orbital sweep ("swoop"),
       // strongest for the pull-back into the Merkle tree.
       const f = s.flight
+      // dormant: hold the wide pose off the current framing (re-posed on resize), then fly in once awake
+      if (!s.woke) {
+        sph.setFromVector3(tmp.v.copy(tmp.p).sub(tmp.l))
+        sph.set(sph.radius * WAKE.dist, Math.max(0.12, sph.phi - WAKE.rise), sph.theta + WAKE.orbit)
+        controls.target.copy(tmp.l)
+        camera.position.setFromSpherical(sph).add(tmp.l)
+        s.mode = 'wake'
+        s.woke = awake
+      }
       const modeKey = `${mode}|${size.width}x${size.height}`
-      if (modeKey !== s.mode || s.reframe) {
+      if (s.woke && (modeKey !== s.mode || s.reframe)) {
         const first = s.mode === ''
+        const wake = s.mode === 'wake'
         s.mode = modeKey
         s.reframe = false
         f.active = true
@@ -605,11 +620,16 @@ export function StoryLayer({ story }: { story: Story }) {
         const travel = camera.position.distanceTo(tmp.p) + controls.target.distanceTo(tmp.l)
         f.swoop = mode === 'wide' ? 1.25 : mode === 'radar' ? 0.8 : mode === 'vault' ? 0.6 : mode === 'xkem' || mode === 'xmerkle' ? 0.3 : 0.35
         f.dur = Math.min(3.6, Math.max(mode === 'wide' ? 3 : 1.9, 1.5 + travel * 0.4))
+        if (wake) {
+          // a straight dolly-and-orbit in, already moving while the landing page fades
+          f.swoop = 0
+          f.dur = WAKE.dur
+        }
         gsap.killTweensOf(f)
         if (first) f.t = 1
         else {
           f.t = 0
-          gsap.to(f, { t: 1, duration: f.dur, ease: 'expo.inOut' })
+          gsap.to(f, { t: 1, duration: f.dur, ease: wake ? 'power2.inOut' : 'expo.inOut' })
         }
       }
       if (f.active) {
