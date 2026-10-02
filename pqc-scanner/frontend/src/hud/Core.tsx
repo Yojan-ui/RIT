@@ -16,11 +16,11 @@ import { xray } from './xray'
 import { xrState } from './xr'
 
 const R = 1.5 // globe radius, same as HudGlobe
-const ICE = new THREE.Color('#5EEAD4') // icy teal: active / secured only
-const CYAN = new THREE.Color('#5EEAD4')
-const EMERALD = new THREE.Color('#34D399') // mint: verified
+const ICE = new THREE.Color('#e4e4e7') // bright titanium: active / secured only
+const CYAN = new THREE.Color('#d4d4d8')
+const EMERALD = new THREE.Color('#059669') // deep emerald: verified
 const AMBER = new THREE.Color('#f97316')
-const STEEL = new THREE.Color('#64748b') // slate: inactive structure
+const STEEL = new THREE.Color('#71717a') // zinc: inactive structure
 
 // ── lattice core ─────────────────────────────────────────────────────────────
 
@@ -262,7 +262,7 @@ export function LatticeCore({ story }: { story: Story }) {
 export function CommandDeck({ floorY }: { floorY: number }) {
   const racks = useMemo(() => {
     const n = 34
-    const body = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#111a24', metalness: 0.8, roughness: 0.5, envMapIntensity: 0.6 }), n)
+    const body = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#141416', metalness: 0.8, roughness: 0.5, envMapIntensity: 0.6 }), n)
     const strip = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: ICE.clone().multiplyScalar(0.3) }), n * 2) // dim status LEDs, fogged with the room
     const m = new THREE.Matrix4()
     const q = new THREE.Quaternion()

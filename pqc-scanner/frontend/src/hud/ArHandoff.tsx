@@ -22,7 +22,7 @@ function Qr({ text }: { text: string }) {
   return (
     <svg viewBox={`-2 -2 ${n + 4} ${n + 4}`} className="ar-qr" role="img" aria-label={`QR code for ${text}`}>
       <rect x={-2} y={-2} width={n + 4} height={n + 4} fill="#fff" />
-      <path d={d} fill="#080a0f" shapeRendering="crispEdges" />
+      <path d={d} fill="#09090b" shapeRendering="crispEdges" />
     </svg>
   )
 }
@@ -93,7 +93,7 @@ export function ArHandoff({ domain }: { domain: string }) {
             <>
               <Qr text={url} />
               <p className="hud-ice mt-2 break-all text-[10.5px]">{url}</p>
-              <ol className="mt-2 space-y-1 text-[10.5px] leading-[15px] text-[#9aa7b4]">
+              <ol className="mt-2 space-y-1 text-[10.5px] leading-[15px] text-[#a1a1aa]">
                 <li>1 · same Wi-Fi as this laptop; Chrome on Android with ARCore</li>
                 <li>2 · accept the self-signed certificate warning (advanced → proceed)</li>
                 <li>3 · tap “project”, sweep the table, tap to place the globe, lattice shield and merkle ledger</li>
@@ -102,7 +102,7 @@ export function ArHandoff({ domain }: { domain: string }) {
             </>
           )}
           {lan === null && (
-            <p className="mt-3 text-[11px] leading-[16px] text-[#9aa7b4]">
+            <p className="mt-3 text-[11px] leading-[16px] text-[#a1a1aa]">
               LAN handoff is off, so this demo is only on localhost. Restart it with <span className="hud-ice">AR=1 ./run_cyber_demo.sh</span> to also serve it over HTTPS on your Wi-Fi, then scan the code shown here.
             </p>
           )}

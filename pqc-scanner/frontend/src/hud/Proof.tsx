@@ -26,7 +26,7 @@ const lineLen = (l: TLine) => l.src.length + 1 + Math.max(5, l.tag.length) + 1 +
 
 /** Coloured segments of one log line, cut to its first `n` characters. */
 function Segments({ l, n }: { l: TLine; n: number }) {
-  const textCls = l.tone === 'crit' || l.level === 'ERROR' ? 'hud-crit' : l.tone === 'warn' || l.level === 'WARNING' ? 'hud-warn' : l.tone === 'ok' ? 'hud-ok' : l.tone === 'dim' ? 'hud-dim' : 'text-[#c9d4de]'
+  const textCls = l.tone === 'crit' || l.level === 'ERROR' ? 'hud-crit' : l.tone === 'warn' || l.level === 'WARNING' ? 'hud-warn' : l.tone === 'ok' ? 'hud-ok' : l.tone === 'dim' ? 'hud-dim' : 'text-[#d4d4d8]'
   const segs: [string, string][] = [
     [l.src, SRC[l.src]],
     [' ', ''],
@@ -98,7 +98,7 @@ export function TelemetryTerminal({ lines, state, meta, target }: { lines: TLine
       <div className="hud-mono flex justify-between gap-3 border-b border-[var(--line)] px-5 py-2 text-[10.5px]">
         <span className="truncate">
           <span className="hud-ok">➜</span> <span className="hud-ice">quantumledger</span> <span className="hud-steel">~/soc</span> <span className="hud-dim">%</span>{' '}
-          <span className="text-[#e6edf3]">pqc-scan --stream {target || '<target>'}</span>
+          <span className="text-[#fafafa]">pqc-scan --stream {target || '<target>'}</span>
         </span>
         <span className="hud-dim flex-none">{meta}</span>
       </div>

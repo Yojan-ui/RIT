@@ -13,11 +13,11 @@ import { SpatialLayer, spatial } from './spatial'
 import { XR_SCALE, setXR, useXR, xrState } from './xr'
 
 const R = 1.5
-const SLATE_BG = '#0F172A' // background, fog and inactive structure
-const STEEL = new THREE.Color('#64748b')
-const TITANIUM = new THREE.Color('#475569')
-const TEAL = new THREE.Color('#5EEAD4') // active elements only
-const MINT = new THREE.Color('#34D399') // secured state
+const SLATE_BG = '#09090B' // onyx: background, fog and inactive structure
+const STEEL = new THREE.Color('#71717a')
+const TITANIUM = new THREE.Color('#52525b')
+const TEAL = new THREE.Color('#d4d4d8') // titanium: active elements only
+const MINT = new THREE.Color('#059669') // deep emerald: secured state
 const NODE_COLOR = { warn: new THREE.Color('#f97316'), crit: new THREE.Color('#ef4444'), ok: MINT }
 
 const REDUCED_MOTION = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -315,9 +315,9 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
       {!xr && <fog attach="fog" args={[SLATE_BG, 6.2, 10.5]} />}
       <Environment />
       <ambientLight intensity={0.18} />
-      <hemisphereLight args={['#94a3b8', SLATE_BG, 0.35]} />
-      <directionalLight position={[3, 5, 4]} intensity={1.4} color="#dbe7f2" />
-      <directionalLight position={[-4, 1.5, -3]} intensity={0.5} color="#64748b" />
+      <hemisphereLight args={['#a1a1aa', SLATE_BG, 0.35]} />
+      <directionalLight position={[3, 5, 4]} intensity={1.4} color="#f4f4f5" />
+      <directionalLight position={[-4, 1.5, -3]} intensity={0.5} color="#71717a" />
       <group ref={root}>
         <group ref={globe} rotation={[0.28, 0, 0]}>
           <points>
@@ -380,7 +380,7 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
           </lineSegments>
         </group>
       </group>
-      {/* a pane under the cursor casts cyan light into the room */}
+      {/* a pane under the cursor casts titanium light into the room */}
       <pointLight ref={hoverLight} color={TEAL} intensity={0} distance={7} decay={1.6} />
       <DataStreams core={root} />
     </>

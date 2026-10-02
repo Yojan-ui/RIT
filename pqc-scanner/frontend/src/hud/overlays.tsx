@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { hudAnchor, type HoloNode } from './anchor'
 
-const NODE_HEX = { warn: '#f97316', crit: '#ef4444', ok: '#10b981' } as const
+const NODE_HEX = { warn: '#f97316', crit: '#ef4444', ok: '#059669' } as const
 
 /** rAF loop that only runs while mounted. */
 export function useFrameLoop(fn: () => void) {
@@ -42,7 +42,7 @@ export function HudRings({ target, index, total, dim = 1 }: { target: string | n
   return (
     <div ref={box} className="pointer-events-none absolute top-0 left-0 z-[5] transition-opacity duration-700" style={{ opacity: 0 }} aria-hidden>
       <svg viewBox="-100 -100 200 200" className="absolute inset-0 h-full w-full overflow-visible">
-        <g stroke="#577c95" strokeWidth="0.18">
+        <g stroke="#71717a" strokeWidth="0.18">
           {ticks.map((d) => {
             const a = ((d - 90) * Math.PI) / 180
             const r0 = d % 30 === 0 ? 90.5 : d % 10 === 0 ? 92 : 93
@@ -52,21 +52,21 @@ export function HudRings({ target, index, total, dim = 1 }: { target: string | n
         {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((d) => {
           const a = ((d - 90) * Math.PI) / 180
           return (
-            <text key={d} x={Math.cos(a) * 98} y={Math.sin(a) * 98 + 1} textAnchor="middle" fontSize="2.4" fill="#6b7785" fontFamily="Inter Variable, system-ui, sans-serif">
+            <text key={d} x={Math.cos(a) * 98} y={Math.sin(a) * 98 + 1} textAnchor="middle" fontSize="2.4" fill="#71717a" fontFamily="Inter Variable, system-ui, sans-serif">
               {String(d).padStart(3, '0')}
             </text>
           )
         })}
-        <circle r="86" fill="none" stroke="#4b5563" strokeWidth="0.15" strokeDasharray="0.6 1.4" />
+        <circle r="86" fill="none" stroke="#52525b" strokeWidth="0.15" strokeDasharray="0.6 1.4" />
         <g ref={marker}>
-          <path d="M 0 -89.5 L 1.1 -87.6 L -1.1 -87.6 Z" fill="#67e8f9" />
+          <path d="M 0 -89.5 L 1.1 -87.6 L -1.1 -87.6 Z" fill="#e4e4e7" />
         </g>
         {/* 90° corner brackets */}
         {[0, 90, 180, 270].map((r) => (
-          <path key={r} transform={`rotate(${r})`} d="M -70 -64 V -70 H -64" fill="none" stroke="#ffffff" strokeWidth="0.25" opacity="0.55" />
+          <path key={r} transform={`rotate(${r})`} d="M -70 -64 V -70 H -64" fill="none" stroke="#fafafa" strokeWidth="0.25" opacity="0.55" />
         ))}
-        <line x1="-100" y1="0" x2="-95" y2="0" stroke="#ffffff" strokeWidth="0.2" opacity="0.5" />
-        <line x1="95" y1="0" x2="100" y2="0" stroke="#ffffff" strokeWidth="0.2" opacity="0.5" />
+        <line x1="-100" y1="0" x2="-95" y2="0" stroke="#fafafa" strokeWidth="0.2" opacity="0.5" />
+        <line x1="95" y1="0" x2="100" y2="0" stroke="#fafafa" strokeWidth="0.2" opacity="0.5" />
       </svg>
       <div className={`hud-k absolute bottom-[9%] left-1/2 -translate-x-1/2 whitespace-nowrap ${dim < 1 ? 'hidden' : 'hidden lg:block'}`}>
         ROT <span ref={brg} className="hud-ice">000.0</span>°
@@ -227,33 +227,33 @@ export function CwmGauge({ score, severity }: { score: number; severity: 'Low' |
     const [x2, y2] = pt(b, rad)
     return `M ${x1} ${y1} A ${rad} ${rad} 0 0 1 ${x2} ${y2}`
   }
-  const color = severity === 'CRITICAL' ? '#ef4444' : severity === 'High' ? '#f97316' : '#10b981'
+  const color = severity === 'CRITICAL' ? '#ef4444' : severity === 'High' ? '#f97316' : '#059669'
   const [nx, ny] = pt(Math.min(100, score), r - 6)
   return (
     <svg viewBox="-86 -82 172 96" className="w-full max-w-[260px]" role="img" aria-label={`CWM ${score} of 100, ${severity}`}>
-      <path d={arc(0, 100)} fill="none" stroke="#4b5563" strokeWidth="0.75" />
+      <path d={arc(0, 100)} fill="none" stroke="#52525b" strokeWidth="0.75" />
       <path d={arc(40, 70, r + 3)} fill="none" stroke="#f97316" strokeWidth="0.75" opacity="0.6" />
       <path d={arc(70, 100, r + 3)} fill="none" stroke="#ef4444" strokeWidth="0.75" opacity="0.7" />
       {Array.from({ length: 21 }, (_, i) => i * 5).map((v) => {
         const [x1, y1] = pt(v, r)
         const [x2, y2] = pt(v, v % 25 === 0 ? r - 6 : r - 3)
-        return <line key={v} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#577c95" strokeWidth={v % 25 === 0 ? 0.8 : 0.5} />
+        return <line key={v} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#71717a" strokeWidth={v % 25 === 0 ? 0.8 : 0.5} />
       })}
       {[0, 25, 50, 75, 100].map((v) => {
         const [x, y] = pt(v, r + 10)
-        return <text key={v} x={x} y={y + 2} textAnchor="middle" fontSize="6" fill="#6b7785" fontFamily="Inter Variable, system-ui, sans-serif">{v}</text>
+        return <text key={v} x={x} y={y + 2} textAnchor="middle" fontSize="6" fill="#71717a" fontFamily="Inter Variable, system-ui, sans-serif">{v}</text>
       })}
       <motion.path d={arc(0, 99.99)} fill="none" stroke={color} strokeWidth="1.5" initial={{ pathLength: 0 }} animate={{ pathLength: Math.min(1, score / 100) }} transition={{ duration: 0.9, ease: [0.2, 0, 0, 1] }} />
-      <line x1="0" y1="0" x2={nx} y2={ny} stroke="#ffffff" strokeWidth="0.8" />
-      <circle r="1.8" fill="#ffffff" />
-      <text x="0" y="-18" textAnchor="middle" fontSize="15" fill="#ffffff" fontFamily="Inter Variable, system-ui, sans-serif">{score.toFixed(1)}</text>
+      <line x1="0" y1="0" x2={nx} y2={ny} stroke="#fafafa" strokeWidth="0.8" />
+      <circle r="1.8" fill="#fafafa" />
+      <text x="0" y="-18" textAnchor="middle" fontSize="15" fill="#fafafa" fontFamily="Inter Variable, system-ui, sans-serif">{score.toFixed(1)}</text>
       <text x="0" y="-8" textAnchor="middle" fontSize="6" letterSpacing="1.2" fill={color} fontFamily="Inter Variable, system-ui, sans-serif">{severity.toUpperCase()}</text>
     </svg>
   )
 }
 
 /** Tiny horizontal bar gauge. */
-export function Bar({ value, max, color = '#67e8f9' }: { value: number; max: number; color?: string }) {
+export function Bar({ value, max, color = '#d4d4d8' }: { value: number; max: number; color?: string }) {
   return (
     <div className="relative h-[3px] w-full bg-[rgb(255_255_255/0.06)]">
       <div className="absolute inset-y-0 left-0" style={{ width: `${Math.min(100, (value / max) * 100)}%`, background: color }} />

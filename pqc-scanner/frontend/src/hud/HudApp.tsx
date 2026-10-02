@@ -381,7 +381,7 @@ export default function HudApp() {
       <div ref={(el) => { spatial.mount = el }} className={`pointer-events-none fixed inset-0 z-[21] transition-opacity duration-500 ${xrayOpen ? 'opacity-[0.14]' : ''}`} aria-hidden={!spatialOn} />
 
       {/* ── header ── */}
-      <header className="fixed inset-x-0 top-0 z-30 grid h-9 grid-cols-[1fr_auto] items-center border-b border-[var(--line)] bg-[rgb(8_10_15/0.8)] px-4">
+      <header className="fixed inset-x-0 top-0 z-30 grid h-9 grid-cols-[1fr_auto] items-center border-b border-[var(--line)] bg-[rgb(9_9_11/0.8)] px-4">
         <button onClick={p.reset} className="flex items-center gap-3 text-left" aria-label="Reset">
           <span className="hud-live" />
           <span className="hud-h text-[12px] tracking-[0.16em]">QUANTUMLEDGER</span>
@@ -476,8 +476,8 @@ function DiagnosticsPane({ p, addrs, shorVuln, total }: { p: Pipeline; addrs: st
       <Row k="LEDGER" cls={v?.valid ? 'hud-ok' : b ? 'hud-warn' : 'hud-dim'}>{b ? `#${b.index} ${v ? (v.valid ? 'verified' : 'mismatch') : 'unverified'}` : '—'}</Row>
       {b && (
         <>
-          <Row k="MERKLE_ROOT" mono cls="text-[#c9d4de]" title={b.merkle_root}>{b.merkle_root}</Row>
-          <Row k="BLOCK_HASH" mono cls="text-[#c9d4de]" title={b.block_hash}>{b.block_hash}</Row>
+          <Row k="MERKLE_ROOT" mono cls="text-[#d4d4d8]" title={b.merkle_root}>{b.merkle_root}</Row>
+          <Row k="BLOCK_HASH" mono cls="text-[#d4d4d8]" title={b.block_hash}>{b.block_hash}</Row>
         </>
       )}
 
@@ -492,7 +492,7 @@ function DiagnosticsPane({ p, addrs, shorVuln, total }: { p: Pipeline; addrs: st
       )}
       {r && !p.scanning && (
         <div className="mt-3 border-t border-[var(--line)] pt-3">
-          {!p.patched && p.diag?.meaning && <p className="mb-2.5 text-[11.5px] leading-[17px] text-[#9aa7b4]">{p.diag.meaning}</p>}
+          {!p.patched && p.diag?.meaning && <p className="mb-2.5 text-[11.5px] leading-[17px] text-[#a1a1aa]">{p.diag.meaning}</p>}
           {p.demo && <p className="hud-warn mb-2 text-[11px]">API unreachable · demo dataset</p>}
           {list.map((a, i) => (
             <NodeRow

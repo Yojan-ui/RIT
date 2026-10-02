@@ -20,18 +20,18 @@ import { xrState } from './xr'
 
 const R = 1.5 // globe radius, same as HudGlobe
 
-const WHITE = new THREE.Color('#e6edf3')
+const WHITE = new THREE.Color('#fafafa')
 const CRIMSON = new THREE.Color('#ef4444')
 const AMBER = new THREE.Color('#f97316')
-const EMERALD = new THREE.Color('#34D399') // mint: verified
-const CYAN = new THREE.Color('#5EEAD4')
-const ICE = new THREE.Color('#5EEAD4') // icy teal: active / secured only
-const STEEL = new THREE.Color('#64748b') // slate: inactive structure
+const EMERALD = new THREE.Color('#059669') // deep emerald: verified
+const CYAN = new THREE.Color('#d4d4d8') // titanium: active lattice
+const ICE = new THREE.Color('#e4e4e7') // bright titanium: active / secured only
+const STEEL = new THREE.Color('#71717a') // zinc: inactive structure
 
 // HDR (> 1) colours: only these pass the bloom threshold, so light bleeds from the
 // lattice, shields, data streams, siphon and locked block, and nowhere else.
 const hdr = (c: THREE.Color, k: number) => c.clone().multiplyScalar(k)
-const G_CYAN = hdr(CYAN, 7)
+const G_CYAN = hdr(CYAN, 4)
 const G_LATTICE = hdr(CYAN, 2.6) // dense geometry: a lower gain keeps the bleed diffuse, not a wash
 const G_ICE = hdr(ICE, 3)
 const G_CRIMSON = hdr(CRIMSON, 5)
@@ -997,7 +997,7 @@ export function StoryLayer({ story }: { story: Story }) {
   const glass = (color: string, emissive: THREE.Color, opacity = 0.2, ei = 0.12) => (
     <meshPhysicalMaterial color={color} emissive={emissive} emissiveIntensity={ei} roughness={0.08} metalness={0.05} clearcoat={1} clearcoatRoughness={0.05} ior={1.49} transparent opacity={opacity} depthWrite={false} envMapIntensity={1.5} side={THREE.DoubleSide} />
   )
-  const metal = (color = '#3a4552', roughness = 0.32) => <meshStandardMaterial color={color} metalness={0.92} roughness={roughness} emissive={ICE} emissiveIntensity={0} transparent opacity={1} envMapIntensity={1.2} />
+  const metal = (color = '#3f3f46', roughness = 0.32) => <meshStandardMaterial color={color} metalness={0.92} roughness={roughness} emissive={ICE} emissiveIntensity={0} transparent opacity={1} envMapIntensity={1.2} />
   const hitbox = (r: number) => (
     <mesh>
       <sphereGeometry args={[r, 12, 8]} />
@@ -1020,15 +1020,15 @@ export function StoryLayer({ story }: { story: Story }) {
           <group ref={H('client')}>
             <mesh position={[0, 0, 0.004 * R]}>
               <boxGeometry args={[0.3 * R, 0.18 * R, 0.01 * R]} />
-              {glass('#0b2030', ICE, 0.55, 0.35)}
+              {glass('#18181b', ICE, 0.55, 0.35)}
             </mesh>
             <mesh position={[0, 0, -0.008 * R]}>
               <boxGeometry args={[0.32 * R, 0.2 * R, 0.012 * R]} />
-              {metal('#2b343e', 0.28)}
+              {metal('#27272a', 0.28)}
             </mesh>
             <mesh position={[0, -0.135 * R, -0.01 * R]}>
               <cylinderGeometry args={[0.008 * R, 0.01 * R, 0.07 * R, 12]} />
-              {metal('#5a6672', 0.22)}
+              {metal('#52525b', 0.22)}
             </mesh>
             <mesh position={[0, -0.172 * R, 0]}>
               <boxGeometry args={[0.16 * R, 0.008 * R, 0.06 * R]} />
@@ -1041,12 +1041,12 @@ export function StoryLayer({ story }: { story: Story }) {
           <group ref={H('server')}>
             <mesh>
               <boxGeometry args={[0.19 * R, 0.33 * R, 0.19 * R]} />
-              {metal('#222b35', 0.36)}
+              {metal('#1f1f23', 0.36)}
             </mesh>
             {[-0.09, -0.03, 0.03, 0.09].map((y) => (
               <mesh key={y} position={[0, y * R, 0.0962 * R]}>
                 <boxGeometry args={[0.13 * R, 0.01 * R, 0.002 * R]} />
-                <meshStandardMaterial color="#061218" emissive={story.patched ? CYAN : ICE} emissiveIntensity={1.6} transparent opacity={1} />
+                <meshStandardMaterial color="#0c0c0e" emissive={story.patched ? CYAN : ICE} emissiveIntensity={1.6} transparent opacity={1} />
               </mesh>
             ))}
             <lineSegments geometry={geo.server}>{line(endCol, 0.85)}</lineSegments>
@@ -1105,7 +1105,7 @@ export function StoryLayer({ story }: { story: Story }) {
           <group ref={H('tap')}>
             <mesh rotation={[0, Math.PI / 2, 0]}>
               <torusGeometry args={[0.07 * R, 0.013 * R, 10, 40]} />
-              <meshStandardMaterial color="#3a1416" metalness={0.85} roughness={0.3} emissive={CRIMSON} emissiveIntensity={0.6} transparent opacity={1} />
+              <meshStandardMaterial color="#2a1214" metalness={0.85} roughness={0.3} emissive={CRIMSON} emissiveIntensity={0.6} transparent opacity={1} />
             </mesh>
             <lineLoop geometry={geo.clampA}>{line(G_CRIMSON, 0.95)}</lineLoop>
             <lineLoop geometry={geo.clampB}>{line(CRIMSON, 0.45)}</lineLoop>
@@ -1134,7 +1134,7 @@ export function StoryLayer({ story }: { story: Story }) {
         {[-VAULT_H / 2, VAULT_H / 2].map((y) => (
           <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]}>
             <torusGeometry args={[VAULT_R, 0.014 * R, 8, 64]} />
-            {metal('#454f5a', 0.26)}
+            {metal('#4a4a52', 0.26)}
           </mesh>
         ))}
         {[-VAULT_H / 2, 0, VAULT_H / 2].map((y) => (
@@ -1195,7 +1195,7 @@ export function StoryLayer({ story }: { story: Story }) {
           <group key={i} position={p} ref={i < 3 ? H(`leaf${i}`) : undefined}>
             <mesh>
               <boxGeometry args={[0.085 * R, 0.085 * R, 0.085 * R]} />
-              {glass('#0c2a33', CYAN, i === 3 ? 0.06 : 0.16, 0.2)}
+              {glass('#1c1c1f', CYAN, i === 3 ? 0.06 : 0.16, 0.2)}
             </mesh>
             <lineSegments geometry={geo.leaf}>
               <lineBasicMaterial ref={(m) => { leafMats.current[i] = m }} color={STEEL} transparent opacity={i === 3 ? 0.18 : 0.28} depthWrite={false} />
@@ -1220,7 +1220,7 @@ export function StoryLayer({ story }: { story: Story }) {
             <group key={i} position={p}>
               <mesh>
                 <boxGeometry args={[0.1 * R, 0.1 * R, 0.1 * R]} />
-                {glass('#0c2a33', CYAN, 0.18, 0.3)}
+                {glass('#1c1c1f', CYAN, 0.18, 0.3)}
               </mesh>
               <lineSegments geometry={geo.inner}>{line(CYAN, 0.8)}</lineSegments>
             </group>
@@ -1231,7 +1231,7 @@ export function StoryLayer({ story }: { story: Story }) {
         <group position={P_PREV} ref={H('prev')}>
           <mesh>
             <boxGeometry args={[0.2 * R, 0.2 * R, 0.2 * R]} />
-            {glass('#10202a', STEEL, 0.2, 0.08)}
+            {glass('#141416', STEEL, 0.2, 0.08)}
           </mesh>
           <lineSegments geometry={geo.prev}>{line(STEEL, 0.55)}</lineSegments>
         </group>
@@ -1242,7 +1242,7 @@ export function StoryLayer({ story }: { story: Story }) {
             <group ref={H('block')}>
               <mesh>
                 <boxGeometry args={[0.26 * R, 0.26 * R, 0.26 * R]} />
-                <meshPhysicalMaterial ref={blockGlass} color="#08241c" emissive={ICE} emissiveIntensity={0} roughness={0.06} metalness={0.05} clearcoat={1} clearcoatRoughness={0.04} ior={1.5} transparent opacity={0.3} depthWrite={false} envMapIntensity={1.6} side={THREE.DoubleSide} />
+                <meshPhysicalMaterial ref={blockGlass} color="#0a1f17" emissive={ICE} emissiveIntensity={0} roughness={0.06} metalness={0.05} clearcoat={1} clearcoatRoughness={0.04} ior={1.5} transparent opacity={0.3} depthWrite={false} envMapIntensity={1.6} side={THREE.DoubleSide} />
               </mesh>
             </group>
             <lineSegments geometry={geo.block}>

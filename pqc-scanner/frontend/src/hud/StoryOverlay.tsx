@@ -45,7 +45,7 @@ function At({ k, className = '', children }: { k: string; className?: string; ch
 }
 
 const AMBER = '#f97316'
-const EMERALD = '#10b981'
+const EMERALD = '#059669'
 const fmt = (n: number) => String(Number(n.toFixed(1)))
 
 // ── Q-Day countdown (text beside the 3D dial) ────────────────────────────────
@@ -85,7 +85,7 @@ function Mosca({ m }: { m: NonNullable<StoryData['mosca']> }) {
     return () => clearTimeout(id)
   }, [])
   const bad = m.holds
-  const col = shown ? (bad ? AMBER : EMERALD) : '#ffffff'
+  const col = shown ? (bad ? AMBER : EMERALD) : '#fafafa'
   const op = shown ? (bad ? '>' : '≤') : '?'
   return (
     <div className="text-center whitespace-nowrap">
@@ -93,7 +93,7 @@ function Mosca({ m }: { m: NonNullable<StoryData['mosca']> }) {
       <motion.div className="mt-1 text-[28px] leading-[32px] tracking-[0.08em]" animate={{ color: col, textShadow: shown ? `0 0 3px ${col}` : '0 0 0px #fff' }} transition={{ duration: 0.6 }}>
         X + Y {op} Z
       </motion.div>
-      <motion.div className="text-[12px] tracking-[0.06em]" animate={{ color: shown ? col : '#c9d4de' }} transition={{ duration: 0.6 }}>
+      <motion.div className="text-[12px] tracking-[0.06em]" animate={{ color: shown ? col : '#d4d4d8' }} transition={{ duration: 0.6 }}>
         {fmt(m.x)} + {fmt(m.y)} = {fmt(m.sum)} yr {op} {m.z} yr
       </motion.div>
       <div className="hud-dim mt-1 text-[10px]">x years to migrate · y years data must stay secret · z years to q-day</div>
@@ -279,7 +279,7 @@ function Inspector({ s, d }: { s: Story; d: StoryData }) {
         {info.rows.map(([k, v, cls]) => (
           <div key={k} className="grid grid-cols-[78px_1fr] gap-x-2 text-[10px] leading-[15px]">
             <span className="hud-k">{k}</span>
-            <span className={cls ?? 'text-[#c9d4de]'}>{v}</span>
+            <span className={cls ?? 'text-[#d4d4d8]'}>{v}</span>
           </div>
         ))}
       </motion.div>
@@ -460,10 +460,10 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
 
       {/* plain-language narration for the non-specialist */}
       <div className="absolute top-[calc(var(--zb)-8px)] left-[var(--cx)] w-[min(520px,calc(var(--zw)-48px))] -translate-x-1/2 -translate-y-full">
-        <motion.div key={`${n.chip}|${n.title}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="border-t border-[var(--line-2)] bg-[rgb(8_10_15/0.72)] px-3 pt-2 pb-2.5 text-center">
+        <motion.div key={`${n.chip}|${n.title}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="border-t border-[var(--line-2)] bg-[rgb(9_9_11/0.72)] px-3 pt-2 pb-2.5 text-center">
           <div className={`text-[10px] tracking-[0.2em] uppercase ${n.tone}`}>{n.chip}</div>
           <div className="hud-white mt-0.5 text-[14px] leading-[20px] tracking-[0.04em]">{n.title}</div>
-          <p className="mt-1 text-[11px] leading-[16px] text-[#9aa7b4]">{n.text}</p>
+          <p className="mt-1 text-[11px] leading-[16px] text-[#a1a1aa]">{n.text}</p>
         </motion.div>
       </div>
     </div>

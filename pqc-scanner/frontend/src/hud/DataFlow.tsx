@@ -11,9 +11,9 @@ const PACKETS = 14 // particle clusters in flight
 const PER = 26 // particles per cluster
 const N = PACKETS * PER
 
-const CLASSICAL = new THREE.Color('#cbd5e1')
-const SECURED = new THREE.Color('#5EEAD4')
-const VERIFIED = new THREE.Color('#34D399')
+const CLASSICAL = new THREE.Color('#a1a1aa')
+const SECURED = new THREE.Color('#e4e4e7')
+const VERIFIED = new THREE.Color('#059669')
 
 const vertexShader = /* glsl */ `
   attribute float aEnergy;
