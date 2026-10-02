@@ -16,11 +16,11 @@ import { xray } from './xray'
 import { xrState } from './xr'
 
 const R = 1.5 // globe radius, same as HudGlobe
-const ICE = new THREE.Color('#67e8f9')
-const CYAN = new THREE.Color('#06b6d4')
-const EMERALD = new THREE.Color('#10b981')
+const ICE = new THREE.Color('#5EEAD4') // icy teal: active / secured only
+const CYAN = new THREE.Color('#5EEAD4')
+const EMERALD = new THREE.Color('#34D399') // mint: verified
 const AMBER = new THREE.Color('#f97316')
-const STEEL = new THREE.Color('#577c95')
+const STEEL = new THREE.Color('#64748b') // slate: inactive structure
 
 // ── lattice core ─────────────────────────────────────────────────────────────
 

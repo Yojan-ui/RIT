@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
-import { GlitchPass } from 'three/examples/jsm/postprocessing/GlitchPass.js'
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js'
+import { Bloom, DepthOfField, EffectComposer, Glitch, ToneMapping } from '@react-three/postprocessing'
+import { GlitchMode, ToneMappingMode, type DepthOfFieldEffect } from 'postprocessing'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js'
 import { hudAnchor, nodeAngles, type HoloNode, type HudMode, type Story } from './anchor'
 import { StoryLayer, fade } from './Story'
 import { CommandDeck, DataStreams, LatticeCore } from './Core'
@@ -16,12 +13,15 @@ import { SpatialLayer, spatial } from './spatial'
 import { XR_SCALE, setXR, useXR, xrState } from './xr'
 
 const R = 1.5
-const CARBON = '#080a0f'
-const STEEL = new THREE.Color('#577c95')
-const TITANIUM = new THREE.Color('#4b5563')
-const ICE = new THREE.Color('#67e8f9')
-const OK_CYAN = new THREE.Color('#06b6d4')
-const NODE_COLOR = { warn: new THREE.Color('#f97316'), crit: new THREE.Color('#ef4444'), ok: new THREE.Color('#10b981') }
+const SLATE_BG = '#0F172A' // background, fog and inactive structure
+const STEEL = new THREE.Color('#64748b')
+const TITANIUM = new THREE.Color('#475569')
+const TEAL = new THREE.Color('#5EEAD4') // active elements only
+const MINT = new THREE.Color('#34D399') // secured state
+const NODE_COLOR = { warn: new THREE.Color('#f97316'), crit: new THREE.Color('#ef4444'), ok: MINT }
+
+const REDUCED_MOTION = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+const PARALLAX = { pitch: 0.045, yaw: 0.07 } // max hologram tilt (rad) at the window edge
 
 const SPEED: Record<HudMode, number> = { idle: 0.05, scanning: 0.22, alert: 0.06, critical: 0.06, upgrading: 0.3, secure: 0.04 }
 const SCAN_RATE: Record<HudMode, number> = { idle: 0.25, scanning: 0.9, alert: 0.35, critical: 0.35, upgrading: 1.1, secure: 0.2 }
@@ -72,19 +72,39 @@ function useGraticule() {
   }, [])
 }
 
-/** Evenly spread point cloud (Fibonacci sphere). */
+/** Evenly spread point cloud (Fibonacci sphere): rest positions plus a live buffer the breathing writes into. */
 function usePointCloud(n = 2800) {
   return useMemo(() => {
-    const a = new Float32Array(n * 3)
+    const rest = new Float32Array(n * 3)
     const golden = Math.PI * (3 - Math.sqrt(5))
     for (let i = 0; i < n; i++) {
       const y = 1 - (i / (n - 1)) * 2
       const r = Math.sqrt(1 - y * y)
       const t = golden * i
-      a.set([Math.cos(t) * r * R, y * R, Math.sin(t) * r * R], i * 3)
+      rest.set([Math.cos(t) * r * R, y * R, Math.sin(t) * r * R], i * 3)
     }
-    return a
+    return { rest, live: rest.slice() }
   }, [n])
+}
+
+const noise = new SimplexNoise()
+
+/**
+ * Breathing undulation: each point moves along its own normal by a slow global sine (the breath)
+ * plus 4D simplex noise sampled at its rest direction (the travelling swell). Amplitude stays a few
+ * percent of R so the graticule and node stems still read as sitting on the surface.
+ */
+function breathe(rest: Float32Array, live: Float32Array, t: number) {
+  const breath = 0.012 * Math.sin(t * 0.6)
+  for (let i = 0; i < rest.length; i += 3) {
+    const x = rest[i] / R
+    const y = rest[i + 1] / R
+    const z = rest[i + 2] / R
+    const k = 1 + breath + 0.028 * noise.noise4d(x * 1.4, y * 1.4, z * 1.4, t * 0.18)
+    live[i] = rest[i] * k
+    live[i + 1] = rest[i + 1] * k
+    live[i + 2] = rest[i + 2] * k
+  }
 }
 
 /** Orbit ring: dashed track with a gauge gap, fine ticks and a moving marker. */
@@ -141,6 +161,8 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
   const orbits = useRef<THREE.Group>(null)
   const graticule = useGraticule()
   const cloud = usePointCloud()
+  const cloudGeo = useRef<THREE.BufferGeometry>(null)
+  const tilt = useRef(new THREE.Vector2()) // eased parallax (pitch, yaw)
   const phase = useRef(0)
   const rot = useRef(0)
   const { camera, size } = useThree()
@@ -207,7 +229,13 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
       r0.scale.setScalar(XR_SCALE)
     } else if (root.current) {
       root.current.visible = true
-      root.current.quaternion.identity()
+      // parallax: the whole hologram turns slightly away from the cursor, giving the HUD immediate depth
+      const ndc = spatial.ndc
+      const inside = !REDUCED_MOTION && Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1
+      const k = 1 - Math.exp(-dt * 2.5)
+      tilt.current.x = THREE.MathUtils.lerp(tilt.current.x, inside ? ndc.y * PARALLAX.pitch : 0, k)
+      tilt.current.y = THREE.MathUtils.lerp(tilt.current.y, inside ? -ndc.x * PARALLAX.yaw : 0, k)
+      root.current.rotation.set(tilt.current.x, tilt.current.y, 0)
     }
     // fit the hologram into the free core zone between the floating panes (pixels → world)
     if (root.current && !xrState.presenting) {
@@ -226,6 +254,10 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
       root.current.scale.setScalar(root.current.scale.x + (s - root.current.scale.x) * k)
     }
     rot.current += dt * SPEED[mode]
+    if (cloudGeo.current && !REDUCED_MOTION) {
+      breathe(cloud.rest, cloud.live, clock.elapsedTime)
+      cloudGeo.current.attributes.position.needsUpdate = true
+    }
     if (globe.current) globe.current.rotation.y = rot.current
     // the shell steps back while the lattice core is exploded
     fade(globe.current, 1 - 0.8 * (xray.shown === 'kem' ? xray.amt : 0), dt, 8)
@@ -237,7 +269,7 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
     const rr = Math.sqrt(Math.max(0, R * R - y * y))
     if (scan.current) scan.current.position.y = y
     if (scanRing.current) scanRing.current.scale.setScalar(Math.max(0.001, rr * 1.002))
-    const accent = mode === 'secure' ? OK_CYAN : ICE
+    const accent = mode === 'secure' ? MINT : TEAL
     scanDisc.current?.color.copy(accent)
     eqMat.current?.color.copy(accent)
     ;(scanRing.current?.material as THREE.LineBasicMaterial | undefined)?.color.copy(accent)
@@ -279,26 +311,26 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
   return (
     <>
       {/* AR shows the camera feed behind the hologram: no backdrop, fog or room grids */}
-      {!xr && <color attach="background" args={[CARBON]} />}
-      {!xr && <fog attach="fog" args={[CARBON, 6.2, 10.5]} />}
+      {!xr && <color attach="background" args={[SLATE_BG]} />}
+      {!xr && <fog attach="fog" args={[SLATE_BG, 6.2, 10.5]} />}
       <Environment />
       <ambientLight intensity={0.18} />
-      <hemisphereLight args={['#9fb4c7', '#080a0f', 0.35]} />
+      <hemisphereLight args={['#94a3b8', SLATE_BG, 0.35]} />
       <directionalLight position={[3, 5, 4]} intensity={1.4} color="#dbe7f2" />
-      <directionalLight position={[-4, 1.5, -3]} intensity={0.5} color="#577c95" />
+      <directionalLight position={[-4, 1.5, -3]} intensity={0.5} color="#64748b" />
       <group ref={root}>
         <group ref={globe} rotation={[0.28, 0, 0]}>
           <points>
-            <bufferGeometry>
-              <bufferAttribute attach="attributes-position" args={[cloud, 3]} />
+            <bufferGeometry ref={cloudGeo}>
+              <bufferAttribute attach="attributes-position" args={[cloud.live, 3]} />
             </bufferGeometry>
-            <pointsMaterial color={STEEL.clone().lerp(ICE, 0.35)} size={1.35} sizeAttenuation={false} transparent opacity={0.55} depthWrite={false} />
+            <pointsMaterial color={STEEL.clone().lerp(TEAL, 0.35)} size={1.35} sizeAttenuation={false} transparent opacity={0.55} depthWrite={false} />
           </points>
           <lineSegments geometry={graticule}>
             <lineBasicMaterial color={STEEL} transparent opacity={0.14} depthWrite={false} />
           </lineSegments>
           <lineLoop geometry={equator}>
-            <lineBasicMaterial ref={eqMat} color={ICE} transparent opacity={0.4} depthWrite={false} />
+            <lineBasicMaterial ref={eqMat} color={TEAL} transparent opacity={0.4} depthWrite={false} />
           </lineLoop>
           {nodeData.length > 0 && (
             <>
@@ -316,20 +348,20 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
         <group ref={scan}>
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
             <circleGeometry args={[R * 1.6, 96]} />
-            <meshBasicMaterial ref={scanDisc} color={ICE} transparent opacity={0.035} depthWrite={false} side={THREE.DoubleSide} />
+            <meshBasicMaterial ref={scanDisc} color={TEAL} transparent opacity={0.035} depthWrite={false} side={THREE.DoubleSide} />
           </mesh>
           <lineLoop ref={scanRing} geometry={unitCircle}>
-            <lineBasicMaterial color={ICE} transparent opacity={0.85} depthWrite={false} />
+            <lineBasicMaterial color={TEAL} transparent opacity={0.85} depthWrite={false} />
           </lineLoop>
           <lineLoop geometry={unitCircle} scale={R * 1.6}>
-            <lineBasicMaterial color={ICE} transparent opacity={0.12} depthWrite={false} />
+            <lineBasicMaterial color={TEAL} transparent opacity={0.12} depthWrite={false} />
           </lineLoop>
         </group>
 
         <group ref={orbits}>
         <OrbitRing radius={R * 1.24} tilt={[1.25, 0.1, 0.05]} speed={0.12} color={STEEL} opacity={0.6} markerSpeed={0.5} />
         <OrbitRing radius={R * 1.4} tilt={[1.05, -0.4, 0.25]} speed={-0.08} color={TITANIUM} opacity={0.7} markerSpeed={-0.35} />
-        <OrbitRing radius={R * 1.56} tilt={[1.45, 0.55, -0.2]} speed={0.05} color={ICE} opacity={0.22} markerSpeed={0.22} />
+        <OrbitRing radius={R * 1.56} tilt={[1.45, 0.55, -0.2]} speed={0.05} color={TEAL} opacity={0.22} markerSpeed={0.22} />
         </group>
 
         <StoryLayer story={story} />
@@ -349,75 +381,68 @@ function Scene({ mode, nodes, story, xr }: { mode: HudMode; nodes: HoloNode[]; s
         </group>
       </group>
       {/* a pane under the cursor casts cyan light into the room */}
-      <pointLight ref={hoverLight} color={ICE} intensity={0} distance={7} decay={1.6} />
+      <pointLight ref={hoverLight} color={TEAL} intensity={0} distance={7} decay={1.6} />
       <DataStreams core={root} />
     </>
   )
 }
 
 /**
- * HDR post-processing: scene → UnrealBloomPass → OutputPass (tone mapping + sRGB).
- * Only HDR-bright materials (lattice, shields, packets, siphon, locked block) exceed the threshold and bleed light.
- * Rendered at ≤1.5× DPR into a 4× MSAA half-float target so 1-px lines stay crisp; bloom runs at half resolution.
+ * HDR post-processing (pmndrs): depth of field → mip-mapped bloom → glitch → ACES Filmic tone mapping.
+ * The composer forces the renderer to NoToneMapping and tone-maps in its last effect, reading the
+ * renderer's toneMappingExposure (1.2). Only HDR (> 1) materials (lattice, shields, packets, siphon,
+ * locked block) pass the 0.85 threshold, so the bloom reads as optical dispersion, not a flat glow.
+ * Unmounted in XR: the session renders straight into the device framebuffer with renderer tone mapping.
  */
 function Effects({ glitch }: { glitch: boolean }) {
-  const { gl, scene, camera, size } = useThree()
-  const fx = useMemo(() => {
-    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
-    const composer = new EffectComposer(gl, rt)
-    composer.addPass(new RenderPass(scene, camera))
-    // depth of field: off until the cursor is on a pane or an X-ray is open (see useFrame below)
-    const bokeh = new BokehPass(scene, camera, { focus: 7, aperture: 0, maxblur: 0.009 })
-    bokeh.enabled = false
-    composer.addPass(bokeh)
-    // tight bloom: a small radius keeps geometry sharp and distinct; only HDR emitters get a halo
-    const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.12, 0.85)
-    composer.addPass(bloom)
-    // digital tearing while the post-quantum patch deploys, and never otherwise
-    const glitchPass = new GlitchPass()
-    glitchPass.enabled = false
-    composer.addPass(glitchPass)
-    composer.addPass(new OutputPass())
-    return { composer, bloom, glitchPass, bokeh, dof: { ap: 0, focus: 7 }, v: new THREE.Vector3() }
-  }, [gl, scene, camera])
-  useEffect(() => {
-    fx.glitchPass.enabled = glitch
-    fx.glitchPass.curF = 0 // start the deploy on a hard tear
-  }, [fx, glitch])
-  useEffect(() => {
-    fx.composer.setPixelRatio(Math.min(gl.getPixelRatio(), 1.5))
-    fx.composer.setSize(size.width, size.height)
-    fx.bloom.resolution.set(size.width / 2, size.height / 2)
-  }, [fx, gl, size])
-  useEffect(() => () => fx.composer.dispose(), [fx])
-  // priority 1: R3F hands rendering over to the composer. An XR session renders straight into the
-  // headset / phone framebuffer (the composer can't target it); HDR colours are still tone-mapped there.
-  useFrame((_, dt) => {
-    gl.info.reset() // count every pass of the frame, not just the last one
-    // Depth of field follows attention: a pane under the cursor blurs the whole 3D room behind the glass
-    // (focus pulled in front of everything); an open X-ray focuses on the exploded object and blurs the
-    // rest. Returning to the scene snaps focus back fast; the pass is off entirely when idle.
-    const d = fx.dof
-    const onPane = !!spatial.hovered
-    const target = xray.open ? 0.0028 : onPane ? 0.006 : 0
-    const focus = xray.open ? camera.position.distanceTo(xray.focus) : onPane ? 1.2 : d.focus
-    d.ap += (target - d.ap) * (1 - Math.exp(-dt * (target > d.ap ? 5 : 16)))
-    d.focus += (focus - d.focus) * (1 - Math.exp(-dt * 8))
-    fx.bokeh.enabled = d.ap > 0.00004
-    const u = fx.bokeh.uniforms as Record<string, THREE.IUniform>
-    u.aperture.value = d.ap
-    u.focus.value = d.focus
-    // GlitchPass alone tears once every 2-4 s, longer than the deploy: burst it for the whole deployment
-    if (fx.glitchPass.enabled) fx.glitchPass.goWild = Math.random() < 0.28
-    if (gl.xr.isPresenting) gl.render(scene, camera)
-    else fx.composer.render(dt)
-  }, 1)
+  const { gl, camera } = useThree()
+  const dofFx = useRef<DepthOfFieldEffect>(null)
+  const dof = useRef({ amt: 0, focus: 7, range: 2, bokeh: 0 })
   useEffect(() => {
     gl.info.autoReset = false
     return () => {
       gl.info.autoReset = true
     }
   }, [gl])
+  // runs before the composer (priority 1) every frame
+  useFrame((_, dt) => {
+    gl.info.reset() // count every pass of the frame, not just the last one
+    // Depth of field follows attention: a pane under the cursor blurs the whole 3D room behind the glass
+    // (focus pulled in front of everything); an open X-ray focuses on the exploded object and blurs the
+    // rest. Returning to the scene snaps focus back fast; idle, the CoC range is so wide nothing blurs.
+    const d = dof.current
+    const onPane = !!spatial.hovered
+    const target = xray.open || onPane ? 1 : 0
+    const focus = xray.open ? camera.position.distanceTo(xray.focus) : onPane ? 1.2 : d.focus
+    d.amt += (target - d.amt) * (1 - Math.exp(-dt * (target > d.amt ? 5 : 16)))
+    d.focus += (focus - d.focus) * (1 - Math.exp(-dt * 8))
+    d.range = xray.open ? 2.4 : 1.2
+    d.bokeh = xray.open ? 2.5 : 4
+    const e = dofFx.current
+    if (e) {
+      e.cocMaterial.focusDistance = d.focus
+      e.cocMaterial.focusRange = d.amt > 0.002 ? d.range / d.amt : 1e4
+      e.bokehScale = d.bokeh * d.amt
+    }
+  })
+  return (
+    <EffectComposer multisampling={4}>
+      <DepthOfField ref={dofFx} focusDistance={7} focusRange={1e4} bokehScale={0} resolutionScale={0.5} />
+      <Bloom mipmapBlur intensity={0.4} luminanceThreshold={0.85} luminanceSmoothing={0.1} />
+      {/* digital tearing while the post-quantum patch deploys, and never otherwise */}
+      <Glitch active={glitch} mode={GlitchMode.SPORADIC} delay={[0.08, 0.35]} duration={[0.1, 0.25]} strength={[0.15, 0.45]} />
+      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+    </EffectComposer>
+  )
+}
+
+/**
+ * XR rendering: the composer can't target the session framebuffer, so render straight through the renderer
+ * (ACES + exposure from the Canvas config). SpatialLayer's priority-2 frame hook disables R3F's own render.
+ */
+function DirectRender() {
+  const { gl, scene, camera } = useThree()
+  useFrame(() => gl.render(scene, camera), 1)
   return null
 }
 
@@ -491,7 +516,7 @@ function XRPlacement() {
   return (
     <group ref={reticle} matrixAutoUpdate={false} visible={false}>
       <mesh geometry={ring}>
-        <meshBasicMaterial color={ICE} transparent opacity={0.9} toneMapped={false} />
+        <meshBasicMaterial color={TEAL} transparent opacity={0.9} toneMapped={false} />
       </mesh>
       <mesh geometry={dot}>
         <meshBasicMaterial color="#ffffff" toneMapped={false} />
@@ -505,13 +530,13 @@ export function HudGlobe({ mode, nodes, story, spatialOn }: { mode: HudMode; nod
   return (
     <Canvas
       camera={{ position: [0, 0.9, 7.4], fov: 38 }}
-      dpr={[1, 2]}
-      gl={{ antialias: false, powerPreference: 'high-performance' }}
+      dpr={[1, 1.5]}
+      gl={{ antialias: false, powerPreference: 'high-performance', toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}
       onCreated={({ gl }) => {
         xrState.gl = gl
       }}
     >
-      <Effects glitch={story.patching} />
+      {presenting ? <DirectRender /> : <Effects glitch={story.patching} />}
       <Scene mode={mode} nodes={nodes} story={story} xr={presenting} />
       <XRPlacement />
       <SpatialLayer on={spatialOn && !presenting} />

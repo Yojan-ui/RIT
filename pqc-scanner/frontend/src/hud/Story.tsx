@@ -13,6 +13,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import gsap from 'gsap'
 import { coreZone, hudAnchor, type Story } from './anchor'
+import { DataFlow } from './DataFlow'
 import { sfx } from './sfx'
 import { toggleXray, xray } from './xray'
 import { xrState } from './xr'
@@ -22,10 +23,10 @@ const R = 1.5 // globe radius, same as HudGlobe
 const WHITE = new THREE.Color('#e6edf3')
 const CRIMSON = new THREE.Color('#ef4444')
 const AMBER = new THREE.Color('#f97316')
-const EMERALD = new THREE.Color('#10b981')
-const CYAN = new THREE.Color('#06b6d4')
-const ICE = new THREE.Color('#67e8f9')
-const STEEL = new THREE.Color('#577c95')
+const EMERALD = new THREE.Color('#34D399') // mint: verified
+const CYAN = new THREE.Color('#5EEAD4')
+const ICE = new THREE.Color('#5EEAD4') // icy teal: active / secured only
+const STEEL = new THREE.Color('#64748b') // slate: inactive structure
 
 // HDR (> 1) colours: only these pass the bloom threshold, so light bleeds from the
 // lattice, shields, data streams, siphon and locked block, and nowhere else.
@@ -96,6 +97,7 @@ const ANCHORS: Record<string, THREE.Vector3> = {
 const MERKLE_IDS = new Set(['block', 'leaf0', 'leaf1', 'leaf2', 'prev', 'next'])
 const NO_SCALE = new Set(['link', 'core'])
 const N_PK = 12
+const ZOOM_BAND = [0.45, 1.6] as const // user zoom limits, as fractions of the current stage framing distance
 
 const ease = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t))
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t))
@@ -257,7 +259,6 @@ export function StoryLayer({ story }: { story: Story }) {
     floor: useRef<THREE.Group>(null),
     halos: useRef<THREE.Group>(null),
   }
-  const linkMat = useRef<THREE.LineBasicMaterial>(null)
   const packetMesh = useRef<THREE.InstancedMesh>(null)
   const xg = { leaves: useRef<THREE.Group>(null), inner: useRef<THREE.Group>(null), top: useRef<THREE.Group>(null) }
   const treeEdgeMat = useRef<THREE.LineBasicMaterial>(null)
@@ -330,11 +331,13 @@ export function StoryLayer({ story }: { story: Story }) {
   const controls = useMemo(() => {
     const c = new OrbitControls(camera, gl.domElement)
     c.enableDamping = true
-    c.dampingFactor = 0.08
+    c.dampingFactor = 0.05
     c.rotateSpeed = 0.55
     c.zoomSpeed = 0.8
-    c.minDistance = 1.2
-    c.maxDistance = 22
+    c.maxPolarAngle = Math.PI / 1.5
+    // zoom band; re-centred on every stage framing in the frame loop (see ZOOM_BAND)
+    c.minDistance = 7.4 * ZOOM_BAND[0]
+    c.maxDistance = 7.4 * ZOOM_BAND[1]
     return c
   }, [camera, gl])
   useEffect(() => {
@@ -474,7 +477,6 @@ export function StoryLayer({ story }: { story: Story }) {
     })
 
     return {
-      curve: new THREE.BufferGeometry().setFromPoints(CURVE.getPoints(120)),
       linkTube: new THREE.TubeGeometry(CURVE, 64, 0.07 * R, 6),
       siphon: new THREE.BufferGeometry().setFromPoints([P_TAP, P_INTAKE]),
       clampA: ring(0.06 * R, 40, 'yz'),
@@ -626,6 +628,15 @@ export function StoryLayer({ story }: { story: Story }) {
         camera.position.setFromSpherical(sph).add(controls.target)
         if (f.t >= 1) f.active = false
       }
+      // Zoom band around the stage framing so the user can't break the cinematic composition. It opens
+      // fully during a flight (the swoop leaves it), then closes back without ever snapping the camera.
+      {
+        const d = camera.position.distanceTo(controls.target)
+        const fd = tmp.p.distanceTo(tmp.l)
+        const k = 1 - Math.exp(-dt * 6)
+        controls.minDistance = f.active ? 0 : Math.min(d, THREE.MathUtils.lerp(controls.minDistance, fd * ZOOM_BAND[0], k))
+        controls.maxDistance = f.active ? 1e3 : Math.max(d, THREE.MathUtils.lerp(controls.maxDistance, fd * ZOOM_BAND[1], k))
+      }
       controls.update()
       const fog = scene.fog as THREE.Fog | null
       if (fog) {
@@ -641,7 +652,6 @@ export function StoryLayer({ story }: { story: Story }) {
     const pAge = edge(s.patch, patching || patched, t)
     s.prog = patched ? Math.min(1, s.prog + dt / 0.45) : patching ? Math.min(0.92, s.prog + dt / 1.8) : 0
     fade(g.link.current, active && !patching && !patched ? 1 : 0, dt, patching || patched ? 40 : 5)
-    if (linkMat.current) linkMat.current.userData.base = 0.55 + 0.1 * Math.sin(t * 7) * Math.sin(t * 2.3)
     const compressing = stage === 4 && anchored && t - s.anchored.t0 < 1.3
     fade(g.lattice.current, patching || patched ? (compressing ? 0.3 : 1) : 0, dt, 4)
     // packets: small octahedra, even ones client → server (ClientHello), odd ones back (ServerHello);
@@ -1065,10 +1075,6 @@ export function StoryLayer({ story }: { story: Story }) {
 
       {/* fragile classical link (RSA / ECDSA TLS) */}
       <group ref={g.link} visible={false}>
-        <line>
-          <primitive object={geo.curve} attach="geometry" />
-          <lineBasicMaterial ref={linkMat} color={WHITE} transparent opacity={0.6} depthWrite={false} />
-        </line>
         {/* hover target along the link: freezes the packets for the hex-dump inspection */}
         <group ref={H('link')}>
           <mesh geometry={geo.linkTube}>
@@ -1076,6 +1082,8 @@ export function StoryLayer({ story }: { story: Story }) {
           </mesh>
         </group>
       </group>
+      {/* volumetric particle stream along the link: the transmission itself, coloured by its security state */}
+      <DataFlow path={CURVE} radius={0.05 * R} story={story} />
       <instancedMesh ref={packetMesh} args={[undefined, undefined, N_PK]} frustumCulled={false} visible={false}>
         <octahedronGeometry args={[0.03 * R, 0]} />
         <meshBasicMaterial color="#ffffff" toneMapped={false} />
