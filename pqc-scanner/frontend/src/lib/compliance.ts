@@ -24,9 +24,10 @@ export interface ComplianceInput {
 }
 
 type RGB = [number, number, number]
-const INK: RGB = [22, 26, 32]
-const DIM: RGB = [110, 118, 128]
-const CYAN: RGB = [6, 150, 180]
+// onyx / zinc neutrals; deep emerald (#059669) is the single brand accent
+const INK: RGB = [24, 24, 27]
+const DIM: RGB = [113, 113, 122]
+const ACCENT: RGB = [5, 150, 105]
 const CRIM: RGB = [210, 50, 50]
 const OK: RGB = [12, 150, 110]
 const AMB: RGB = [220, 110, 20]
@@ -65,10 +66,10 @@ export function exportComplianceReport(c: ComplianceInput) {
   const section = (n: number, title: string) => {
     gap(16)
     ensure(28)
-    doc.setFillColor(...CYAN)
+    doc.setFillColor(...ACCENT)
     doc.rect(M, y + 2, 3, 11, 'F')
     text(`${String(n).padStart(2, '0')}  ${title.toUpperCase()}`, 9, { bold: true, color: INK, x: M + 10 })
-    doc.setDrawColor(215, 220, 226)
+    doc.setDrawColor(228, 228, 231)
     doc.line(M, y + 3, W - M, y + 3)
     y += 10
   }
@@ -100,20 +101,20 @@ export function exportComplianceReport(c: ComplianceInput) {
   }
 
   // ── cover band ──
-  doc.setFillColor(8, 10, 15)
+  doc.setFillColor(9, 9, 11)
   doc.rect(0, 0, W, 108, 'F')
-  doc.setFillColor(103, 232, 249)
+  doc.setFillColor(...ACCENT)
   doc.rect(M, 34, 6, 6, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
-  doc.setTextColor(103, 232, 249)
+  doc.setTextColor(228, 228, 231)
   doc.text('QUANTUMLEDGER', M + 14, 40, { charSpace: 2 })
   doc.setFontSize(20)
-  doc.setTextColor(255, 255, 255)
+  doc.setTextColor(250, 250, 250)
   doc.text('QuantumLedger Compliance Report', M, 70)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
-  doc.setTextColor(150, 165, 180)
+  doc.setTextColor(161, 161, 170)
   const reportId = c.block ? c.block.block_hash.slice(0, 16) : 'unanchored'
   doc.text(`${r.domain}:443  ·  generated ${new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC  ·  report ${reportId}`, M, 90)
   y = 128
@@ -222,7 +223,7 @@ export function exportComplianceReport(c: ComplianceInput) {
     b.leaves.forEach((l, i) => kv(`Leaf ${i} · ${l.label}`, l.hash, { mono: true }))
     kv('Merkle root', b.merkle_root, { mono: true })
     kv('Previous block hash', b.prev_hash, { mono: true })
-    kv('Block hash', b.block_hash, { mono: true, color: CYAN })
+    kv('Block hash', b.block_hash, { mono: true })
     if (b.signature) {
       kv('Signer', b.signature.signer, { mono: true })
       kv('Ed25519 signature', b.signature.ed25519_sig, { mono: true })
@@ -246,7 +247,7 @@ export function exportComplianceReport(c: ComplianceInput) {
     doc.setPage(i)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
-    doc.setTextColor(150, 158, 168)
+    doc.setTextColor(161, 161, 170)
     doc.text(`QuantumLedger Compliance Report · ${r.domain} · ${reportId}`, M, H - 26)
     doc.text(`page ${i} / ${pages}`, W - M, H - 26, { align: 'right' })
   }
