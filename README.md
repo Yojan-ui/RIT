@@ -1,90 +1,161 @@
-# SecureMailScope
+# QuantumLedger
 
-Email-security posture scanner with a 3D terminal UI. Enter a domain and it grades 7 vectors (**SPF, DKIM, DMARC, MX, MTA-STS, TLS-RPT** and a raw **port-25 STARTTLS** socket probe), maps what is broken to concrete attack paths, and names **The One Fix**: the single DNS change that closes the most of them.
+**Post-Quantum Cryptographic Resilience for Critical Infrastructure.**
 
-```
-backend/    FastAPI assessment engine + API; serves the compiled frontend at /
-frontend/   React 19 + Vite + Tailwind v4 terminal UI (Defense Lattice in React Three Fiber)
-Dockerfile  Node build stage -> Python image, Uvicorn on $PORT (default 80)
-```
-
-## Run locally
+QuantumLedger inspects the live TLS handshake of any endpoint and measures how exposed it is to a future quantum computer.
+It scores that risk with Mosca's theorem, shows the migration to NIST post-quantum standards, and seals each assessment
+into a hybrid-signed Merkle ledger that auditors can check for themselves. Everything runs on the operator's own
+machine: no cloud services, accounts or telemetry.
 
 ```bash
-cd backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/python -m app.frontend build        # compiles frontend/ into backend/static/
-.venv/bin/uvicorn app.main:app --port 8080    # http://127.0.0.1:8080
+git clone https://github.com/Yojan-ui/RIT.git && cd RIT && ./run_cyber_demo.sh   # → http://localhost:8002
 ```
 
-For frontend development with hot reload, run `npm run dev` in `frontend/` (http://localhost:5173, proxies `/api` to `http://127.0.0.1:8000`; override with `API_TARGET`).
+---
 
-Tests: `cd backend && .venv/bin/python -m pytest`
+## The threat
 
-## Deploy (Ubuntu VM, custom domain, automatic HTTPS)
+**Harvest Now, Decrypt Later.** Adversaries are already intercepting and archiving encrypted traffic from government,
+energy, telecom and financial networks. They do not need to break it today; they only need to store it and wait.
 
-The STARTTLS probe needs **outbound TCP 25**, which most PaaS hosts (Render, Heroku, and default AWS/GCP/Azure accounts) block, so run it on a VM where it is open. Infrastructure as code:
+The public-key cryptography protecting that traffic, **RSA** and **elliptic curves (ECC)**, rests on integer factoring
+and discrete logarithms. **Shor's algorithm** solves both efficiently on a large enough quantum computer. When one
+exists, every archived session becomes plaintext and every classical certificate can be forged.
 
-| File | Role |
-|---|---|
-| `deploy.sh` | One-shot, re-runnable setup for a fresh Ubuntu VM: installs Docker and Caddy from their official repositories, clones or updates the code, writes `.env`, runs `docker compose up -d --build`, and configures Caddy |
-| `docker-compose.yml` | Builds the image and publishes the app on **127.0.0.1:8000** only (Caddy is the sole public entry point), with a persistent scan-cache volume and log rotation |
-| `Caddyfile` | Automatic Let's Encrypt HTTPS for `$DOMAIN`, reverse proxy to `127.0.0.1:8000`, compression, JSON access log |
+India's DST task force has set **2029** as the deadline for critical information infrastructure to move to
+post-quantum cryptography. A migration on that scale takes years, and it starts with knowing which systems are exposed.
 
-1. Point the domain's DNS **A/AAAA** record at the VM and allow inbound **80/443**.
-2. On the VM:
+| Today | 2029 | 2033+ |
+|---|---|---|
+| **Harvest.** Encrypted TLS traffic is recorded at scale. | **Deadline.** The DST task force's target for post-quantum migration of critical systems. | **Decrypt.** A cryptographically relevant quantum computer runs Shor's algorithm on the archive. |
+
+---
+
+## How we are unique
+
+### 1 · Mathematical risk scoring
+
+Every endpoint is scored with **Mosca's theorem**:
+
+> **X + Y > Z ⇒ the data is already exposed.**
+> X = the years the data must stay secret · Y = the years the migration will take · Z = the years until a quantum adversary exists (2033 lower bound).
+
+QuantumLedger extends this into a **Context-Weighted Mosca (CWM)** score from 0 to 100:
+
+```
+Risk = ((X_ML + Y) / Z) × Exposure × Fragility × 100        (capped at 100)
+```
+
+Fragility comes from the real algorithms seen in the handshake: 1.0 for RSA and ECDSA, 0.1 for ML-DSA. Every term is
+shown with the endpoint's own values, so the score can be checked by hand rather than taken on trust.
+
+### 2 · Air-gapped execution
+
+**0 cloud dependencies.** The TLS probe, risk engine, CycloneDX CBOM export, PDF compliance report and ledger all run
+on the operator's machine. The only outbound connection is the TLS handshake to the endpoint being assessed. Scan
+results, topology and evidence never leave the local perimeter. Fonts and every library ship with the build, so nothing
+loads from a CDN at runtime.
+
+### 3 · Verifiable proof
+
+Each assessment is sealed into a **hash-chained SHA-256 Merkle ledger**, and every block hash is **hybrid-signed with
+ML-DSA-65 (FIPS 204) and classical Ed25519**. A block verifies only if:
+
+- every leaf, the Merkle root and the block hash recompute exactly;
+- **both** signatures verify, so a forger has to break both the post-quantum and the classical scheme;
+- the signer is the key pinned to this console, so a block re-signed with someone else's valid keys is rejected;
+- the block links to the previous block in the chain.
+
+Public keys and full signatures ship in the CBOM export, so a third party can verify the proof independently.
+
+---
+
+## Quick start (run locally)
+
+**Requirements:** Python 3.10+, Node.js 20+ with npm, and macOS or Linux.
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/Yojan-ui/SECUREMAILSCOPE/main/deploy.sh
-sudo DOMAIN=scan.example.com ACME_EMAIL=you@example.com \
-     ANTHROPIC_API_KEY=sk-ant-... SCAN_RATE_PER_MINUTE=100 SCAN_BURST=100 \
-     bash deploy.sh
+git clone https://github.com/Yojan-ui/RIT.git
+cd RIT
+./run_cyber_demo.sh
 ```
 
-Until this branch is merged, fetch the script from `securemailscope-3d-terminal` instead of `main` and add `BRANCH=securemailscope-3d-terminal`. Re-run `sudo bash /opt/securemailscope/deploy.sh` to update: settings are remembered, and any variable you pass again replaces the stored value. Secrets go only to `/opt/securemailscope/.env` (mode 600, git-ignored). The script warns if outbound port 25 is blocked.
+Open **http://localhost:8002**.
 
-Without Caddy: `docker compose up -d --build` serves the app on `http://127.0.0.1:8000`.
+On the first run the script creates a Python virtual environment, installs the backend and frontend dependencies, and
+builds the UI. That is the only step that needs internet access to package registries. After that, QuantumLedger starts
+from the local build.
 
-## Protecting a public deployment
-
-The live scan is the expensive endpoint: each one opens DNS, HTTPS and **port-25 SMTP** connections to hosts chosen by whoever supplies the domain. Built-in protections (all tunable in `.env.example`):
-
-| Protection | Default |
+| Option | Effect |
 |---|---|
-| New live scans per client IP | 10/min, burst 8. `429` with `Retry-After` once exceeded. Cache hits and demo domains are free |
-| All `/api/*` requests per client IP | 120/min, burst 60 (health checks exempt) |
-| Concurrent live scans | 8. Identical in-flight requests share one scan; beyond that, `503` after a 20 s queue |
-| Claude narratives | 300/day, then the rule-based writer. One narrative per scan (cached) |
-| SSRF guard | MX hosts and `mta-sts.<domain>` must resolve only to public addresses; connections go to the validated IP (no DNS rebinding) |
-| Request body | 16 KiB max (`413`) |
-| Headers | CSP, `X-Frame-Options`, `nosniff`, Referrer/Permissions-Policy, HSTS over HTTPS, `X-Request-ID`, JSON access logs with `LOG_FORMAT=json` |
+| `PORT=8090 ./run_cyber_demo.sh` | Serve on another port |
+| `REBUILD=1 ./run_cyber_demo.sh` | Force a fresh UI build |
+| `AR=1 ./run_cyber_demo.sh` | Also serve HTTPS on the LAN so an Android phone can project the scene in WebXR AR |
 
-The dashboard's CSP is strict (no `eval`, no inline script, same-origin only) because it renders attacker-controlled DNS text.
+---
 
-**Client IPs.** Limits are keyed by client IP and kept in-process (the image runs one worker on purpose). `X-Forwarded-For` is trusted only from `FORWARDED_ALLOW_IPS`, so clients can't forge it:
+## The demo in five stages
 
-- With `docker-compose.yml` + Caddy: already configured. The Compose network has a fixed gateway (`172.30.0.1`), the only address trusted to forward client IPs, and Caddy replaces any client-sent `X-Forwarded-For`.
-- Running the image directly (`docker run -p 80:80`): leave the default. The socket peer is the real client.
+Open the console from the landing page, enter a hostname (or pick a preset), and walk through:
 
-Check `client_ip` in the logs (`docker logs securemailscope`) shows real client addresses before sharing the URL.
+1. **Detect.** A real TLS 1.3 handshake records the key exchange group, the certificate key and its signature, and
+   builds a cryptographic inventory (CBOM).
+2. **Score.** CWM risk from 0 to 100 with the full Mosca arithmetic. *Validate Math* shows every term.
+3. **Defend.** A simulated migration to **X25519MLKEM768** (FIPS 203) and **ML-DSA-65** (FIPS 204), with its measured
+   cost per handshake: bytes on the wire and CPU time.
+4. **Prove.** The three stage records are sealed into a hybrid-signed Merkle block. A tamper test edits a record and
+   shows verification fail.
+5. **Rescan.** A verification sweep against the patched configuration, then a one-click **compliance report (PDF)**
+   and **CBOM (CycloneDX 1.6 JSON)**.
 
-## Claude-written narratives
+---
 
-`GET /api/v1/scan/{domain}/narrative` uses Claude (`claude-opus-5`, JSON-schema output, server-side refusal fallback) when `ANTHROPIC_API_KEY` is set. Claude only re-expresses the engine's findings: a response that states a different score or grade, cites a check that has no finding, or proposes work for a clean domain is discarded, and the rule-based narrative is served instead (`fallback_reason` says why). Without a key, the rule-based writer is used.
+## Architecture
 
-## API
+```
+┌──────────────────────────── operator machine (localhost) ────────────────────────────┐
+│                                                                                        │
+│  Browser · React 19 + React Three Fiber                                                │
+│  ├─ landing gateway → 3D console (lazy-loaded)                                         │
+│  ├─ CWM / Mosca scoring                                                                │
+│  ├─ Merkle ledger · Ed25519 + ML-DSA-65 signing (@noble/curves, @noble/post-quantum)   │
+│  └─ PDF compliance report · CycloneDX CBOM                                             │
+│                     │  /api (same origin)                                              │
+│  FastAPI · Python ──┴─ TLS probe (OpenSSL via cryptography) · SSRF guard · benchmarks  │
+│                                                                                        │
+└───────────────────────────────────────┬────────────────────────────────────────────────┘
+                                        │ TLS handshake only
+                                        ▼
+                                  target endpoint
+```
 
-Interactive docs at `/docs`. The versioned API:
-
-| Route | |
+| Path | Contents |
 |---|---|
-| `GET /api/v1/health` | Liveness and version |
-| `POST /api/v1/scan` | `{"domain", "dkim_selectors", "force_refresh"}` → full report |
-| `GET /api/v1/scan/{domain}` | Latest report (cached for `CACHE_TTL`; `?refresh=true` rescans) |
-| `GET /api/v1/scan/{domain}/pdf` | Formal PDF audit report (download) |
-| `GET /api/v1/scan/{domain}/json` | Report as a JSON file (download) |
-| `GET /api/v1/scan/{domain}/narrative` | Plain-English summary, attack scenarios, remediation steps |
-| `GET /api/v1/recent` | Recently scanned domains with score and grade |
-| `GET /api/v1/demo-domains` | Built-in `.example` domains that scan without network |
+| `run_cyber_demo.sh` | One-command launcher (delegates to `pqc-scanner/`) |
+| `pqc-scanner/backend/` | FastAPI service: TLS probe, analysis, live log stream, crypto benchmarks |
+| `pqc-scanner/frontend/` | React + Vite UI: landing page, 3D console (`src/hud/`), ledger and reports (`src/lib/`) |
+| `pqc-scanner/README.md` | Detailed feature notes: X-ray views, AR handoff, telemetry stream |
 
-Demo scenarios (`/api/demo`) run canned observations through the real engine, so the UI works without network access. Details: [backend/README.md](backend/README.md), [frontend/README.md](frontend/README.md).
+---
+
+## Standards
+
+| Standard | Role in QuantumLedger |
+|---|---|
+| NIST FIPS 203 (ML-KEM) | Target key exchange: X25519MLKEM768 hybrid |
+| NIST FIPS 204 (ML-DSA) | Target certificate signatures; ledger block signatures (ML-DSA-65) |
+| NIST FIPS 205 (SLH-DSA) | Recognised as quantum-safe in the inventory |
+| CycloneDX 1.6 | Cryptographic Bill of Materials export |
+| RFC 6962-style Merkle trees | Domain-separated leaf/node hashing in the ledger |
+
+---
+
+## Scope
+
+- **Detection is live; the remediation is simulated.** The Defend and Rescan stages model the patched configuration.
+  No change is made to the target server, and the UI and reports say so.
+- **Public hostnames only (for now).** An SSRF guard refuses private, loopback and internal addresses, so the scanner
+  cannot be pointed into a network it should not reach. Scanning in-perimeter CII hosts means relaxing this guard for a
+  trusted deployment.
+- **Ledger keys live in the browser.** The signing keys are stored locally for the demo. A production deployment would
+  keep them in an HSM or the OS keystore.
