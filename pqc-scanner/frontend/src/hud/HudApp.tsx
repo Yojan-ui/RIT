@@ -54,9 +54,20 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, suiteId: 
   const r = p.result
   const cs = CIPHER_SUITES[suiteId]
   const fix = remedy(suiteId)
+  // the suite readout, one line per probe phase (kex, cert, CBOM); `said` marks lines already logged this scan
+  const suiteLines = [
+    `kex ${cs.kex.name} · ${cs.kex.std} · share ${cs.kex.pk} B → ${cs.kex.out} B`,
+    `sig ${cs.sig.name} · ${cs.sig.std} · pk ${cs.sig.pk} B · sig ${cs.sig.out.toLocaleString('en-US')} B`,
+    `payload ≈ ${fmtBytes(handshakeBytes(cs))} / handshake · ${(handshakeBytes(cs) / handshakeBytes(CIPHER_SUITES.classical)).toFixed(1)}× classical`,
+  ]
+  const said = useRef(0)
+  const sayThrough = (n: number) => {
+    for (; said.current < n; said.current++) push('SUITE', suiteLines[said.current], said.current === 2 && !cs.level ? 'warn' : undefined)
+  }
 
   useEffect(() => {
     if (p.scanning) {
+      said.current = 0
       push('SCAN', `start · target ${p.query.trim()}`, 'dim')
       push('SUITE', `${cs.label.toLowerCase()} · kex ${cs.kexWire} · sig ${cs.sigWire} · ${levelText(cs).toLowerCase()}`, cs.level ? 'ok' : 'warn')
     }
@@ -66,10 +77,7 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, suiteId: 
     if (!p.scanning || p.scanStep <= 0) return
     push('SCAN', SCAN_STEPS[p.scanStep - 1].toLowerCase(), 'dim')
     // mock readout of the chosen suite's parameters, step by step alongside the live probe
-    const { kex, sig } = cs
-    if (p.scanStep === 2) push('SUITE', `kex ${kex.name} · ${kex.std} · share ${kex.pk} B → ${kex.out} B`)
-    if (p.scanStep === 3) push('SUITE', `sig ${sig.name} · ${sig.std} · pk ${sig.pk} B · sig ${sig.out.toLocaleString('en-US')} B`)
-    if (p.scanStep === 4) push('SUITE', `payload ≈ ${fmtBytes(handshakeBytes(cs))} / handshake · ${(handshakeBytes(cs) / handshakeBytes(CIPHER_SUITES.classical)).toFixed(1)}× classical`, cs.level ? undefined : 'warn')
+    sayThrough(p.scanStep - 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.scanStep])
   useEffect(() => {
@@ -78,6 +86,7 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, suiteId: 
   }, [suiteId])
   useEffect(() => {
     if (!r) return
+    sayThrough(suiteLines.length) // a fast (cached) result can land before the step animation reaches every phase
     const vuln = r.cbom_summary.filter((a) => !a.quantum_safe).length
     push('SCAN', `result parsed · ${r.tls.key_exchange.group ?? 'unknown'} · ${r.certificate.public_key.name} · ${vuln}/${r.cbom_summary.length} shor-vulnerable${r.cached ? ' · cached' : ''}`, vuln ? 'warn' : 'ok')
     if (p.demo) push('SCAN', 'api unreachable · demo dataset', 'warn')
