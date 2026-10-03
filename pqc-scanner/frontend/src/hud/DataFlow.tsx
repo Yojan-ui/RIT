@@ -148,7 +148,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
         const rr = radius * sim.r[i] * w.thickness
         tmp.o.position.copy(tmp.p).addScaledVector(tmp.n, Math.cos(a) * rr).addScaledVector(tmp.b, Math.sin(a) * rr)
         tmp.o.rotation.set(t * 2 + i, t * 1.3 + j, 0)
-        tmp.o.scale.setScalar(sim.size[i] * (0.35 + 0.65 * sim.e[i]))
+        tmp.o.scale.setScalar(sim.size[i] * (0.35 + 0.65 * sim.e[i]) * (0.5 + 0.5 * w.thickness)) // heavier suites: fatter particles too
         tmp.o.updateMatrix()
         m.setMatrixAt(i, tmp.o.matrix)
       }

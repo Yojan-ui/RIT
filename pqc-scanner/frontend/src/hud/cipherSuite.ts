@@ -59,7 +59,7 @@ export const CIPHER_SUITES: Record<CipherSuiteId, CipherSuite> = {
     level: 5,
     kexWire: 'MLKEM1024',
     sigWire: 'slhdsa_sha2_256s',
-    flow: { density: 2, thickness: 1.5, speed: 1.4 },
+    flow: { density: 2, thickness: 2, speed: 1.4 },
   },
 }
 
