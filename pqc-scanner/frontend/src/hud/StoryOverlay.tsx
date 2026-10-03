@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { coreZone, hudAnchor, type Story } from './anchor'
-import { THREAT_LEVELS } from './necessity'
+import { NIST_LEVELS } from './nistLevel'
 
 export interface StoryData {
   domain: string
@@ -179,7 +179,7 @@ function inspect(id: string, s: Story, d: StoryData): { title: string; rows: Row
           ['node', 'QuantumLedger probe · this host'],
           ['clienthello', n?.clientHello ? `${n.clientHello} B · offers X25519MLKEM768` : 'offers X25519MLKEM768'],
           ['tcp connect', n?.connectMs != null ? `${n.connectMs} ms` : '—'],
-          ['state', s.patched ? `${THREAT_LEVELS[s.necessity].kex.name} active (sim)` : 'classical session keys', s.patched ? 'hud-okc' : 'hud-warn'],
+          ['state', s.patched ? `${NIST_LEVELS[s.nistLevel].kex.name} active (sim)` : 'classical session keys', s.patched ? 'hud-okc' : 'hud-warn'],
         ],
       }
     case 'server':
@@ -189,7 +189,7 @@ function inspect(id: string, s: Story, d: StoryData): { title: string; rows: Row
           ['node', n ? `${n.ip}:443` : d.domain],
           ['host', d.domain],
           ['tls', n ? `${n.tls} · ${n.cipher}` : '—'],
-          ['state', s.patched ? `${THREAT_LEVELS[s.necessity].sig.name} + ${THREAT_LEVELS[s.necessity].kex.name} active (sim)` : `${d.sig} + ${d.kex} · Shor-vulnerable`, s.patched ? 'hud-okc' : 'hud-crit'],
+          ['state', s.patched ? `${NIST_LEVELS[s.nistLevel].sig.name} + ${NIST_LEVELS[s.nistLevel].kex.name} active (sim)` : `${d.sig} + ${d.kex} · Shor-vulnerable`, s.patched ? 'hud-okc' : 'hud-crit'],
           ['rtt', n?.rttMs != null ? `${n.rttMs.toFixed(1)} ms (ClientHello → ServerHello)` : '—'],
         ],
       }
@@ -216,10 +216,10 @@ function inspect(id: string, s: Story, d: StoryData): { title: string; rows: Row
       return {
         title: 'lattice shield',
         rows: [
-          ['scheme', id === 'cage0' ? `${THREAT_LEVELS[s.necessity].kex.name} · NIST ${THREAT_LEVELS[s.necessity].kex.std}` : `${THREAT_LEVELS[s.necessity].sig.name} · NIST ${THREAT_LEVELS[s.necessity].sig.std}`, 'hud-okc'],
+          ['scheme', id === 'cage0' ? `${NIST_LEVELS[s.nistLevel].kex.name} · NIST ${NIST_LEVELS[s.nistLevel].kex.std}` : `${NIST_LEVELS[s.nistLevel].sig.name} · NIST ${NIST_LEVELS[s.nistLevel].sig.std}`, 'hud-okc'],
           ['hardness', 'Module-LWE / Module-SIS'],
-          ...(id === 'cage1' && THREAT_LEVELS[s.necessity].fallback ? [['fallback', `${THREAT_LEVELS[s.necessity].fallback!.name} · hash-based`] as [string, string]] : []),
-          ['level', `NIST Level ${THREAT_LEVELS[s.necessity].level} · ${THREAT_LEVELS[s.necessity].equiv} equivalent`],
+          ...(id === 'cage1' && NIST_LEVELS[s.nistLevel].fallback ? [['fallback', `${NIST_LEVELS[s.nistLevel].fallback!.name} · hash-based`] as [string, string]] : []),
+          ['level', `NIST Level ${NIST_LEVELS[s.nistLevel].level} · ${NIST_LEVELS[s.nistLevel].equiv} equivalent`],
           ['state', s.stage === 5 && s.rescan === 'done' ? 'verified · pqc-ready' : 'active (simulated patch)', 'hud-ok'],
         ],
       }
@@ -361,8 +361,8 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
           <div className="hud-k">connection</div>
           {s.patched ? (
             <>
-              <div className="hud-okc">{THREAT_LEVELS[s.necessity].kex.name} · {THREAT_LEVELS[s.necessity].sig.name}</div>
-              <div className="hud-dim">lattice · module-lwe · nist level {THREAT_LEVELS[s.necessity].level}</div>
+              <div className="hud-okc">{NIST_LEVELS[s.nistLevel].kex.name} · {NIST_LEVELS[s.nistLevel].sig.name}</div>
+              <div className="hud-dim">lattice · module-lwe · nist level {NIST_LEVELS[s.nistLevel].level}</div>
             </>
           ) : (
             <>

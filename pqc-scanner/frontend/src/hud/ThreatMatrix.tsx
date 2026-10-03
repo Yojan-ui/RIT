@@ -1,31 +1,31 @@
 import { useRef, type KeyboardEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { NECESSITY_ORDER, THREAT_LEVELS, fmtBytes, handshakeBytes, levelText, type SecurityNecessity, type ThreatLevel } from './necessity'
+import { LEVEL_ORDER, NIST_LEVELS, fmtBytes, handshakeBytes, levelText, type NistLevel, type ThreatLevel } from './nistLevel'
 
-// Landing-page Dynamic Threat Matrix: three radio cards (necessity / threat level), then the chosen level's FIPS
+// Landing-page Dynamic Threat Matrix: three radio cards (nistLevel / threat level), then the chosen level's FIPS
 // parameter sets and its overhead against Level 1. Same onyx ground and neutral hairlines as the rest of the page;
 // emerald stays on the CTA.
 
-const NOTES: Record<SecurityNecessity, string[]> = {
-  enterprise: [
+const NOTES: Record<NistLevel, string[]> = {
+  1: [
     'ML-KEM-512 replaces ECDH key agreement with the smallest module-lattice keys.',
     'ML-DSA-44 replaces RSA / ECDSA certificate signatures at category 2.',
     'Optimised for speed and bandwidth on high-volume enterprise traffic.',
   ],
-  critical: [
+  3: [
     'ML-KEM-768 is the parameter set browsers and TLS libraries deploy by default.',
     'ML-DSA-65 signs certificates and handshakes at category 3.',
     'The recommended baseline for high-value targets and CII perimeters.',
   ],
-  state: [
+  5: [
     'ML-KEM-1024 and ML-DSA-87, the largest finalized lattice parameter sets.',
     'SLH-DSA-SHA2-256s held in reserve: a stateless hash-based signature that survives even a break in lattice assumptions.',
     'For adversaries with state-level resources and data that must outlive the quantum horizon.',
   ],
 }
 
-const L1 = THREAT_LEVELS.enterprise
-const L5 = THREAT_LEVELS.state
+const L1 = NIST_LEVELS[1]
+const L5 = NIST_LEVELS[5]
 const MSS = 1460 // bytes per TCP segment
 const INITCWND = 10 * MSS // RFC 6928 initial congestion window
 
@@ -43,7 +43,7 @@ const fade = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exi
 function TradeOff({ t }: { t: ThreatLevel }) {
   const bytes = handshakeBytes(t)
   const x = (n: number) => `${n.toFixed(1)}×`
-  if (t.id === 'enterprise')
+  if (t.id === 1)
     return (
       <>
         <span className="text-[#FAFAFA]">{fmtBytes(bytes)} per handshake</span>, {Math.ceil(bytes / MSS)} TCP segments: the lightest post-quantum
@@ -51,7 +51,7 @@ function TradeOff({ t }: { t: ThreatLevel }) {
         material ({fmtBytes(handshakeBytes(L5))}, {x(handshakeBytes(L5) / bytes)}).
       </>
     )
-  if (t.id === 'critical')
+  if (t.id === 3)
     return (
       <>
         <span className="text-[#FAFAFA]">{x(bytes / handshakeBytes(L1))} the bytes of Level 1</span> ({fmtBytes(bytes)} per handshake, still inside one
@@ -68,9 +68,9 @@ function TradeOff({ t }: { t: ThreatLevel }) {
   )
 }
 
-export function ThreatMatrix({ value, onChange }: { value: SecurityNecessity; onChange: (id: SecurityNecessity) => void }) {
+export function ThreatMatrix({ value, onChange }: { value: NistLevel; onChange: (id: NistLevel) => void }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([])
-  const t = THREAT_LEVELS[value]
+  const t = NIST_LEVELS[value]
   const vsBase = t.id !== L1.id // the Level 1 baseline bar only when there is something to compare it with
 
   // roving focus: arrow keys move through the radio group
@@ -78,21 +78,21 @@ export function ThreatMatrix({ value, onChange }: { value: SecurityNecessity; on
     const d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
     if (!d) return
     e.preventDefault()
-    const n = (i + d + NECESSITY_ORDER.length) % NECESSITY_ORDER.length
-    onChange(NECESSITY_ORDER[n])
+    const n = (i + d + LEVEL_ORDER.length) % LEVEL_ORDER.length
+    onChange(LEVEL_ORDER[n])
     refs.current[n]?.focus()
   }
 
   return (
     <div className="max-w-4xl">
       <div className="flex items-baseline justify-between gap-4">
-        <p id="necessity-label" className="font-mono text-[11px] tracking-[0.14em] text-neutral-500 uppercase">Necessity / threat level</p>
+        <p id="level-label" className="font-mono text-[11px] tracking-[0.14em] text-neutral-500 uppercase">Necessity / threat level</p>
         <p className="hidden font-mono text-[11px] text-neutral-600 sm:block">FIPS 203 · 204 · 205</p>
       </div>
 
-      <div role="radiogroup" aria-labelledby="necessity-label" className="mt-4 grid gap-px overflow-hidden border border-neutral-800 bg-neutral-800 sm:grid-cols-3">
-        {NECESSITY_ORDER.map((id, i) => {
-          const c = THREAT_LEVELS[id]
+      <div role="radiogroup" aria-labelledby="level-label" className="mt-4 grid gap-px overflow-hidden border border-neutral-800 bg-neutral-800 sm:grid-cols-3">
+        {LEVEL_ORDER.map((id, i) => {
+          const c = NIST_LEVELS[id]
           const on = id === value
           return (
             <button
@@ -105,7 +105,7 @@ export function ThreatMatrix({ value, onChange }: { value: SecurityNecessity; on
               onKeyDown={(e) => onKey(e, i)}
               className={`relative flex flex-col items-start p-5 text-left transition-colors focus-visible:z-10 focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[#FAFAFA] ${on ? 'bg-[#111113]' : 'bg-[#09090B] hover:bg-[#0d0d0f]'}`}
             >
-              {on && <motion.span layoutId="necessity-mark" className="absolute inset-x-0 top-0 h-px bg-[#FAFAFA]" transition={{ type: 'spring', visualDuration: 0.35, bounce: 0.1 }} />}
+              {on && <motion.span layoutId="level-mark" className="absolute inset-x-0 top-0 h-px bg-[#FAFAFA]" transition={{ type: 'spring', visualDuration: 0.35, bounce: 0.1 }} />}
               <span className="flex w-full items-baseline justify-between gap-3">
                 <span className={`font-display text-[15px] font-semibold tracking-[-0.01em] ${on ? 'text-[#FAFAFA]' : 'text-neutral-300'}`}>{c.label}</span>
                 <span className="font-mono text-[10px] tracking-[0.12em] text-neutral-500 uppercase">{c.equiv}</span>

@@ -1,8 +1,8 @@
 """Handshake crypto benchmark, measured on this host with `cryptography` (OpenSSL).
 
 Times the per-handshake public-key operations of classical TLS (ECDHE, RSA / ECDSA)
-against the post-quantum replacements (ML-KEM-768 inside X25519MLKEM768, ML-DSA-65),
-and reports the real encoded sizes that go on the wire. Computed once, then cached.
+against the post-quantum replacements (ML-KEM-768 inside X25519MLKEM768, ML-DSA-65), plus the
+other NIST levels' parameter sets the console can switch to (ML-KEM-1024, ML-DSA-44 / 87), and reports the real encoded sizes that go on the wire. Computed once, then cached.
 """
 
 from __future__ import annotations
@@ -66,8 +66,8 @@ def _sig_ecdsa(curve: ec.EllipticCurve) -> dict:
     }
 
 
-def _sig_mldsa65() -> dict:
-    k = mldsa.MLDSA65PrivateKey.generate()
+def _sig_mldsa(cls: type) -> dict:
+    k = cls.generate()
     sig = k.sign(MSG)
     pub = k.public_key()
     return {
@@ -96,39 +96,53 @@ def _kex_p256() -> dict:
     return {"server_us": _time(side), "client_us": _time(side), "client_share_bytes": 65, "server_share_bytes": 65}
 
 
-def _kex_x25519mlkem768() -> dict:
-    """Hybrid: X25519 ECDHE + ML-KEM-768. Client: keygen + decapsulate. Server: encapsulate."""
-    x = _kex_x25519()
-    dk = mlkem.MLKEM768PrivateKey.generate()
+def _kex_mlkem(cls: type) -> dict:
+    """Pure ML-KEM. Client: keygen + decapsulate. Server: encapsulate."""
+    dk = cls.generate()
     ek = dk.public_key()
     _, ct = ek.encapsulate()
-    keygen = _time(lambda: mlkem.MLKEM768PrivateKey.generate())
+    keygen = _time(lambda: cls.generate())
     encap = _time(lambda: ek.encapsulate())
     decap = _time(lambda: dk.decapsulate(ct))
     ek_len = len(ek.public_bytes_raw())
     return {
-        "server_us": x["server_us"] + encap,
-        "client_us": x["client_us"] + keygen + decap,
-        "client_share_bytes": ek_len + 32,
-        "server_share_bytes": len(ct) + 32,
+        "server_us": encap,
+        "client_us": keygen + decap,
+        "client_share_bytes": ek_len,
+        "server_share_bytes": len(ct),
         "mlkem": {"keygen_us": keygen, "encaps_us": encap, "decaps_us": decap, "encapsulation_key_bytes": ek_len, "ciphertext_bytes": len(ct)},
+    }
+
+
+def _kex_x25519mlkem768(pure: dict) -> dict:
+    """Hybrid: X25519 ECDHE + ML-KEM-768 (the pure ML-KEM-768 timings plus one X25519 exchange per side)."""
+    x = _kex_x25519()
+    return {
+        "server_us": x["server_us"] + pure["server_us"],
+        "client_us": x["client_us"] + pure["client_us"],
+        "client_share_bytes": pure["client_share_bytes"] + 32,
+        "server_share_bytes": pure["server_share_bytes"] + 32,
+        "mlkem": pure["mlkem"],
     }
 
 
 @functools.cache
 def run() -> dict:
     started = time.perf_counter()
+    mlkem768 = _kex_mlkem(mlkem.MLKEM768PrivateKey)
     out = {
         "host": f"{platform.system()} {platform.machine()} · Python {platform.python_version()}",
         "library": f"cryptography {cryptography.__version__} · {ossl.openssl_version_text()}",
-        "kex": {"x25519": _kex_x25519(), "secp256r1": _kex_p256(), "X25519MLKEM768": _kex_x25519mlkem768()},
+        "kex": {"x25519": _kex_x25519(), "secp256r1": _kex_p256(), "X25519MLKEM768": _kex_x25519mlkem768(mlkem768), "MLKEM768": mlkem768, "MLKEM1024": _kex_mlkem(mlkem.MLKEM1024PrivateKey)},
         "sig": {
             "RSA-2048": _sig_rsa(2048),
             "RSA-3072": _sig_rsa(3072),
             "RSA-4096": _sig_rsa(4096),
             "ECDSA P-256": _sig_ecdsa(ec.SECP256R1()),
             "ECDSA P-384": _sig_ecdsa(ec.SECP384R1()),
-            "ML-DSA-65": _sig_mldsa65(),
+            "ML-DSA-44": _sig_mldsa(mldsa.MLDSA44PrivateKey),
+            "ML-DSA-65": _sig_mldsa(mldsa.MLDSA65PrivateKey),
+            "ML-DSA-87": _sig_mldsa(mldsa.MLDSA87PrivateKey),
         },
     }
     out["measured_in_ms"] = round((time.perf_counter() - started) * 1000)

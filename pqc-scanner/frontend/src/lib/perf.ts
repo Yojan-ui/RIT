@@ -25,6 +25,7 @@ export interface Perf {
   /** Whether the PQC server flight exceeds TCP's initial window (10 × 1460 B), which can cost one extra round trip. */
   extraRtt: boolean | null
   source: string
+  kexEstimated: boolean // the post-quantum kex timing was scaled, not measured on this host
 }
 
 export const INITCWND_BYTES = 10 * 1460
@@ -44,22 +45,38 @@ function side(label: string, kexName: string, kex: KexBench, sigName: string, si
   }
 }
 
-/** `legacySig` overrides the site's own certificate key (e.g. to compare against RSA-2048). */
-export function computePerf(r: ScanResult, b: Bench, legacySig?: string): Perf {
+/** The post-quantum side to price: bench keys for its kex and signature. A kex this host can't measure is scaled
+ *  from a measured one (`from`, `scale`) with its own FIPS 203 share sizes, and flagged `estimated`. */
+export interface PqSpec {
+  kex: string | { from: string; scale: number; name: string; clientShare: number; serverShare: number }
+  sig: string
+}
+const HYBRID_768: PqSpec = { kex: 'X25519MLKEM768', sig: 'ML-DSA-65' }
+
+function pqKex(b: Bench, k: PqSpec['kex']): { name: string; bench: KexBench; estimated: boolean } {
+  if (typeof k === 'string') return { name: k, bench: b.kex[k], estimated: false }
+  const src = b.kex[k.from]
+  return { name: k.name, bench: { server_us: src.server_us * k.scale, client_us: src.client_us * k.scale, client_share_bytes: k.clientShare, server_share_bytes: k.serverShare }, estimated: true }
+}
+
+/** `legacySig` overrides the site's own certificate key (e.g. to compare against RSA-2048); `pq` picks the
+ *  post-quantum parameter sets (default: the X25519MLKEM768 + ML-DSA-65 patch). */
+export function computePerf(r: ScanResult, b: Bench, legacySig?: string, pq: PqSpec = HYBRID_768): Perf {
   const group = r.tls.key_exchange.group ?? ''
   const kexName = group === 'secp256r1' ? 'secp256r1' : 'x25519' // hybrid sites still fall back to classical X25519 here
   const siteSig = r.certificate.public_key.name
   const sigName = legacySig ?? (LEGACY_SIGS.includes(siteSig) ? siteSig : 'RSA-2048')
   const legacy = side('legacy', kexName, b.kex[kexName], sigName, b.sig[sigName])
-  const pqc = side('post-quantum', 'X25519MLKEM768', b.kex.X25519MLKEM768, 'ML-DSA-65', b.sig['ML-DSA-65'])
+  const qkx = pqKex(b, pq.kex)
+  const pqc = side('post-quantum', qkx.name, qkx.bench, pq.sig, b.sig[pq.sig])
   const deltaMs = (pqc.serverUs + pqc.clientUs - legacy.serverUs - legacy.clientUs) / 1000
   const rtt = r.wire?.hello_rtt_ms ?? null
   // legacy flight ≈ measured certificate chain + server key share + CertificateVerify + ~250 B of framing,
   // EncryptedExtensions and Finished; the patch grows the share, the leaf key and both signatures
   const lk = b.kex[kexName]
   const ls = b.sig[sigName]
-  const qk = b.kex.X25519MLKEM768
-  const qs = b.sig['ML-DSA-65']
+  const qk = qkx.bench
+  const qs = b.sig[pq.sig]
   const chain = r.wire?.cert_chain_bytes ?? null
   const flightLegacy = chain != null ? chain + lk.server_share_bytes + ls.signature_bytes + 250 : null
   const serverFlight =
@@ -77,6 +94,7 @@ export function computePerf(r: ScanResult, b: Bench, legacySig?: string): Perf {
     serverFlight,
     extraRtt: serverFlight ? serverFlight.pqc > INITCWND_BYTES : null,
     source: `${b.library} · ${b.host}`,
+    kexEstimated: qkx.estimated,
   }
 }
 

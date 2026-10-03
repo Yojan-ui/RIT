@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type ReactNode } from 'react'
 import { Blocks, Cpu, FileDown, Gauge, Radar, RotateCcw, ScanLine, ShieldCheck, type LucideIcon } from 'lucide-react'
 import { usePipeline, SCAN_STEPS, type Pipeline } from '../pipeline/usePipeline'
 import type { CoreState } from '../scene/CryptoCore'
@@ -19,7 +19,7 @@ import { Pane } from './pane'
 import { SpatialSlot, spatial } from './spatial'
 import { geiger, sfx } from './sfx'
 import { useXR } from './xr'
-import { DEFAULT_NECESSITY, THREAT_LEVELS, fmtBytes, handshakeBytes, levelText, type SecurityNecessity } from './necessity'
+import { DEFAULT_LEVEL, LEVEL_ORDER, NIST_LEVELS, fmtBytes, handshakeBytes, levelText, type NistLevel } from './nistLevel'
 import './hud.css'
 
 const STEPS: [string, LucideIcon][] = [
@@ -48,11 +48,11 @@ const stamp = () => new Date().toISOString().slice(11, 23)
 type Tone = 'ice' | 'warn' | 'crit' | 'ok' | 'dim'
 
 /** Records one UI log line per real pipeline state change (backend lines arrive over the stream). */
-function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, necessity: SecurityNecessity) {
+function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, nistLevel: NistLevel) {
   const push = (tag: string, text: string, tone?: Tone) =>
     add({ t: stamp(), src: 'ui', tag: tag.toLowerCase(), text, level: tone === 'crit' ? 'ERROR' : 'INFO', tone: tone === 'ice' ? undefined : tone })
   const r = p.result
-  const lv = THREAT_LEVELS[necessity]
+  const lv = NIST_LEVELS[nistLevel]
   const fb = lv.fallback
   // the threat-level readout, grouped by probe phase (kex, cert, CBOM); `said` counts phases already logged this scan
   const levelLines = [
@@ -61,7 +61,7 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, necessity
       `sig ${lv.sig.name} · ${lv.sig.std} · pk ${lv.sig.pk.toLocaleString('en-US')} B · sig ${lv.sig.out.toLocaleString('en-US')} B`,
       ...(fb ? [`fallback ${fb.name} · ${fb.std} · sig ${fb.out.toLocaleString('en-US')} B (reserve)`] : []),
     ],
-    [`payload ≈ ${fmtBytes(handshakeBytes(lv))} / handshake · ${(handshakeBytes(lv) / handshakeBytes(THREAT_LEVELS.enterprise)).toFixed(1)}× level 1 · ${lv.equiv} equivalent`],
+    [`payload ≈ ${fmtBytes(handshakeBytes(lv))} / handshake · ${(handshakeBytes(lv) / handshakeBytes(NIST_LEVELS[1])).toFixed(1)}× level 1 · ${lv.equiv} equivalent`],
   ]
   const said = useRef(0)
   const sayThrough = (n: number) => {
@@ -86,7 +86,7 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, necessity
   useEffect(() => {
     push('LEVEL', `threat level → ${lv.label.toLowerCase()} · ${levelText(lv).toLowerCase()} · ${lv.kexWire} / ${lv.sigWire}`, 'dim')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [necessity])
+  }, [nistLevel])
   useEffect(() => {
     if (!r) return
     sayThrough(levelLines.length) // a fast (cached) result can land before the step animation reaches every phase
@@ -230,7 +230,7 @@ function NodeRow({ idx, role, name, state, note, lock }: { idx: number; role: st
 // ── App ──────────────────────────────────────────────────────────────────────
 
 /** `awake` false: mounted dormant behind the landing page so the scene is already running when it dissolves. */
-export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: { awake?: boolean; necessity?: SecurityNecessity }) {
+export default function HudApp({ awake = true, nistLevel = DEFAULT_LEVEL, onNistLevelChange }: { awake?: boolean; nistLevel?: NistLevel; onNistLevelChange?: (l: NistLevel) => void }) {
   // Live telemetry: backend log records streamed over SSE, plus UI pipeline events.
   const [lines, setLines] = useState<TLine[]>([])
   const [stream, setStream] = useState<{ state: StreamState; meta: string }>({ state: 'idle', meta: '' })
@@ -269,7 +269,7 @@ export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: 
     [add],
   )
   const p = usePipeline({ onTelemetry })
-  useEventLog(p, add, necessity)
+  useEventLog(p, add, nistLevel)
 
   // Handshake crypto benchmark, measured once on the backend host.
   const [bench, setBench] = useState<Bench | null>(null)
@@ -297,14 +297,14 @@ export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: 
   // One hologram node per signature / key-exchange algorithm, coloured only by its own state.
   const nodes: HoloNode[] = useMemo(() => {
     if (!r || !p.before) return []
-    const lv = THREAT_LEVELS[necessity]
+    const lv = NIST_LEVELS[nistLevel]
     const list = p.patched || xr.presenting ? p.upgraded.map((a) => ({ ...a, name: a.role === 'Signature' ? lv.sig.name : lv.kex.name })) : p.detected
     return list.map((a) => ({
       id: `${a.role === 'Signature' ? 'sig' : 'kex'}:${a.name}`,
       label: a.name,
       state: a.safe ? 'ok' : p.cwmBefore?.severity === 'CRITICAL' ? 'crit' : 'warn',
     }))
-  }, [r, p.before, p.patched, p.detected, p.upgraded, p.cwmBefore, xr.presenting, necessity])
+  }, [r, p.before, p.patched, p.detected, p.upgraded, p.cwmBefore, xr.presenting, nistLevel])
 
   const [wide, setWide] = useState(() => innerWidth >= 1024)
   useEffect(() => {
@@ -350,9 +350,9 @@ export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: 
       anchored: !!p.block,
       chainIndex: p.block?.index ?? 0,
       rescan: p.rescan,
-      necessity,
+      nistLevel,
     }),
-    [r, p.scanning, p.step, p.vulnerable, p.patching, p.patched, p.block, p.rescan, necessity],
+    [r, p.scanning, p.step, p.vulnerable, p.patching, p.patched, p.block, p.rescan, nistLevel],
   )
   // AR tabletop: once placed, the lattice shield locks around the link, then the ledger block snaps into
   // the Merkle chain. A composite of stages 3 + 4 so all three structures stand on the table together.
@@ -364,8 +364,8 @@ export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: 
     return () => clearTimeout(t)
   }, [xr.placed])
   const arStory: Story = useMemo(
-    () => ({ active: true, scanning: false, stage: 4, vulnerable: true, patching: false, patched: arBeat >= 1, anchored: arBeat >= 2, chainIndex: p.block?.index ?? 1, rescan: 'idle', necessity }),
-    [arBeat, p.block, necessity],
+    () => ({ active: true, scanning: false, stage: 4, vulnerable: true, patching: false, patched: arBeat >= 1, anchored: arBeat >= 2, chainIndex: p.block?.index ?? 1, rescan: 'idle', nistLevel }),
+    [arBeat, p.block, nistLevel],
   )
   const scene = xr.presenting ? arStory : story
   useSonification(scene, p, heat, shorVuln)
@@ -425,9 +425,7 @@ export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: 
         </button>
         <div className="flex items-center gap-2 whitespace-nowrap text-[10.5px] sm:gap-4">
           <span className="hud-dim hidden lg:inline">Console {CONSOLE}</span>
-          <span className="hud-okc hidden md:inline" title={`${THREAT_LEVELS[necessity].label} · ${THREAT_LEVELS[necessity].kex.name} · ${THREAT_LEVELS[necessity].sig.name}`}>
-            {levelText(THREAT_LEVELS[necessity])} · {THREAT_LEVELS[necessity].kexWire}
-          </span>
+          <LevelSelector value={nistLevel} onChange={onNistLevelChange} />
           <span className="hud-ice hidden sm:inline"><Clock /></span>
           <span className={`${statusCls} hidden font-semibold tracking-[0.08em] sm:inline`}>{statusText}</span>
           <ArHandoff domain={r?.domain ?? p.query.trim()} />
@@ -443,7 +441,7 @@ export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: 
       <main className="holo-grid">
         <div className="holo-col" aria-label="Diagnostics">
           <SpatialSlot id="diagnostics" side={-1} fill stream on={spatialOn} className="flex min-h-0 flex-1 flex-col">
-            <DiagnosticsPane p={p} addrs={addrs} shorVuln={shorVuln} total={total} necessity={necessity} />
+            <DiagnosticsPane p={p} addrs={addrs} shorVuln={shorVuln} total={total} nistLevel={nistLevel} />
           </SpatialSlot>
         </div>
         <div ref={(el) => { hudAnchor.zoneEl = el }} className="holo-zone" aria-hidden />
@@ -457,7 +455,7 @@ export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: 
         </div>
         <div className="holo-bottom">
           <SpatialSlot id="sweep" side={0} on={spatialOn}>
-            <SweepPane p={p} necessity={necessity} onReport={exportCompliance} comparison={<Comparison r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />} />
+            <SweepPane p={p} nistLevel={nistLevel} onReport={exportCompliance} comparison={<Comparison r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} level={NIST_LEVELS[nistLevel]} />} />
           </SpatialSlot>
         </div>
       </main>
@@ -466,11 +464,51 @@ export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: 
   )
 }
 
+// ── header: NIST level selector ──────────────────────────────────────────────
+
+/** Segmented control in the header's quiet-button style; switches every level-driven readout and the 3D stream live. */
+function LevelSelector({ value, onChange }: { value: NistLevel; onChange?: (l: NistLevel) => void }) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([])
+  const onKey = (e: ReactKeyboardEvent, i: number) => {
+    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    if (!d || !onChange) return
+    e.preventDefault()
+    const n = (i + d + LEVEL_ORDER.length) % LEVEL_ORDER.length
+    onChange(LEVEL_ORDER[n])
+    refs.current[n]?.focus()
+  }
+  return (
+    <div role="radiogroup" aria-label="NIST security level" className="hidden md:flex">
+      {LEVEL_ORDER.map((l, i) => {
+        const t = NIST_LEVELS[l]
+        const on = l === value
+        return (
+          <button
+            key={l}
+            ref={(el) => { refs.current[i] = el }}
+            role="radio"
+            aria-checked={on}
+            tabIndex={on ? 0 : -1}
+            disabled={!onChange}
+            onClick={() => onChange?.(l)}
+            onKeyDown={(e) => onKey(e, i)}
+            title={`${t.label} · ${t.kex.name} · ${t.sig.name}${t.fallback ? ` + ${t.fallback.name}` : ''}`}
+            className={`hud-btn quiet ${i ? '-ml-px' : ''} ${on ? 'relative z-[1] !border-[rgb(var(--ice-rgb)/0.35)] !bg-[rgb(var(--ice-rgb)/0.07)] !text-[var(--white)]' : ''}`}
+          >
+            <span className="min-[1800px]:hidden">L{l} · {t.short}</span>
+            <span className="hidden min-[1800px]:inline">Level {l} ({t.short})</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── panes ────────────────────────────────────────────────────────────────────
 
-function DiagnosticsPane({ p, addrs, shorVuln, total, necessity }: { p: Pipeline; addrs: string[]; shorVuln: number; total: number; necessity: SecurityNecessity }) {
+function DiagnosticsPane({ p, addrs, shorVuln, total, nistLevel }: { p: Pipeline; addrs: string[]; shorVuln: number; total: number; nistLevel: NistLevel }) {
   const r = p.result
-  const lv = THREAT_LEVELS[necessity]
+  const lv = NIST_LEVELS[nistLevel]
   const b = p.block
   const v = p.verification
   const cwm = p.patched ? p.cwmAfter : p.cwmBefore
@@ -611,9 +649,9 @@ const focusQuietly = (el: HTMLInputElement | null) => {
 }
 
 /** Stage title for the console status line (`STAGE 05: 100% PQC-READY`) and its sub-line. */
-function stageInfo(p: Pipeline, necessity: SecurityNecessity): { title: string; sub?: string } {
+function stageInfo(p: Pipeline, nistLevel: NistLevel): { title: string; sub?: string } {
   const r = p.result
-  const lv = THREAT_LEVELS[necessity]
+  const lv = NIST_LEVELS[nistLevel]
   const m = p.m
   switch (p.step) {
     case 1:
@@ -637,10 +675,10 @@ function stageInfo(p: Pipeline, necessity: SecurityNecessity): { title: string; 
   }
 }
 
-function SweepPane({ p, necessity, onReport, comparison }: { p: Pipeline; necessity: SecurityNecessity; onReport: () => void; comparison: ReactNode }) {
+function SweepPane({ p, nistLevel, onReport, comparison }: { p: Pipeline; nistLevel: NistLevel; onReport: () => void; comparison: ReactNode }) {
   const r = p.result
-  const info = stageInfo(p, necessity)
-  const lv = THREAT_LEVELS[necessity]
+  const info = stageInfo(p, nistLevel)
+  const lv = NIST_LEVELS[nistLevel]
   const checks = [`kex ${lv.kex.name} · ${lv.kex.std}`, `cert ${lv.sig.name} key + signature · ${lv.sig.std}`, 'cbom 0 Shor-vulnerable']
   const action = (() => {
     switch (p.step) {

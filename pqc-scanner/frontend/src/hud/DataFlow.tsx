@@ -8,7 +8,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Story } from './anchor'
-import { THREAT_LEVELS } from './necessity'
+import { NIST_LEVELS } from './nistLevel'
 
 const PACKETS = 14 // particle clusters in flight
 const PER_BASE = 26 // particles per cluster lit by a Level 1 payload
@@ -84,7 +84,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
       e: new Float32Array(N), // eased energy
       opacity: 0,
       color: new THREE.Color().copy(CLASSICAL),
-      w: { ...THREAT_LEVELS.enterprise.flow }, // eased payload weight
+      w: { ...NIST_LEVELS[1].flow }, // eased payload weight
     }
   }, [])
   const tmp = useMemo(() => ({ p: new THREE.Vector3(), t: new THREE.Vector3(), n: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), o: new THREE.Object3D() }), [])
@@ -94,7 +94,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
     if (!m) return
     const dt = Math.min(dtRaw, 0.05)
     const t = clock.elapsedTime
-    const { active, scanning, patched, stage, rescan, necessity } = story
+    const { active, scanning, patched, stage, rescan, nistLevel } = story
 
     // fade in with the link; colour eases to the link's security state
     sim.opacity += ((active ? 1 : 0) - sim.opacity) * (1 - Math.exp(-dt * 4))
@@ -106,7 +106,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
     material.uniforms.uColor.value.copy(sim.color)
     material.uniforms.uGain.value = patched ? 2.8 : 1.3 // only secured traffic blooms
     // payload weight eases to the chosen level so switching never pops
-    const goalW = THREAT_LEVELS[necessity].flow
+    const goalW = NIST_LEVELS[nistLevel].flow
     const kw = 1 - Math.exp(-dt * 2.5)
     sim.w.density += (goalW.density - sim.w.density) * kw
     sim.w.thickness += (goalW.thickness - sim.w.thickness) * kw

@@ -5,6 +5,7 @@ import { Terminal } from 'lucide-react'
 import type { Bench, ScanResult } from '../api'
 import { computePerf, fmtBytes, fmtUs, LEGACY_SIGS } from '../lib/perf'
 import { Pane } from './pane'
+import { pqSpec, type ThreatLevel } from './nistLevel'
 
 // ── Live telemetry terminal ──────────────────────────────────────────────────
 
@@ -133,26 +134,27 @@ export function TelemetryTerminal({ lines, state, meta, target }: { lines: TLine
 
 // ── Legacy vs post-quantum comparison ────────────────────────────────────────
 
-/** Side-by-side handshake cost: the site's legacy suite (or RSA-2048) against ML-DSA-65 + ML-KEM-768, measured on this host. */
-export function Comparison({ r, bench, benchError, legacySig, setLegacySig }: { r: ScanResult | null; bench: Bench | null; benchError: boolean; legacySig: string | null; setLegacySig: (s: string | null) => void }) {
+/** Side-by-side handshake cost: the site's legacy suite (or RSA-2048) against the active NIST level's ML-KEM + ML-DSA, measured on this host. */
+export function Comparison({ r, bench, benchError, legacySig, setLegacySig, level }: { r: ScanResult | null; bench: Bench | null; benchError: boolean; legacySig: string | null; setLegacySig: (s: string | null) => void; level: ThreatLevel }) {
   if (!r || !bench) {
     return <p className="hud-dim text-[11.5px]">{benchError ? 'Benchmark unavailable · backend offline' : !bench ? 'Measuring handshake crypto on this host…' : 'Legacy vs post-quantum handshake cost appears after a scan.'}</p>
   }
-  const p = computePerf(r, bench, legacySig ?? undefined)
+  const p = computePerf(r, bench, legacySig ?? undefined, pqSpec(level))
+  const est = p.kexEstimated ? ' · est.' : ''
   const site = r.certificate.public_key.name
   const choices = Array.from(new Set([LEGACY_SIGS.includes(site) ? site : 'RSA-2048', 'RSA-2048']))
   const oneRtt = p.extraRtt == null ? null : !p.extraRtt
   const rows: [string, string, string, string?][] = [
-    ['Signature', p.legacy.sig, 'ML-DSA-65', 'FIPS 204'],
-    ['Key exchange', p.legacy.kex, 'ML-KEM-768', 'X25519MLKEM768 · FIPS 203'],
+    ['Signature', p.legacy.sig, level.sig.name, level.sig.std],
+    ['Key exchange', p.legacy.kex, level.kex.name, `${level.kexWire} · ${level.kex.std}`],
     ['Crypto bytes', fmtBytes(p.legacy.wireBytes), fmtBytes(p.pqc.wireBytes), `+${fmtBytes(p.deltaBytes)}`],
-    ['CPU / handshake', fmtUs(p.legacy.serverUs + p.legacy.clientUs), fmtUs(p.pqc.serverUs + p.pqc.clientUs), `${p.deltaMs >= 0 ? '+' : ''}${p.deltaMs.toFixed(2)} ms`],
+    ['CPU / handshake', fmtUs(p.legacy.serverUs + p.legacy.clientUs), fmtUs(p.pqc.serverUs + p.pqc.clientUs), `${p.deltaMs >= 0 ? '+' : ''}${p.deltaMs.toFixed(2)} ms${est}`],
     ...(p.rttMs != null ? [['Latency', `${p.rttMs.toFixed(0)} ms`, `${(p.rttMs + p.deltaMs).toFixed(1)} ms`, `+${p.pctOfRtt!.toFixed(1)}% of rtt`] as [string, string, string, string]] : []),
   ]
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="hud-k">Legacy vs post-quantum · measured on this host</span>
+        <span className="hud-k" title={p.kexEstimated ? `${level.kex.name} timing estimated from the measured ML-KEM-768 (not in this host's cryptography build)` : undefined}>Legacy vs post-quantum L{level.level} · measured on this host</span>
         <span className="flex gap-1">
           {choices.map((c) => (
             <button key={c} onClick={() => setLegacySig(c === site ? null : c)} className={`rounded px-1.5 text-[10px] ${p.legacy.sig === c ? 'hud-white border border-[var(--line-2)]' : 'hud-dim border border-transparent hover:text-white'}`}>
