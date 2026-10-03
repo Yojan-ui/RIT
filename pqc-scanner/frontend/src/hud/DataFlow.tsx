@@ -1,14 +1,18 @@
 // Volumetric data flow along the client ↔ server link: small faceted particles stream through a thin
 // tube around a CatmullRom path, clustered into packets that pulse in bursts. Colour carries state:
 // pale slate over the classical link, icy teal once the post-quantum patch is in, mint once the
-// rescan has verified it. One InstancedMesh, one draw call.
+// rescan has verified it. Weight carries the cipher suite: lattice / hash-based payloads are heavier on the wire,
+// so the PQC suites fill each packet with more particles, widen the stream and move it faster.
+// One InstancedMesh, one draw call.
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Story } from './anchor'
+import { CIPHER_SUITES } from './cipherSuite'
 
 const PACKETS = 14 // particle clusters in flight
-const PER = 26 // particles per cluster
+const PER_BASE = 26 // particles per cluster lit by a classical payload
+const PER = PER_BASE * 2 // capacity: the heaviest suite lights every slot
 const N = PACKETS * PER
 
 const CLASSICAL = new THREE.Color('#a1a1aa')
@@ -80,6 +84,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
       e: new Float32Array(N), // eased energy
       opacity: 0,
       color: new THREE.Color().copy(CLASSICAL),
+      w: { ...CIPHER_SUITES.classical.flow }, // eased payload weight
     }
   }, [])
   const tmp = useMemo(() => ({ p: new THREE.Vector3(), t: new THREE.Vector3(), n: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), o: new THREE.Object3D() }), [])
@@ -89,7 +94,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
     if (!m) return
     const dt = Math.min(dtRaw, 0.05)
     const t = clock.elapsedTime
-    const { active, scanning, patched, stage, rescan } = story
+    const { active, scanning, patched, stage, rescan, suite } = story
 
     // fade in with the link; colour eases to the link's security state
     sim.opacity += ((active ? 1 : 0) - sim.opacity) * (1 - Math.exp(-dt * 4))
@@ -100,11 +105,18 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
     sim.color.lerp(target, 1 - Math.exp(-dt * 3))
     material.uniforms.uColor.value.copy(sim.color)
     material.uniforms.uGain.value = patched ? 2.8 : 1.3 // only secured traffic blooms
+    // payload weight eases to the chosen suite so switching never pops
+    const goalW = CIPHER_SUITES[suite].flow
+    const kw = 1 - Math.exp(-dt * 2.5)
+    sim.w.density += (goalW.density - sim.w.density) * kw
+    sim.w.thickness += (goalW.thickness - sim.w.thickness) * kw
+    sim.w.speed += (goalW.speed - sim.w.speed) * kw
+    const w = sim.w
 
     // Burst transmission: a slow carrier with sharp crests. Crests speed every cluster up, stretch it
     // along the path and fill it with more particles; between crests the link idles at a trickle.
     const crest = Math.pow(0.5 + 0.5 * Math.sin(t * 1.25), 6)
-    const pace = (scanning ? 0.2 : 0.11) * (1 + 2.4 * crest)
+    const pace = (scanning ? 0.2 : 0.11) * (1 + 2.4 * crest) * w.speed
     const density = 0.3 + 0.7 * crest
 
     for (let g = 0; g < PACKETS; g++) {
@@ -112,14 +124,15 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
       // each cluster also has its own burst phase, so the link never pulses in lockstep
       const own = Math.pow(Math.max(0, Math.sin(t * 0.9 + g * 1.7)), 3)
       const lit = Math.min(1, density * (0.55 + 0.45 * own) * 1.25)
-      const len = 0.022 * (1 + 1.5 * crest)
+      const len = 0.022 * (1 + 1.5 * crest) * (0.75 + 0.25 * w.density) // heavier packets stretch longer
+      const count = PER_BASE * w.density
       for (let j = 0; j < PER; j++) {
         const i = g * PER + j
         let u = sim.u[g] + sim.spread[i] * len
         u = ((u % 1) + 1) % 1
         if (sim.dir[g] < 0) u = 1 - u
         // density: the first `lit` fraction of a cluster's particles are on; fade near both endpoints
-        const on = j / PER < lit ? 1 : 0
+        const on = j < lit * count ? 1 : 0
         const ends = smooth(0, 0.06, u) * smooth(0, 0.06, 1 - u)
         const head = 1 - Math.abs(sim.spread[i]) // brightest at the cluster centre
         const goal = on * ends * (0.35 + 0.65 * head)
@@ -132,7 +145,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
         tmp.n.crossVectors(tmp.t, tmp.up).normalize()
         tmp.b.crossVectors(tmp.t, tmp.n)
         const a = sim.angle[i] + u * 9 + t * 0.6 * sim.dir[g]
-        const rr = radius * sim.r[i]
+        const rr = radius * sim.r[i] * w.thickness
         tmp.o.position.copy(tmp.p).addScaledVector(tmp.n, Math.cos(a) * rr).addScaledVector(tmp.b, Math.sin(a) * rr)
         tmp.o.rotation.set(t * 2 + i, t * 1.3 + j, 0)
         tmp.o.scale.setScalar(sim.size[i] * (0.35 + 0.65 * sim.e[i]))

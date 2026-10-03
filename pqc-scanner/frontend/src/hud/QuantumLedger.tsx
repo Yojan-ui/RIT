@@ -1,6 +1,7 @@
 import { Suspense, lazy, useState } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { LandingPage } from './LandingPage'
+import { DEFAULT_SUITE, type CipherSuiteId } from './cipherSuite'
 
 // Root of the QuantumLedger variant. The 3D console (HudApp: R3F canvas, postprocessing, panes) is always in the
 // tree, pinned behind everything at z-0 and dormant (one frame drawn, inert) until launch. The landing page is a
@@ -13,6 +14,7 @@ const DISSOLVE = { duration: 0.8, ease: 'easeInOut' } as const
 
 export default function QuantumLedger() {
   const [awake, setAwake] = useState(false) // landing dismissed, console live
+  const [cipherSuite, setCipherSuite] = useState<CipherSuiteId>(DEFAULT_SUITE) // shared: picked on the landing, drives the console
 
   // never dissolve onto an empty screen: wait for the console chunk (normally loaded long before the click)
   const launch = () => void loadDashboard().then(() => setAwake(true))
@@ -24,7 +26,7 @@ export default function QuantumLedger() {
             No transform here, so its fixed layers keep the viewport as their containing block. */}
         <div className="fixed inset-0 z-0" inert={!awake}>
           <Suspense fallback={null}>
-            <HudApp awake={awake} />
+            <HudApp awake={awake} suite={cipherSuite} />
           </Suspense>
         </div>
         <AnimatePresence>
@@ -35,7 +37,7 @@ export default function QuantumLedger() {
               className="relative z-10 h-dvh overflow-y-auto overscroll-contain bg-neutral-950/90 backdrop-blur-md"
               exit={{ opacity: 0, filter: 'blur(10px)', scale: 1.05, transition: DISSOLVE }}
             >
-              <LandingPage onLaunch={launch} />
+              <LandingPage onLaunch={launch} suite={cipherSuite} onSuiteChange={setCipherSuite} />
             </motion.div>
           )}
         </AnimatePresence>

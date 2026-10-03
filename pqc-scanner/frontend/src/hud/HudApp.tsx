@@ -19,6 +19,7 @@ import { Pane } from './pane'
 import { SpatialSlot, spatial } from './spatial'
 import { geiger, sfx } from './sfx'
 import { useXR } from './xr'
+import { CIPHER_SUITES, DEFAULT_SUITE, fmtBytes, handshakeBytes, levelText, remedy, type CipherSuiteId } from './cipherSuite'
 import './hud.css'
 
 const STEPS: [string, LucideIcon][] = [
@@ -47,19 +48,34 @@ const stamp = () => new Date().toISOString().slice(11, 23)
 type Tone = 'ice' | 'warn' | 'crit' | 'ok' | 'dim'
 
 /** Records one UI log line per real pipeline state change (backend lines arrive over the stream). */
-function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void) {
+function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, suiteId: CipherSuiteId) {
   const push = (tag: string, text: string, tone?: Tone) =>
     add({ t: stamp(), src: 'ui', tag: tag.toLowerCase(), text, level: tone === 'crit' ? 'ERROR' : 'INFO', tone: tone === 'ice' ? undefined : tone })
   const r = p.result
+  const cs = CIPHER_SUITES[suiteId]
+  const fix = remedy(suiteId)
 
   useEffect(() => {
-    if (p.scanning) push('SCAN', `start · target ${p.query.trim()}`, 'dim')
+    if (p.scanning) {
+      push('SCAN', `start · target ${p.query.trim()}`, 'dim')
+      push('SUITE', `${cs.label.toLowerCase()} · kex ${cs.kexWire} · sig ${cs.sigWire} · ${levelText(cs).toLowerCase()}`, cs.level ? 'ok' : 'warn')
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.scanning])
   useEffect(() => {
-    if (p.scanning && p.scanStep > 0) push('SCAN', SCAN_STEPS[p.scanStep - 1].toLowerCase(), 'dim')
+    if (!p.scanning || p.scanStep <= 0) return
+    push('SCAN', SCAN_STEPS[p.scanStep - 1].toLowerCase(), 'dim')
+    // mock readout of the chosen suite's parameters, step by step alongside the live probe
+    const { kex, sig } = cs
+    if (p.scanStep === 2) push('SUITE', `kex ${kex.name} · ${kex.std} · share ${kex.pk} B → ${kex.out} B`)
+    if (p.scanStep === 3) push('SUITE', `sig ${sig.name} · ${sig.std} · pk ${sig.pk} B · sig ${sig.out.toLocaleString('en-US')} B`)
+    if (p.scanStep === 4) push('SUITE', `payload ≈ ${fmtBytes(handshakeBytes(cs))} / handshake · ${(handshakeBytes(cs) / handshakeBytes(CIPHER_SUITES.classical)).toFixed(1)}× classical`, cs.level ? undefined : 'warn')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.scanStep])
+  useEffect(() => {
+    push('SUITE', `cipher suite → ${cs.label.toLowerCase()} · ${cs.kexWire} / ${cs.sigWire}`, 'dim')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suiteId])
   useEffect(() => {
     if (!r) return
     const vuln = r.cbom_summary.filter((a) => !a.quantum_safe).length
@@ -84,13 +100,15 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwmKey])
   useEffect(() => {
-    if (p.patching) push('PATCH', 'deploy ML-DSA-65 + X25519MLKEM768 (simulated)', 'dim')
+    if (!p.patching) return
+    if (!cs.level) push('PATCH', 'classical suite selected · no post-quantum remedy · deploying hybrid', 'warn')
+    push('PATCH', `deploy ${fix.sig.name} + ${fix.kexWire} (simulated)`, 'dim')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.patching])
   useEffect(() => {
     if (!p.patched) return
-    push('PATCH', '[1] sig ML-DSA-65 · FIPS 204', 'ok')
-    push('PATCH', '[2] kex X25519MLKEM768 · FIPS 203', 'ok')
+    push('PATCH', `[1] sig ${fix.sig.name} · ${fix.sig.std}`, 'ok')
+    push('PATCH', `[2] kex ${fix.kexWire} · ${fix.kex.std}`, 'ok')
     if (p.cwmAfter) push('CWM', `${p.cwmAfter.score.toFixed(1)} ${p.cwmAfter.severity} · frag ${p.cwmAfter.fragility}`, 'ok')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.patched])
@@ -108,7 +126,7 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.verification])
   useEffect(() => {
-    const labels = ['kex X25519MLKEM768 ok', 'cert ML-DSA-65 ok', 'cbom 0 shor-vulnerable']
+    const labels = [`kex ${fix.kexWire} ok`, `cert ${fix.sig.name} ok`, 'cbom 0 shor-vulnerable']
     if (p.rescan === 'running' && p.rescanStep > 0) push('RESCAN', labels[p.rescanStep - 1], 'ok')
     if (p.rescan === 'done') push('RESCAN', 'endpoint 100% pqc-ready (simulated config)', 'ok')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,7 +218,7 @@ function NodeRow({ idx, role, name, state, note, lock }: { idx: number; role: st
 // ── App ──────────────────────────────────────────────────────────────────────
 
 /** `awake` false: mounted dormant behind the landing page so the scene is already running when it dissolves. */
-export default function HudApp({ awake = true }: { awake?: boolean }) {
+export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?: boolean; suite?: CipherSuiteId }) {
   // Live telemetry: backend log records streamed over SSE, plus UI pipeline events.
   const [lines, setLines] = useState<TLine[]>([])
   const [stream, setStream] = useState<{ state: StreamState; meta: string }>({ state: 'idle', meta: '' })
@@ -239,7 +257,7 @@ export default function HudApp({ awake = true }: { awake?: boolean }) {
     [add],
   )
   const p = usePipeline({ onTelemetry })
-  useEventLog(p, add)
+  useEventLog(p, add, suite)
 
   // Handshake crypto benchmark, measured once on the backend host.
   const [bench, setBench] = useState<Bench | null>(null)
@@ -267,13 +285,14 @@ export default function HudApp({ awake = true }: { awake?: boolean }) {
   // One hologram node per signature / key-exchange algorithm, coloured only by its own state.
   const nodes: HoloNode[] = useMemo(() => {
     if (!r || !p.before) return []
-    const list = p.patched || xr.presenting ? p.upgraded : p.detected
+    const fix = remedy(suite)
+    const list = p.patched || xr.presenting ? p.upgraded.map((a) => ({ ...a, name: a.role === 'Signature' ? fix.sig.name : fix.kexWire })) : p.detected
     return list.map((a) => ({
       id: `${a.role === 'Signature' ? 'sig' : 'kex'}:${a.name}`,
       label: a.name,
       state: a.safe ? 'ok' : p.cwmBefore?.severity === 'CRITICAL' ? 'crit' : 'warn',
     }))
-  }, [r, p.before, p.patched, p.detected, p.upgraded, p.cwmBefore, xr.presenting])
+  }, [r, p.before, p.patched, p.detected, p.upgraded, p.cwmBefore, xr.presenting, suite])
 
   const [wide, setWide] = useState(() => innerWidth >= 1024)
   useEffect(() => {
@@ -319,8 +338,9 @@ export default function HudApp({ awake = true }: { awake?: boolean }) {
       anchored: !!p.block,
       chainIndex: p.block?.index ?? 0,
       rescan: p.rescan,
+      suite,
     }),
-    [r, p.scanning, p.step, p.vulnerable, p.patching, p.patched, p.block, p.rescan],
+    [r, p.scanning, p.step, p.vulnerable, p.patching, p.patched, p.block, p.rescan, suite],
   )
   // AR tabletop: once placed, the lattice shield locks around the link, then the ledger block snaps into
   // the Merkle chain. A composite of stages 3 + 4 so all three structures stand on the table together.
@@ -332,8 +352,8 @@ export default function HudApp({ awake = true }: { awake?: boolean }) {
     return () => clearTimeout(t)
   }, [xr.placed])
   const arStory: Story = useMemo(
-    () => ({ active: true, scanning: false, stage: 4, vulnerable: true, patching: false, patched: arBeat >= 1, anchored: arBeat >= 2, chainIndex: p.block?.index ?? 1, rescan: 'idle' }),
-    [arBeat, p.block],
+    () => ({ active: true, scanning: false, stage: 4, vulnerable: true, patching: false, patched: arBeat >= 1, anchored: arBeat >= 2, chainIndex: p.block?.index ?? 1, rescan: 'idle', suite }),
+    [arBeat, p.block, suite],
   )
   const scene = xr.presenting ? arStory : story
   useSonification(scene, p, heat, shorVuln)
@@ -393,6 +413,9 @@ export default function HudApp({ awake = true }: { awake?: boolean }) {
         </button>
         <div className="flex items-center gap-2 whitespace-nowrap text-[10.5px] sm:gap-4">
           <span className="hud-dim hidden lg:inline">Console {CONSOLE}</span>
+          <span className={`${CIPHER_SUITES[suite].level ? 'hud-okc' : 'hud-warn'} hidden md:inline`} title={`${CIPHER_SUITES[suite].kex.name} · ${CIPHER_SUITES[suite].sig.name}`}>
+            {CIPHER_SUITES[suite].kexWire} · {levelText(CIPHER_SUITES[suite]).replace('NIST ', '')}
+          </span>
           <span className="hud-ice hidden sm:inline"><Clock /></span>
           <span className={`${statusCls} hidden font-semibold tracking-[0.08em] sm:inline`}>{statusText}</span>
           <ArHandoff domain={r?.domain ?? p.query.trim()} />
@@ -408,7 +431,7 @@ export default function HudApp({ awake = true }: { awake?: boolean }) {
       <main className="holo-grid">
         <div className="holo-col" aria-label="Diagnostics">
           <SpatialSlot id="diagnostics" side={-1} fill stream on={spatialOn} className="flex min-h-0 flex-1 flex-col">
-            <DiagnosticsPane p={p} addrs={addrs} shorVuln={shorVuln} total={total} />
+            <DiagnosticsPane p={p} addrs={addrs} shorVuln={shorVuln} total={total} suite={suite} />
           </SpatialSlot>
         </div>
         <div ref={(el) => { hudAnchor.zoneEl = el }} className="holo-zone" aria-hidden />
@@ -422,7 +445,7 @@ export default function HudApp({ awake = true }: { awake?: boolean }) {
         </div>
         <div className="holo-bottom">
           <SpatialSlot id="sweep" side={0} on={spatialOn}>
-            <SweepPane p={p} onReport={exportCompliance} comparison={<Comparison r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />} />
+            <SweepPane p={p} suite={suite} onReport={exportCompliance} comparison={<Comparison r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />} />
           </SpatialSlot>
         </div>
       </main>
@@ -433,8 +456,10 @@ export default function HudApp({ awake = true }: { awake?: boolean }) {
 
 // ── panes ────────────────────────────────────────────────────────────────────
 
-function DiagnosticsPane({ p, addrs, shorVuln, total }: { p: Pipeline; addrs: string[]; shorVuln: number; total: number }) {
+function DiagnosticsPane({ p, addrs, shorVuln, total, suite }: { p: Pipeline; addrs: string[]; shorVuln: number; total: number; suite: CipherSuiteId }) {
   const r = p.result
+  const cs = CIPHER_SUITES[suite]
+  const fix = remedy(suite)
   const b = p.block
   const v = p.verification
   const cwm = p.patched ? p.cwmAfter : p.cwmBefore
@@ -463,7 +488,9 @@ function DiagnosticsPane({ p, addrs, shorVuln, total }: { p: Pipeline; addrs: st
       <Row k="DECAY_RATE" cls={sevCls}>{cwm ? (cwm.severity === 'CRITICAL' ? 'high' : cwm.severity === 'High' ? 'elevated' : 'low') : '—'}</Row>
       <Row k="CWM_RISK" cls={sevCls}>{cwm ? `${cwm.score.toFixed(1)} / 100` : '—'}</Row>
       <Row k="KEX_GROUP" cls={r ? (r.tls.key_exchange.pq_hybrid ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r?.tls.key_exchange.group ?? '—'}</Row>
-      <Row k="CERT_KEY" cls={r ? (p.patched ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r ? (p.patched ? 'ML-DSA-65 (sim)' : r.certificate.public_key.name) : '—'}</Row>
+      <Row k="CERT_KEY" cls={r ? (p.patched ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r ? (p.patched ? `${fix.sig.name} (sim)` : r.certificate.public_key.name) : '—'}</Row>
+      <Row k="CIPHER_SUITE" cls={cs.level ? 'hud-okc' : 'hud-warn'} title={`${cs.kex.name} · ${cs.sig.name}`}>{`${cs.label} · ${levelText(cs)}`}</Row>
+      <Row k="SUITE_PAYLOAD" cls={cs.level ? 'hud-white' : 'hud-dim'}>{`${fmtBytes(handshakeBytes(cs))} / handshake · sig ${fmtBytes(cs.sig.out)}`}</Row>
       <Row k="SCAN_TIME">{r ? `${r.duration_ms} ms${r.wire?.hello_rtt_ms ? ` · rtt ${r.wire.hello_rtt_ms.toFixed(0)} ms` : ''}` : '—'}</Row>
       <div className="py-1.5">
         <Bar value={r?.duration_ms ?? 0} max={1500} />
@@ -572,8 +599,9 @@ const focusQuietly = (el: HTMLInputElement | null) => {
 }
 
 /** Stage title for the console status line (`STAGE 05: 100% PQC-READY`) and its sub-line. */
-function stageInfo(p: Pipeline): { title: string; sub?: string } {
+function stageInfo(p: Pipeline, suite: CipherSuiteId): { title: string; sub?: string } {
   const r = p.result
+  const fix = remedy(suite)
   const m = p.m
   switch (p.step) {
     case 1:
@@ -586,7 +614,7 @@ function stageInfo(p: Pipeline): { title: string; sub?: string } {
     }
     case 3:
       return p.patched
-        ? { title: 'Patched · ML-DSA-65 + X25519MLKEM768', sub: 'NIST FIPS 204 / FIPS 203 · simulated, live server unchanged' }
+        ? { title: `Patched · ${fix.sig.name} + ${fix.kexWire}`, sub: `NIST ${fix.sig.std} / ${fix.kex.std} · simulated, live server unchanged` }
         : { title: 'Deploy quantum-safe patch', sub: 'Replace the legacy signature and key exchange · simulation' }
     case 4:
       return p.verification?.valid && p.block
@@ -597,10 +625,11 @@ function stageInfo(p: Pipeline): { title: string; sub?: string } {
   }
 }
 
-function SweepPane({ p, onReport, comparison }: { p: Pipeline; onReport: () => void; comparison: ReactNode }) {
+function SweepPane({ p, suite, onReport, comparison }: { p: Pipeline; suite: CipherSuiteId; onReport: () => void; comparison: ReactNode }) {
   const r = p.result
-  const info = stageInfo(p)
-  const checks = ['kex X25519MLKEM768 · FIPS 203', 'cert ML-DSA-65 key + signature · FIPS 204', 'cbom 0 Shor-vulnerable']
+  const info = stageInfo(p, suite)
+  const fix = remedy(suite)
+  const checks = [`kex ${fix.kexWire} · ${fix.kex.std}`, `cert ${fix.sig.name} key + signature · ${fix.sig.std}`, 'cbom 0 Shor-vulnerable']
   const action = (() => {
     switch (p.step) {
       case 1:
@@ -619,7 +648,7 @@ function SweepPane({ p, onReport, comparison }: { p: Pipeline; onReport: () => v
         return p.patched ? (
           <button className="hud-btn" onClick={() => p.goto(4)}>prove »</button>
         ) : (
-          <button className="hud-btn" onClick={p.applyPatch} disabled={p.patching}>{p.patching ? 'deploying…' : 'deploy ML-DSA / ML-KEM patch'}</button>
+          <button className="hud-btn" onClick={p.applyPatch} disabled={p.patching}>{p.patching ? 'deploying…' : `deploy ${suite === 'max' ? 'SLH-DSA' : 'ML-DSA'} / ML-KEM patch`}</button>
         )
       case 4:
         return !p.block ? (

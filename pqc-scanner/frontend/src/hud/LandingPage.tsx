@@ -3,6 +3,8 @@ import { motion, type Variants } from 'framer-motion'
 import { ArrowRight } from 'lucide-react'
 import '@fontsource-variable/geist'
 import { BASE_YEAR, Z_YEARS } from '../lib/mosca'
+import { CipherMatrix } from './CipherMatrix'
+import type { CipherSuiteId } from './cipherSuite'
 
 // The QuantumLedger gateway: an austere briefing page in front of the 3D console.
 // Onyx ground, off-white type, hairline neutral borders; emerald (#059669) is reserved for the one primary action.
@@ -67,7 +69,7 @@ function Section({ id, eyebrow, title, children }: { id: string; eyebrow: string
   )
 }
 
-export function LandingPage({ onLaunch }: { onLaunch: () => void }) {
+export function LandingPage({ onLaunch, suite, onSuiteChange }: { onLaunch: () => void; suite: CipherSuiteId; onSuiteChange: (id: CipherSuiteId) => void }) {
   return (
     <div className="min-h-dvh font-sans text-[#FAFAFA] antialiased selection:bg-white/15">
       <header className="sticky top-0 z-10 border-b border-neutral-800 bg-[#09090B]/90 backdrop-blur-sm">
@@ -102,7 +104,10 @@ export function LandingPage({ onLaunch }: { onLaunch: () => void }) {
             Inspect the TLS key exchange and certificate chain of any endpoint, quantify its exposure to quantum attack, and produce
             audit-grade evidence of migration to NIST post-quantum standards.
           </motion.p>
-          <motion.div variants={rise} className="mt-12 flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-8">
+          <motion.div variants={rise} className="mt-12">
+            <CipherMatrix value={suite} onChange={onSuiteChange} />
+          </motion.div>
+          <motion.div variants={rise} className="mt-8 flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-8">
             <button
               onClick={onLaunch}
               className="group inline-flex h-12 items-center gap-3 rounded-[3px] bg-[#059669] px-6 text-[14px] font-medium text-[#FAFAFA] transition-colors hover:bg-[#047857] focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[#FAFAFA] active:translate-y-px"
