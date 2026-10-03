@@ -1,18 +1,18 @@
 // Volumetric data flow along the client ↔ server link: small faceted particles stream through a thin
 // tube around a CatmullRom path, clustered into packets that pulse in bursts. Colour carries state:
 // pale slate over the classical link, icy teal once the post-quantum patch is in, mint once the
-// rescan has verified it. Weight carries the cipher suite: lattice / hash-based payloads are heavier on the wire,
-// so the PQC suites fill each packet with more particles, widen the stream and move it faster.
+// rescan has verified it. Weight carries the threat level: higher NIST levels mean larger lattice keys, so each
+// packet fills with more and fatter particles, the stream widens, and it moves slightly slower under the load.
 // One InstancedMesh, one draw call.
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Story } from './anchor'
-import { CIPHER_SUITES } from './cipherSuite'
+import { THREAT_LEVELS } from './necessity'
 
 const PACKETS = 14 // particle clusters in flight
-const PER_BASE = 26 // particles per cluster lit by a classical payload
-const PER = PER_BASE * 2 // capacity: the heaviest suite lights every slot
+const PER_BASE = 26 // particles per cluster lit by a Level 1 payload
+const PER = PER_BASE * 2 // capacity: Level 5 lights every slot
 const N = PACKETS * PER
 
 const CLASSICAL = new THREE.Color('#a1a1aa')
@@ -84,7 +84,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
       e: new Float32Array(N), // eased energy
       opacity: 0,
       color: new THREE.Color().copy(CLASSICAL),
-      w: { ...CIPHER_SUITES.classical.flow }, // eased payload weight
+      w: { ...THREAT_LEVELS.enterprise.flow }, // eased payload weight
     }
   }, [])
   const tmp = useMemo(() => ({ p: new THREE.Vector3(), t: new THREE.Vector3(), n: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), o: new THREE.Object3D() }), [])
@@ -94,7 +94,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
     if (!m) return
     const dt = Math.min(dtRaw, 0.05)
     const t = clock.elapsedTime
-    const { active, scanning, patched, stage, rescan, suite } = story
+    const { active, scanning, patched, stage, rescan, necessity } = story
 
     // fade in with the link; colour eases to the link's security state
     sim.opacity += ((active ? 1 : 0) - sim.opacity) * (1 - Math.exp(-dt * 4))
@@ -105,8 +105,8 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
     sim.color.lerp(target, 1 - Math.exp(-dt * 3))
     material.uniforms.uColor.value.copy(sim.color)
     material.uniforms.uGain.value = patched ? 2.8 : 1.3 // only secured traffic blooms
-    // payload weight eases to the chosen suite so switching never pops
-    const goalW = CIPHER_SUITES[suite].flow
+    // payload weight eases to the chosen level so switching never pops
+    const goalW = THREAT_LEVELS[necessity].flow
     const kw = 1 - Math.exp(-dt * 2.5)
     sim.w.density += (goalW.density - sim.w.density) * kw
     sim.w.thickness += (goalW.thickness - sim.w.thickness) * kw
@@ -148,7 +148,7 @@ export function DataFlow({ path, radius, story }: { path: THREE.Curve<THREE.Vect
         const rr = radius * sim.r[i] * w.thickness
         tmp.o.position.copy(tmp.p).addScaledVector(tmp.n, Math.cos(a) * rr).addScaledVector(tmp.b, Math.sin(a) * rr)
         tmp.o.rotation.set(t * 2 + i, t * 1.3 + j, 0)
-        tmp.o.scale.setScalar(sim.size[i] * (0.35 + 0.65 * sim.e[i]) * (0.5 + 0.5 * w.thickness)) // heavier suites: fatter particles too
+        tmp.o.scale.setScalar(sim.size[i] * (0.35 + 0.65 * sim.e[i]) * (0.5 + 0.5 * w.thickness)) // heavier levels: fatter particles too
         tmp.o.updateMatrix()
         m.setMatrixAt(i, tmp.o.matrix)
       }

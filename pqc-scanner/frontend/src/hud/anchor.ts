@@ -1,4 +1,4 @@
-import type { CipherSuiteId } from './cipherSuite'
+import type { SecurityNecessity } from './necessity'
 
 // Screen-space data published every frame by the WebGL hologram and read by the DOM
 // overlays (rings, node labels, tracking lines) so they stay registered to the 3D scene.
@@ -45,7 +45,7 @@ export interface Story {
   anchored: boolean
   chainIndex: number
   rescan: 'idle' | 'running' | 'done'
-  suite: CipherSuiteId // the operator's chosen cipher suite: sets the payload weight on the link
+  necessity: SecurityNecessity // the operator's threat level: sets the parameter sets and the payload weight on the link
 }
 
 export type HudMode = 'idle' | 'scanning' | 'alert' | 'critical' | 'upgrading' | 'secure'

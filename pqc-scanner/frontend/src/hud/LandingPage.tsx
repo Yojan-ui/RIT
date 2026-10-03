@@ -3,8 +3,8 @@ import { motion, type Variants } from 'framer-motion'
 import { ArrowRight } from 'lucide-react'
 import '@fontsource-variable/geist'
 import { BASE_YEAR, Z_YEARS } from '../lib/mosca'
-import { CipherMatrix } from './CipherMatrix'
-import type { CipherSuiteId } from './cipherSuite'
+import { ThreatMatrix } from './ThreatMatrix'
+import type { SecurityNecessity } from './necessity'
 
 // The QuantumLedger gateway: an austere briefing page in front of the 3D console.
 // Onyx ground, off-white type, hairline neutral borders; emerald (#059669) is reserved for the one primary action.
@@ -69,7 +69,7 @@ function Section({ id, eyebrow, title, children }: { id: string; eyebrow: string
   )
 }
 
-export function LandingPage({ onLaunch, suite, onSuiteChange }: { onLaunch: () => void; suite: CipherSuiteId; onSuiteChange: (id: CipherSuiteId) => void }) {
+export function LandingPage({ onLaunch, necessity, onNecessityChange }: { onLaunch: () => void; necessity: SecurityNecessity; onNecessityChange: (id: SecurityNecessity) => void }) {
   return (
     <div className="min-h-dvh font-sans text-[#FAFAFA] antialiased selection:bg-white/15">
       <header className="sticky top-0 z-10 border-b border-neutral-800 bg-[#09090B]/90 backdrop-blur-sm">
@@ -105,7 +105,7 @@ export function LandingPage({ onLaunch, suite, onSuiteChange }: { onLaunch: () =
             audit-grade evidence of migration to NIST post-quantum standards.
           </motion.p>
           <motion.div variants={rise} className="mt-12">
-            <CipherMatrix value={suite} onChange={onSuiteChange} />
+            <ThreatMatrix value={necessity} onChange={onNecessityChange} />
           </motion.div>
           <motion.div variants={rise} className="mt-8 flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-8">
             <button

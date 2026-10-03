@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { coreZone, hudAnchor, type Story } from './anchor'
-import { remedy } from './cipherSuite'
+import { THREAT_LEVELS } from './necessity'
 
 export interface StoryData {
   domain: string
@@ -179,7 +179,7 @@ function inspect(id: string, s: Story, d: StoryData): { title: string; rows: Row
           ['node', 'QuantumLedger probe · this host'],
           ['clienthello', n?.clientHello ? `${n.clientHello} B · offers X25519MLKEM768` : 'offers X25519MLKEM768'],
           ['tcp connect', n?.connectMs != null ? `${n.connectMs} ms` : '—'],
-          ['state', s.patched ? `${remedy(s.suite).kex.name} active (sim)` : 'classical session keys', s.patched ? 'hud-okc' : 'hud-warn'],
+          ['state', s.patched ? `${THREAT_LEVELS[s.necessity].kex.name} active (sim)` : 'classical session keys', s.patched ? 'hud-okc' : 'hud-warn'],
         ],
       }
     case 'server':
@@ -189,7 +189,7 @@ function inspect(id: string, s: Story, d: StoryData): { title: string; rows: Row
           ['node', n ? `${n.ip}:443` : d.domain],
           ['host', d.domain],
           ['tls', n ? `${n.tls} · ${n.cipher}` : '—'],
-          ['state', s.patched ? `${remedy(s.suite).sig.name} + ${remedy(s.suite).kexWire} active (sim)` : `${d.sig} + ${d.kex} · Shor-vulnerable`, s.patched ? 'hud-okc' : 'hud-crit'],
+          ['state', s.patched ? `${THREAT_LEVELS[s.necessity].sig.name} + ${THREAT_LEVELS[s.necessity].kex.name} active (sim)` : `${d.sig} + ${d.kex} · Shor-vulnerable`, s.patched ? 'hud-okc' : 'hud-crit'],
           ['rtt', n?.rttMs != null ? `${n.rttMs.toFixed(1)} ms (ClientHello → ServerHello)` : '—'],
         ],
       }
@@ -216,8 +216,10 @@ function inspect(id: string, s: Story, d: StoryData): { title: string; rows: Row
       return {
         title: 'lattice shield',
         rows: [
-          ['scheme', id === 'cage0' ? `${remedy(s.suite).kex.name} · NIST ${remedy(s.suite).kex.std}` : `${remedy(s.suite).sig.name} · NIST ${remedy(s.suite).sig.std}`, 'hud-okc'],
-          ['hardness', id === 'cage1' && s.suite === 'max' ? 'SHA-256 preimage / collision (hash-based)' : 'Module-LWE / Module-SIS'],
+          ['scheme', id === 'cage0' ? `${THREAT_LEVELS[s.necessity].kex.name} · NIST ${THREAT_LEVELS[s.necessity].kex.std}` : `${THREAT_LEVELS[s.necessity].sig.name} · NIST ${THREAT_LEVELS[s.necessity].sig.std}`, 'hud-okc'],
+          ['hardness', 'Module-LWE / Module-SIS'],
+          ...(id === 'cage1' && THREAT_LEVELS[s.necessity].fallback ? [['fallback', `${THREAT_LEVELS[s.necessity].fallback!.name} · hash-based`] as [string, string]] : []),
+          ['level', `NIST Level ${THREAT_LEVELS[s.necessity].level} · ${THREAT_LEVELS[s.necessity].equiv} equivalent`],
           ['state', s.stage === 5 && s.rescan === 'done' ? 'verified · pqc-ready' : 'active (simulated patch)', 'hud-ok'],
         ],
       }
@@ -349,7 +351,7 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
           <At k="server" className="top-[58px] left-[-24px] whitespace-nowrap">
             <div className="hud-k">server</div>
             <div className={done ? 'hud-ok' : 'hud-white'}>{d.domain}</div>
-            {s.patched && s.stage >= 3 && <div className="hud-okc">{s.suite === 'max' ? 'slh-dsa' : 'ml-dsa'} shield</div>}
+            {s.patched && s.stage >= 3 && <div className="hud-okc">ml-dsa shield</div>}
           </At>
         </>
       )}
@@ -359,8 +361,8 @@ export function StoryOverlay({ story: s, data: d }: { story: Story; data: StoryD
           <div className="hud-k">connection</div>
           {s.patched ? (
             <>
-              <div className="hud-okc">{remedy(s.suite).kexWire} · {remedy(s.suite).sig.name}</div>
-              <div className="hud-dim">{s.suite === 'max' ? 'lattice + hash-based · level 5' : 'lattice · module-lwe · level 3'}</div>
+              <div className="hud-okc">{THREAT_LEVELS[s.necessity].kex.name} · {THREAT_LEVELS[s.necessity].sig.name}</div>
+              <div className="hud-dim">lattice · module-lwe · nist level {THREAT_LEVELS[s.necessity].level}</div>
             </>
           ) : (
             <>

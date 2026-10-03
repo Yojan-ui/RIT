@@ -19,7 +19,7 @@ import { Pane } from './pane'
 import { SpatialSlot, spatial } from './spatial'
 import { geiger, sfx } from './sfx'
 import { useXR } from './xr'
-import { CIPHER_SUITES, DEFAULT_SUITE, fmtBytes, handshakeBytes, levelText, remedy, type CipherSuiteId } from './cipherSuite'
+import { DEFAULT_NECESSITY, THREAT_LEVELS, fmtBytes, handshakeBytes, levelText, type SecurityNecessity } from './necessity'
 import './hud.css'
 
 const STEPS: [string, LucideIcon][] = [
@@ -48,45 +48,48 @@ const stamp = () => new Date().toISOString().slice(11, 23)
 type Tone = 'ice' | 'warn' | 'crit' | 'ok' | 'dim'
 
 /** Records one UI log line per real pipeline state change (backend lines arrive over the stream). */
-function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, suiteId: CipherSuiteId) {
+function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, necessity: SecurityNecessity) {
   const push = (tag: string, text: string, tone?: Tone) =>
     add({ t: stamp(), src: 'ui', tag: tag.toLowerCase(), text, level: tone === 'crit' ? 'ERROR' : 'INFO', tone: tone === 'ice' ? undefined : tone })
   const r = p.result
-  const cs = CIPHER_SUITES[suiteId]
-  const fix = remedy(suiteId)
-  // the suite readout, one line per probe phase (kex, cert, CBOM); `said` marks lines already logged this scan
-  const suiteLines = [
-    `kex ${cs.kex.name} · ${cs.kex.std} · share ${cs.kex.pk} B → ${cs.kex.out} B`,
-    `sig ${cs.sig.name} · ${cs.sig.std} · pk ${cs.sig.pk} B · sig ${cs.sig.out.toLocaleString('en-US')} B`,
-    `payload ≈ ${fmtBytes(handshakeBytes(cs))} / handshake · ${(handshakeBytes(cs) / handshakeBytes(CIPHER_SUITES.classical)).toFixed(1)}× classical`,
+  const lv = THREAT_LEVELS[necessity]
+  const fb = lv.fallback
+  // the threat-level readout, grouped by probe phase (kex, cert, CBOM); `said` counts phases already logged this scan
+  const levelLines = [
+    [`kex ${lv.kex.name} · ${lv.kex.std} · ek ${lv.kex.pk} B → ct ${lv.kex.out} B`],
+    [
+      `sig ${lv.sig.name} · ${lv.sig.std} · pk ${lv.sig.pk.toLocaleString('en-US')} B · sig ${lv.sig.out.toLocaleString('en-US')} B`,
+      ...(fb ? [`fallback ${fb.name} · ${fb.std} · sig ${fb.out.toLocaleString('en-US')} B (reserve)`] : []),
+    ],
+    [`payload ≈ ${fmtBytes(handshakeBytes(lv))} / handshake · ${(handshakeBytes(lv) / handshakeBytes(THREAT_LEVELS.enterprise)).toFixed(1)}× level 1 · ${lv.equiv} equivalent`],
   ]
   const said = useRef(0)
   const sayThrough = (n: number) => {
-    for (; said.current < n; said.current++) push('SUITE', suiteLines[said.current], said.current === 2 && !cs.level ? 'warn' : undefined)
+    for (; said.current < n; said.current++) levelLines[said.current].forEach((l) => push('LEVEL', l))
   }
 
   useEffect(() => {
     if (p.scanning) {
       said.current = 0
       push('SCAN', `start · target ${p.query.trim()}`, 'dim')
-      push('SUITE', `${cs.label.toLowerCase()} · kex ${cs.kexWire} · sig ${cs.sigWire} · ${levelText(cs).toLowerCase()}`, cs.level ? 'ok' : 'warn')
+      push('LEVEL', `${lv.label.toLowerCase()} · ${levelText(lv).toLowerCase()} · kex ${lv.kexWire} · sig ${lv.sigWire}${fb ? ' · fallback slh-dsa' : ''}`, 'ok')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.scanning])
   useEffect(() => {
     if (!p.scanning || p.scanStep <= 0) return
     push('SCAN', SCAN_STEPS[p.scanStep - 1].toLowerCase(), 'dim')
-    // mock readout of the chosen suite's parameters, step by step alongside the live probe
+    // mock readout of the chosen level's parameters, step by step alongside the live probe
     sayThrough(p.scanStep - 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.scanStep])
   useEffect(() => {
-    push('SUITE', `cipher suite → ${cs.label.toLowerCase()} · ${cs.kexWire} / ${cs.sigWire}`, 'dim')
+    push('LEVEL', `threat level → ${lv.label.toLowerCase()} · ${levelText(lv).toLowerCase()} · ${lv.kexWire} / ${lv.sigWire}`, 'dim')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suiteId])
+  }, [necessity])
   useEffect(() => {
     if (!r) return
-    sayThrough(suiteLines.length) // a fast (cached) result can land before the step animation reaches every phase
+    sayThrough(levelLines.length) // a fast (cached) result can land before the step animation reaches every phase
     const vuln = r.cbom_summary.filter((a) => !a.quantum_safe).length
     push('SCAN', `result parsed · ${r.tls.key_exchange.group ?? 'unknown'} · ${r.certificate.public_key.name} · ${vuln}/${r.cbom_summary.length} shor-vulnerable${r.cached ? ' · cached' : ''}`, vuln ? 'warn' : 'ok')
     if (p.demo) push('SCAN', 'api unreachable · demo dataset', 'warn')
@@ -110,14 +113,14 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, suiteId: 
   }, [cwmKey])
   useEffect(() => {
     if (!p.patching) return
-    if (!cs.level) push('PATCH', 'classical suite selected · no post-quantum remedy · deploying hybrid', 'warn')
-    push('PATCH', `deploy ${fix.sig.name} + ${fix.kexWire} (simulated)`, 'dim')
+    push('PATCH', `deploy ${lv.sig.name} + ${lv.kex.name} · ${levelText(lv).toLowerCase()} (simulated)`, 'dim')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.patching])
   useEffect(() => {
     if (!p.patched) return
-    push('PATCH', `[1] sig ${fix.sig.name} · ${fix.sig.std}`, 'ok')
-    push('PATCH', `[2] kex ${fix.kexWire} · ${fix.kex.std}`, 'ok')
+    push('PATCH', `[1] sig ${lv.sig.name} · ${lv.sig.std}`, 'ok')
+    push('PATCH', `[2] kex ${lv.kex.name} · ${lv.kex.std}`, 'ok')
+    if (fb) push('PATCH', `[3] fallback ${fb.name} · ${fb.std} · staged`, 'ok')
     if (p.cwmAfter) push('CWM', `${p.cwmAfter.score.toFixed(1)} ${p.cwmAfter.severity} · frag ${p.cwmAfter.fragility}`, 'ok')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.patched])
@@ -135,7 +138,7 @@ function useEventLog(p: Pipeline, add: (l: Omit<TLine, 'id'>) => void, suiteId: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.verification])
   useEffect(() => {
-    const labels = [`kex ${fix.kexWire} ok`, `cert ${fix.sig.name} ok`, 'cbom 0 shor-vulnerable']
+    const labels = [`kex ${lv.kexWire} ok`, `cert ${lv.sig.name} ok`, 'cbom 0 shor-vulnerable']
     if (p.rescan === 'running' && p.rescanStep > 0) push('RESCAN', labels[p.rescanStep - 1], 'ok')
     if (p.rescan === 'done') push('RESCAN', 'endpoint 100% pqc-ready (simulated config)', 'ok')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -227,7 +230,7 @@ function NodeRow({ idx, role, name, state, note, lock }: { idx: number; role: st
 // ── App ──────────────────────────────────────────────────────────────────────
 
 /** `awake` false: mounted dormant behind the landing page so the scene is already running when it dissolves. */
-export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?: boolean; suite?: CipherSuiteId }) {
+export default function HudApp({ awake = true, necessity = DEFAULT_NECESSITY }: { awake?: boolean; necessity?: SecurityNecessity }) {
   // Live telemetry: backend log records streamed over SSE, plus UI pipeline events.
   const [lines, setLines] = useState<TLine[]>([])
   const [stream, setStream] = useState<{ state: StreamState; meta: string }>({ state: 'idle', meta: '' })
@@ -266,7 +269,7 @@ export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?
     [add],
   )
   const p = usePipeline({ onTelemetry })
-  useEventLog(p, add, suite)
+  useEventLog(p, add, necessity)
 
   // Handshake crypto benchmark, measured once on the backend host.
   const [bench, setBench] = useState<Bench | null>(null)
@@ -294,14 +297,14 @@ export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?
   // One hologram node per signature / key-exchange algorithm, coloured only by its own state.
   const nodes: HoloNode[] = useMemo(() => {
     if (!r || !p.before) return []
-    const fix = remedy(suite)
-    const list = p.patched || xr.presenting ? p.upgraded.map((a) => ({ ...a, name: a.role === 'Signature' ? fix.sig.name : fix.kexWire })) : p.detected
+    const lv = THREAT_LEVELS[necessity]
+    const list = p.patched || xr.presenting ? p.upgraded.map((a) => ({ ...a, name: a.role === 'Signature' ? lv.sig.name : lv.kex.name })) : p.detected
     return list.map((a) => ({
       id: `${a.role === 'Signature' ? 'sig' : 'kex'}:${a.name}`,
       label: a.name,
       state: a.safe ? 'ok' : p.cwmBefore?.severity === 'CRITICAL' ? 'crit' : 'warn',
     }))
-  }, [r, p.before, p.patched, p.detected, p.upgraded, p.cwmBefore, xr.presenting, suite])
+  }, [r, p.before, p.patched, p.detected, p.upgraded, p.cwmBefore, xr.presenting, necessity])
 
   const [wide, setWide] = useState(() => innerWidth >= 1024)
   useEffect(() => {
@@ -347,9 +350,9 @@ export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?
       anchored: !!p.block,
       chainIndex: p.block?.index ?? 0,
       rescan: p.rescan,
-      suite,
+      necessity,
     }),
-    [r, p.scanning, p.step, p.vulnerable, p.patching, p.patched, p.block, p.rescan, suite],
+    [r, p.scanning, p.step, p.vulnerable, p.patching, p.patched, p.block, p.rescan, necessity],
   )
   // AR tabletop: once placed, the lattice shield locks around the link, then the ledger block snaps into
   // the Merkle chain. A composite of stages 3 + 4 so all three structures stand on the table together.
@@ -361,8 +364,8 @@ export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?
     return () => clearTimeout(t)
   }, [xr.placed])
   const arStory: Story = useMemo(
-    () => ({ active: true, scanning: false, stage: 4, vulnerable: true, patching: false, patched: arBeat >= 1, anchored: arBeat >= 2, chainIndex: p.block?.index ?? 1, rescan: 'idle', suite }),
-    [arBeat, p.block, suite],
+    () => ({ active: true, scanning: false, stage: 4, vulnerable: true, patching: false, patched: arBeat >= 1, anchored: arBeat >= 2, chainIndex: p.block?.index ?? 1, rescan: 'idle', necessity }),
+    [arBeat, p.block, necessity],
   )
   const scene = xr.presenting ? arStory : story
   useSonification(scene, p, heat, shorVuln)
@@ -422,8 +425,8 @@ export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?
         </button>
         <div className="flex items-center gap-2 whitespace-nowrap text-[10.5px] sm:gap-4">
           <span className="hud-dim hidden lg:inline">Console {CONSOLE}</span>
-          <span className={`${CIPHER_SUITES[suite].level ? 'hud-okc' : 'hud-warn'} hidden md:inline`} title={`${CIPHER_SUITES[suite].kex.name} · ${CIPHER_SUITES[suite].sig.name}`}>
-            {CIPHER_SUITES[suite].kexWire} · {levelText(CIPHER_SUITES[suite]).replace('NIST ', '')}
+          <span className="hud-okc hidden md:inline" title={`${THREAT_LEVELS[necessity].label} · ${THREAT_LEVELS[necessity].kex.name} · ${THREAT_LEVELS[necessity].sig.name}`}>
+            {levelText(THREAT_LEVELS[necessity])} · {THREAT_LEVELS[necessity].kexWire}
           </span>
           <span className="hud-ice hidden sm:inline"><Clock /></span>
           <span className={`${statusCls} hidden font-semibold tracking-[0.08em] sm:inline`}>{statusText}</span>
@@ -440,7 +443,7 @@ export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?
       <main className="holo-grid">
         <div className="holo-col" aria-label="Diagnostics">
           <SpatialSlot id="diagnostics" side={-1} fill stream on={spatialOn} className="flex min-h-0 flex-1 flex-col">
-            <DiagnosticsPane p={p} addrs={addrs} shorVuln={shorVuln} total={total} suite={suite} />
+            <DiagnosticsPane p={p} addrs={addrs} shorVuln={shorVuln} total={total} necessity={necessity} />
           </SpatialSlot>
         </div>
         <div ref={(el) => { hudAnchor.zoneEl = el }} className="holo-zone" aria-hidden />
@@ -454,7 +457,7 @@ export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?
         </div>
         <div className="holo-bottom">
           <SpatialSlot id="sweep" side={0} on={spatialOn}>
-            <SweepPane p={p} suite={suite} onReport={exportCompliance} comparison={<Comparison r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />} />
+            <SweepPane p={p} necessity={necessity} onReport={exportCompliance} comparison={<Comparison r={r} bench={bench} benchError={benchErr} legacySig={legacySig} setLegacySig={setLegacySig} />} />
           </SpatialSlot>
         </div>
       </main>
@@ -465,10 +468,9 @@ export default function HudApp({ awake = true, suite = DEFAULT_SUITE }: { awake?
 
 // ── panes ────────────────────────────────────────────────────────────────────
 
-function DiagnosticsPane({ p, addrs, shorVuln, total, suite }: { p: Pipeline; addrs: string[]; shorVuln: number; total: number; suite: CipherSuiteId }) {
+function DiagnosticsPane({ p, addrs, shorVuln, total, necessity }: { p: Pipeline; addrs: string[]; shorVuln: number; total: number; necessity: SecurityNecessity }) {
   const r = p.result
-  const cs = CIPHER_SUITES[suite]
-  const fix = remedy(suite)
+  const lv = THREAT_LEVELS[necessity]
   const b = p.block
   const v = p.verification
   const cwm = p.patched ? p.cwmAfter : p.cwmBefore
@@ -497,9 +499,10 @@ function DiagnosticsPane({ p, addrs, shorVuln, total, suite }: { p: Pipeline; ad
       <Row k="DECAY_RATE" cls={sevCls}>{cwm ? (cwm.severity === 'CRITICAL' ? 'high' : cwm.severity === 'High' ? 'elevated' : 'low') : '—'}</Row>
       <Row k="CWM_RISK" cls={sevCls}>{cwm ? `${cwm.score.toFixed(1)} / 100` : '—'}</Row>
       <Row k="KEX_GROUP" cls={r ? (r.tls.key_exchange.pq_hybrid ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r?.tls.key_exchange.group ?? '—'}</Row>
-      <Row k="CERT_KEY" cls={r ? (p.patched ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r ? (p.patched ? `${fix.sig.name} (sim)` : r.certificate.public_key.name) : '—'}</Row>
-      <Row k="CIPHER_SUITE" cls={cs.level ? 'hud-okc' : 'hud-warn'} title={`${cs.kex.name} · ${cs.sig.name}`}>{`${cs.label} · ${levelText(cs)}`}</Row>
-      <Row k="SUITE_PAYLOAD" cls={cs.level ? 'hud-white' : 'hud-dim'}>{`${fmtBytes(handshakeBytes(cs))} / handshake · sig ${fmtBytes(cs.sig.out)}`}</Row>
+      <Row k="CERT_KEY" cls={r ? (p.patched ? 'hud-ok' : 'hud-warn') : 'hud-dim'}>{r ? (p.patched ? `${lv.sig.name} (sim)` : r.certificate.public_key.name) : '—'}</Row>
+      <Row k="THREAT_LEVEL" cls="hud-okc" title={lv.label}>{`${levelText(lv)} · ${lv.equiv}`}</Row>
+      <Row k="PQC_PARAMS" title={`${lv.kex.std} · ${lv.sig.std}${lv.fallback ? ` · ${lv.fallback.std}` : ''}`}>{`${lv.kex.name} · ${lv.sig.name}${lv.fallback ? ' +SLH' : ''}`}</Row>
+      <Row k="LEVEL_PAYLOAD">{`${fmtBytes(handshakeBytes(lv))} / handshake · sig ${fmtBytes(lv.sig.out)}`}</Row>
       <Row k="SCAN_TIME">{r ? `${r.duration_ms} ms${r.wire?.hello_rtt_ms ? ` · rtt ${r.wire.hello_rtt_ms.toFixed(0)} ms` : ''}` : '—'}</Row>
       <div className="py-1.5">
         <Bar value={r?.duration_ms ?? 0} max={1500} />
@@ -608,9 +611,9 @@ const focusQuietly = (el: HTMLInputElement | null) => {
 }
 
 /** Stage title for the console status line (`STAGE 05: 100% PQC-READY`) and its sub-line. */
-function stageInfo(p: Pipeline, suite: CipherSuiteId): { title: string; sub?: string } {
+function stageInfo(p: Pipeline, necessity: SecurityNecessity): { title: string; sub?: string } {
   const r = p.result
-  const fix = remedy(suite)
+  const lv = THREAT_LEVELS[necessity]
   const m = p.m
   switch (p.step) {
     case 1:
@@ -623,7 +626,7 @@ function stageInfo(p: Pipeline, suite: CipherSuiteId): { title: string; sub?: st
     }
     case 3:
       return p.patched
-        ? { title: `Patched · ${fix.sig.name} + ${fix.kexWire}`, sub: `NIST ${fix.sig.std} / ${fix.kex.std} · simulated, live server unchanged` }
+        ? { title: `Patched · ${lv.sig.name} + ${lv.kex.name}`, sub: `${levelText(lv)} · ${lv.sig.std} / ${lv.kex.std} · simulated, live server unchanged` }
         : { title: 'Deploy quantum-safe patch', sub: 'Replace the legacy signature and key exchange · simulation' }
     case 4:
       return p.verification?.valid && p.block
@@ -634,11 +637,11 @@ function stageInfo(p: Pipeline, suite: CipherSuiteId): { title: string; sub?: st
   }
 }
 
-function SweepPane({ p, suite, onReport, comparison }: { p: Pipeline; suite: CipherSuiteId; onReport: () => void; comparison: ReactNode }) {
+function SweepPane({ p, necessity, onReport, comparison }: { p: Pipeline; necessity: SecurityNecessity; onReport: () => void; comparison: ReactNode }) {
   const r = p.result
-  const info = stageInfo(p, suite)
-  const fix = remedy(suite)
-  const checks = [`kex ${fix.kexWire} · ${fix.kex.std}`, `cert ${fix.sig.name} key + signature · ${fix.sig.std}`, 'cbom 0 Shor-vulnerable']
+  const info = stageInfo(p, necessity)
+  const lv = THREAT_LEVELS[necessity]
+  const checks = [`kex ${lv.kex.name} · ${lv.kex.std}`, `cert ${lv.sig.name} key + signature · ${lv.sig.std}`, 'cbom 0 Shor-vulnerable']
   const action = (() => {
     switch (p.step) {
       case 1:
@@ -657,7 +660,7 @@ function SweepPane({ p, suite, onReport, comparison }: { p: Pipeline; suite: Cip
         return p.patched ? (
           <button className="hud-btn" onClick={() => p.goto(4)}>prove »</button>
         ) : (
-          <button className="hud-btn" onClick={p.applyPatch} disabled={p.patching}>{p.patching ? 'deploying…' : `deploy ${suite === 'max' ? 'SLH-DSA' : 'ML-DSA'} / ML-KEM patch`}</button>
+          <button className="hud-btn" onClick={p.applyPatch} disabled={p.patching}>{p.patching ? 'deploying…' : `deploy level ${lv.level} ML-DSA / ML-KEM patch`}</button>
         )
       case 4:
         return !p.block ? (
